@@ -1,0 +1,31 @@
+#!/bin/bash
+# STP platform bootstrap — rendered by Terraform templatefile() (see main.tf).
+# Installs Docker + compose plugin, clones the repo, starts the compose stack.
+set -euxo pipefail
+
+dnf update -y
+dnf install -y docker git
+systemctl enable --now docker
+
+# Docker Compose v2 plugin.
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+usermod -aG docker ec2-user
+
+# Check out and start the stack.
+git clone "${repo_url}" /opt/stp
+cd /opt/stp
+printf 'POSTGRES_PASSWORD=%s\n' '${db_password}' > .env
+%{ if rds_endpoint != "" ~}
+# Managed PostgreSQL flavor: point the api service at RDS instead of the
+# compose db container (which still starts but is unused).
+cat > docker-compose.override.yml <<'YAML'
+services:
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stpadmin:${db_password}@${rds_endpoint}/stp
+YAML
+%{ endif ~}
+docker compose up -d --build

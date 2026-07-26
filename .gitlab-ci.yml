@@ -1,0 +1,159 @@
+# GitLab CI/CD — STP trading platform.
+# Pipeline per docs/design/18-devops-deployment.md (NFR-MNT-001/002/006):
+#   lint → test → scan → build → deploy_dev → deploy_demo (manual gate)
+# Secrets (SSH keys, VM hosts) live in GitLab CI/CD variables, never in this file.
+
+stages:
+  - lint
+  - test
+  - scan
+  - build
+  - deploy_dev
+  - deploy_demo
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+
+# Run on merge requests and on the default branch; skip duplicate branch pushes.
+.mr-and-default:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ------------------------------------------------------------------ lint
+backend-lint:
+  stage: lint
+  extends: .mr-and-default
+  image: python:3.13
+  cache:
+    key:
+      files:
+        - backend/requirements.txt
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -r backend/requirements.txt
+  script:
+    # Byte-compile everything: catches syntax errors with zero extra tooling.
+    - python -m compileall -q backend/app
+    # Verify the installed dependency set is consistent.
+    - cd backend && pip check
+
+# ------------------------------------------------------------------ test
+backend-test:
+  stage: test
+  extends: .mr-and-default
+  image: python:3.13
+  cache:
+    key:
+      files:
+        - backend/requirements.txt
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -r backend/requirements.txt
+  script:
+    - cd backend && python -m pytest
+
+# Build-check the frontend on every MR; artifacts kept for inspection.
+frontend-build:
+  stage: test
+  extends: .mr-and-default
+  image: node:22
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+    paths:
+      - .cache/npm
+  before_script:
+    - cd frontend && npm ci
+  script:
+    - cd frontend && npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 day
+
+# ------------------------------------------------------------------ scan
+# Both scanners block the pipeline (allow_failure: false) per NFR-MNT-002.
+gitleaks:
+  stage: scan
+  extends: .mr-and-default
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  allow_failure: false
+  script:
+    - gitleaks detect --source . --verbose --redact
+
+trivy-fs:
+  stage: scan
+  extends: .mr-and-default
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  allow_failure: false
+  script:
+    - trivy fs --exit-code 1 --severity HIGH,CRITICAL
+      --skip-dirs backend/.venv --skip-dirs frontend/node_modules .
+
+# ------------------------------------------------------------------ build
+# Push images to the GitLab container registry; default branch only.
+build-docker:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/backend:latest" backend
+    - docker build -t "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/frontend:latest" frontend
+    - docker push --all-tags "$CI_REGISTRY_IMAGE/backend"
+    - docker push --all-tags "$CI_REGISTRY_IMAGE/frontend"
+
+# ------------------------------------------------------------------ deploy
+# SSH-based deploy to the single VM per environment (D-06). The VM is
+# provisioned by infra/terraform; the repo lives at /opt/stp and .env
+# (POSTGRES_PASSWORD) was written there by Terraform user_data.
+#
+# Required CI/CD variables (masked / file type where applicable):
+#   DEV_SSH_KEY    private key for the dev VM     (File variable recommended)
+#   DEV_VM_USER    e.g. ec2-user
+#   DEV_VM_HOST    dev VM public IP/DNS
+#   DEMO_SSH_KEY, DEMO_VM_USER, DEMO_VM_HOST — same for the demo VM
+deploy_dev:
+  stage: deploy_dev
+  image: alpine:3.20
+  environment:
+    name: dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval "$(ssh-agent -s)"
+    - echo "$DEV_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEV_VM_HOST" >> ~/.ssh/known_hosts
+  script:
+    - ssh "$DEV_VM_USER@$DEV_VM_HOST" "cd /opt/stp && git pull && docker compose up -d --build"
+
+deploy_demo:
+  stage: deploy_demo
+  image: alpine:3.20
+  environment:
+    name: demo
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval "$(ssh-agent -s)"
+    - echo "$DEMO_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEMO_VM_HOST" >> ~/.ssh/known_hosts
+  script:
+    - ssh "$DEMO_VM_USER@$DEMO_VM_HOST" "cd /opt/stp && git pull && docker compose up -d --build"

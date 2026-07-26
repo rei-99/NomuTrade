@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+
+# Local app state
+stp.db
+backend/var/
+.env
+
+# OS
+.DS_Store
+
+# CI caches
+.cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+infra/terraform/env/*.tfvars
+!infra/terraform/env/*.tfvars.example

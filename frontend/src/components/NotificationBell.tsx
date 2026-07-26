@@ -1,0 +1,85 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../api/client";
+import type { AppNotification, ListResponse } from "../api/types";
+import { usePoll } from "../hooks";
+import { fmtTs } from "../format";
+import { Badge } from "./Badge";
+
+const POLL_MS = 10_000;
+
+export function NotificationBell() {
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api<ListResponse<AppNotification>>("/notifications", {
+        skipErrorToast: true,
+      });
+      setItems(res.items);
+    } catch {
+      // notifications are best-effort; don't spam toasts
+    }
+  }, []);
+
+  usePoll(load, POLL_MS, [load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const unread = items.filter((n) => n.status !== "READ").length;
+
+  const markRead = async (n: AppNotification) => {
+    if (n.status === "READ") return;
+    try {
+      await api(`/notifications/${n.notification_id}/read`, {
+        method: "POST",
+        skipErrorToast: true,
+      });
+      setItems((xs) =>
+        xs.map((x) => (x.notification_id === n.notification_id ? { ...x, status: "READ" } : x)),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <div className="bell" ref={rootRef}>
+      <button className="btn btn-ghost bell-btn" onClick={() => setOpen((o) => !o)} aria-label="Notifications">
+        🔔
+        {unread > 0 && <span className="bell-count num">{unread}</span>}
+      </button>
+      {open && (
+        <div className="bell-dropdown panel">
+          <div className="bell-header">Notifications</div>
+          {items.length === 0 ? (
+            <div className="bell-empty muted">No notifications</div>
+          ) : (
+            items.slice(0, 20).map((n) => (
+              <button
+                key={n.notification_id}
+                className={`bell-item${n.status !== "READ" ? " bell-item-unread" : ""}`}
+                onClick={() => void markRead(n)}
+              >
+                <div className="bell-item-top">
+                  <span className="bell-item-title">{n.payload.title}</span>
+                  <Badge text={n.category} />
+                </div>
+                <div className="bell-item-body">{n.payload.body}</div>
+                <div className="bell-item-ts muted num">{fmtTs(n.created_at)}</div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

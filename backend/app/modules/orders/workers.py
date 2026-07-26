@@ -1,0 +1,451 @@
+"""STP pipeline workers (docs/design/02-order-execution-stp.md).
+
+- execution_engine: consumes `orders.accepted` + `market.ticks`; MARKET fills
+  immediately at the latest price, LIMIT rests OPEN until crossed. Full fills
+  only — partial fills are a documented MVP non-goal (design A1).
+- stp_worker: consumes `trading.executions`; in ONE transaction upserts the
+  Position, adjusts cash, inserts the SettlementInstruction and writes the
+  `stp.lifecycle` outbox event. Idempotent per execution.
+- settlement_sweeper: advances EXECUTED -> AFFIRMED -> SETTLED after the
+  configured simulated delay, publishing `stp.lifecycle` per transition.
+
+All DB units-of-work run through `_shielded`: cancelling a task in the middle
+of an aiosqlite call can wedge the connection (its worker thread dies on an
+InvalidStateError), after which session.close()/engine.dispose() hang and app
+shutdown exceeds the lifespan timeout. Shielding lets the unit finish cleanly
+while the worker still exits promptly on CancelledError.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections import defaultdict
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import select
+
+from app.core.audit import write_audit
+from app.core.events import write_outbox
+from app.core.models import (
+    Execution,
+    Instrument,
+    LifecycleState,
+    Order,
+    OrderStatus,
+    OrderType,
+    Portfolio,
+    Position,
+    SettlementInstruction,
+)
+from app.core.timeutil import as_utc, utcnow
+from app.modules.marketdata.registry import get_snapshot
+
+logger = logging.getLogger(__name__)
+
+ORDER_FILLED = "ORDER_FILLED"
+STP_EXCEPTION = "STP_EXCEPTION"
+
+_CLOSED_STATUSES = (
+    OrderStatus.FILLED,
+    OrderStatus.CANCELLED,
+    OrderStatus.REJECTED,
+)
+
+
+async def _shielded(coro):
+    """Run one DB unit-of-work shielded from task cancellation."""
+    task = asyncio.ensure_future(coro)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # Let the unit finish so the connection returns to the pool cleanly;
+        # only then propagate the cancellation.
+        try:
+            await task
+        except Exception:
+            pass
+        raise
+
+
+def _marketable(order: Order, price: Decimal) -> bool:
+    if order.order_type == OrderType.MARKET:
+        return True
+    if order.limit_price is None:
+        return False
+    if order.side == "BUY":
+        return price <= order.limit_price
+    return price >= order.limit_price
+
+
+async def _fill_order(sessionmaker, order_id: str) -> str:
+    """Attempt to fill one order in a single transaction.
+
+    Returns "filled" | "working" | "closed". Idempotent: an order that is
+    already FILLED/CANCELLED/REJECTED (e.g. redelivered event, cancel/fill
+    race) is skipped and reported "closed".
+    """
+    async with sessionmaker() as session:
+        order = await session.get(Order, order_id)
+        if order is None or order.status in _CLOSED_STATUSES:
+            return "closed"
+        snapshot = get_snapshot(order.instrument_id)
+        if snapshot is None:
+            return "working"  # feed stale: leave the order working
+        if order.status == OrderStatus.OPEN or order.status == OrderStatus.ACCEPTED:
+            if not _marketable(order, snapshot.price):
+                return "working"
+            now = utcnow()
+            execution = Execution(
+                order_id=order.order_id,
+                price=snapshot.price,
+                quantity=order.quantity,
+                executed_at=now,
+            )
+            session.add(execution)
+            await session.flush()
+            order.status = OrderStatus.FILLED
+            order.updated_at = now
+            instrument = await session.get(Instrument, order.instrument_id)
+            portfolio = await session.get(Portfolio, order.portfolio_id)
+            await write_outbox(
+                session,
+                "trading.executions",
+                {
+                    "execution_id": execution.execution_id,
+                    "order_id": order.order_id,
+                    "portfolio_id": order.portfolio_id,
+                    "portfolio_type": portfolio.type,
+                    "instrument_id": order.instrument_id,
+                    "symbol": instrument.symbol,
+                    "side": order.side,
+                    "price": float(snapshot.price),
+                    "quantity": float(order.quantity),
+                    "executed_at": now.isoformat(),
+                },
+            )
+            await write_audit(
+                session,
+                actor_id=None,  # system actor: the matching engine
+                event_type=ORDER_FILLED,
+                resource_type="ORDER",
+                resource_id=order.order_id,
+                payload={
+                    "execution_id": execution.execution_id,
+                    "symbol": instrument.symbol,
+                    "side": order.side,
+                    "price": str(snapshot.price),
+                    "quantity": str(order.quantity),
+                },
+            )
+            await session.commit()
+            return "filled"
+        return "closed"
+
+
+def build_execution_engine(settings):
+    """Bind settings; returns the `execution_engine(bus, sessionmaker)` worker."""
+
+    async def execution_engine(bus, sessionmaker):
+        queue: asyncio.Queue[tuple[str, dict]] = asyncio.Queue()
+
+        async def pump(stream: str) -> None:
+            subscription = await bus.subscribe(stream)
+            async for event in subscription:
+                queue.put_nowait((stream, event))
+
+        tasks = [
+            asyncio.create_task(pump("orders.accepted"), name="exec-pump-accepted"),
+            asyncio.create_task(pump("market.ticks"), name="exec-pump-ticks"),
+        ]
+        # In-memory book of working orders per instrument. Rebuilt from the DB
+        # on startup (OPEN orders per contract; ACCEPTED too, so orders that
+        # crashed mid-flight still get worked).
+        book: dict[str, set[str]] = defaultdict(set)
+        try:
+            await _shielded(_rebuild_book(sessionmaker, book))
+            while True:
+                stream, event = await queue.get()
+                try:
+                    if stream == "orders.accepted":
+                        await _on_accepted(sessionmaker, book, event["order_id"])
+                    else:
+                        await _on_tick(sessionmaker, book, event["instrument_id"])
+                except Exception:
+                    logger.exception("execution engine: event handling failed")
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    return execution_engine
+
+
+async def _rebuild_book(sessionmaker, book: dict[str, set[str]]) -> None:
+    async with sessionmaker() as session:
+        orders = (
+            (
+                await session.execute(
+                    select(Order).where(
+                        Order.status.in_([OrderStatus.OPEN, OrderStatus.ACCEPTED])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        changed = False
+        for order in orders:
+            # LIMIT orders that were ACCEPTED before a restart rest as OPEN.
+            if (
+                order.order_type == OrderType.LIMIT
+                and order.status == OrderStatus.ACCEPTED
+            ):
+                order.status = OrderStatus.OPEN
+                order.updated_at = utcnow()
+                changed = True
+            book[order.instrument_id].add(order.order_id)
+        if changed:
+            await session.commit()
+
+
+async def _park_open(sessionmaker, order_id: str) -> tuple[str | None, bool]:
+    """Mark a still-working accepted LIMIT order OPEN; return (instrument_id,
+    working?) so the caller can track it in the in-memory book."""
+    async with sessionmaker() as session:
+        order = await session.get(Order, order_id)
+        if order is None or order.status in _CLOSED_STATUSES:
+            return None, False
+        if (
+            order.order_type == OrderType.LIMIT
+            and order.status == OrderStatus.ACCEPTED
+        ):
+            order.status = OrderStatus.OPEN
+            order.updated_at = utcnow()
+            await session.commit()
+        return order.instrument_id, True
+
+
+async def _on_accepted(sessionmaker, book: dict[str, set[str]], order_id: str) -> None:
+    result = await _shielded(_fill_order(sessionmaker, order_id))
+    if result in ("filled", "closed"):
+        return
+    # Still working: park LIMIT orders as OPEN and track in the book.
+    instrument_id, working = await _shielded(_park_open(sessionmaker, order_id))
+    if working and instrument_id is not None:
+        book[instrument_id].add(order_id)
+
+
+async def _on_tick(sessionmaker, book: dict[str, set[str]], instrument_id: str) -> None:
+    working = book.get(instrument_id)
+    if not working:
+        return
+    for order_id in list(working):
+        result = await _shielded(_fill_order(sessionmaker, order_id))
+        if result in ("filled", "closed"):
+            working.discard(order_id)
+
+
+# ---------------------------------------------------------------------------
+# STP worker
+# ---------------------------------------------------------------------------
+
+
+async def stp_worker(bus, sessionmaker):
+    subscription = await bus.subscribe("trading.executions")
+    async for event in subscription:
+        try:
+            await _shielded(_process_execution(sessionmaker, event))
+        except Exception:
+            logger.exception("stp worker: processing failed for %s", event)
+            await _record_stp_exception(sessionmaker, event)
+
+
+async def _process_execution(sessionmaker, event: dict) -> None:
+    execution_id = event["execution_id"]
+    async with sessionmaker() as session:
+        existing = (
+            await session.execute(
+                select(SettlementInstruction).where(
+                    SettlementInstruction.execution_id == execution_id
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return  # idempotent: redelivered event already processed
+
+        execution = await session.get(Execution, execution_id)
+        order = await session.get(Order, execution.order_id)
+        portfolio = await session.get(Portfolio, order.portfolio_id)
+
+        position = await session.get(
+            Position, (order.portfolio_id, order.instrument_id)
+        )
+        if position is None:
+            position = Position(
+                portfolio_id=order.portfolio_id,
+                instrument_id=order.instrument_id,
+                quantity=Decimal("0"),
+                avg_cost=Decimal("0"),
+            )
+            session.add(position)
+            await session.flush()
+        if order.side == "BUY":
+            new_qty = position.quantity + execution.quantity
+            position.avg_cost = (
+                (position.quantity * position.avg_cost)
+                + (execution.quantity * execution.price)
+            ) / new_qty
+            position.quantity = new_qty
+            portfolio.cash_balance -= execution.quantity * execution.price
+        else:
+            # Realized P&L = (exec_price - avg_cost) * qty; computed on read
+            # (see portfolios.valuation.compute_realized), no column to store.
+            position.quantity -= execution.quantity
+            portfolio.cash_balance += execution.quantity * execution.price
+        position.updated_at = utcnow()
+
+        instruction = SettlementInstruction(
+            execution_id=execution_id,
+            lifecycle_state=LifecycleState.EXECUTED,
+        )
+        session.add(instruction)
+        await session.flush()
+        await write_outbox(
+            session,
+            "stp.lifecycle",
+            {
+                "settlement_id": instruction.settlement_id,
+                "execution_id": execution_id,
+                "portfolio_id": order.portfolio_id,
+                "state": LifecycleState.EXECUTED.value,
+            },
+        )
+        await session.commit()
+
+
+async def _record_stp_exception(sessionmaker, event: dict) -> None:
+    """FR-ORD-005 E1: audit STP_EXCEPTION (HIGH) + notify the portfolio owner."""
+    try:
+        await _shielded(_write_stp_exception(sessionmaker, event))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("stp worker: failed to record STP exception")
+
+
+async def _write_stp_exception(sessionmaker, event: dict) -> None:
+    # No direct ops-user resolution exists in the foundation, so the SYSTEM
+    # notification goes to the portfolio owner; ops visibility comes via the
+    # audit/governance views built by the parallel team.
+    async with sessionmaker() as session:
+        owner_id = None
+        execution = await session.get(Execution, event.get("execution_id", ""))
+        if execution is not None:
+            order = await session.get(Order, execution.order_id)
+            if order is not None:
+                portfolio = await session.get(Portfolio, order.portfolio_id)
+                if portfolio is not None:
+                    owner_id = portfolio.owner_id
+        await write_audit(
+            session,
+            actor_id=None,
+            event_type=STP_EXCEPTION,
+            resource_type="EXECUTION",
+            resource_id=event.get("execution_id"),
+            severity="HIGH",
+            payload={"event": {k: str(v) for k, v in event.items()}},
+            flush_only=False,  # security/ops-critical: persist immediately
+        )
+        if owner_id:
+            await write_outbox(
+                session,
+                "notify",
+                {
+                    "user_id": owner_id,
+                    "category": "SYSTEM",
+                    "title": "STP exception",
+                    "body": f"Settlement failed for execution "
+                    f"{event.get('execution_id')}; flagged for operations.",
+                },
+            )
+            await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Settlement sweeper
+# ---------------------------------------------------------------------------
+
+
+def build_settlement_sweeper(settings):
+    """Bind settings; returns the `settlement_sweeper(bus, sessionmaker)` worker."""
+
+    async def settlement_sweeper(bus, sessionmaker):
+        delay = settings.SETTLEMENT_DELAY_SECONDS
+        # SettlementInstruction has no "affirmed_at" column and core models may
+        # not be changed, so affirmation time is tracked in-process; on cold
+        # start created_at is used as the fallback basis for AFFIRMED rows.
+        affirmed_at: dict[str, datetime] = {}
+        while True:
+            await asyncio.sleep(1.0)
+            try:
+                await _shielded(_sweep_once(sessionmaker, delay, affirmed_at))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("settlement sweeper: sweep failed")
+
+    return settlement_sweeper
+
+
+async def _sweep_once(sessionmaker, delay: float, affirmed_at: dict) -> None:
+    now = utcnow()
+    async with sessionmaker() as session:
+        rows = (
+            await session.execute(
+                select(SettlementInstruction, Execution, Order)
+                .join(
+                    Execution,
+                    SettlementInstruction.execution_id == Execution.execution_id,
+                )
+                .join(Order, Execution.order_id == Order.order_id)
+                .where(
+                    SettlementInstruction.lifecycle_state.in_(
+                        [LifecycleState.EXECUTED, LifecycleState.AFFIRMED]
+                    )
+                )
+            )
+        ).all()
+        changed = False
+        for instruction, _execution, order in rows:
+            if instruction.lifecycle_state == LifecycleState.EXECUTED:
+                age = (now - as_utc(instruction.created_at)).total_seconds()
+                if age >= delay:
+                    instruction.lifecycle_state = LifecycleState.AFFIRMED
+                    affirmed_at[instruction.settlement_id] = now
+                    changed = True
+            elif instruction.lifecycle_state == LifecycleState.AFFIRMED:
+                basis = affirmed_at.get(
+                    instruction.settlement_id,
+                    as_utc(instruction.created_at),
+                )
+                if (now - basis).total_seconds() >= delay:
+                    instruction.lifecycle_state = LifecycleState.SETTLED
+                    instruction.settled_at = now
+                    affirmed_at.pop(instruction.settlement_id, None)
+                    changed = True
+            else:
+                continue
+            await write_outbox(
+                session,
+                "stp.lifecycle",
+                {
+                    "settlement_id": instruction.settlement_id,
+                    "execution_id": instruction.execution_id,
+                    "portfolio_id": order.portfolio_id,
+                    "state": instruction.lifecycle_state,
+                },
+            )
+        if changed:
+            await session.commit()

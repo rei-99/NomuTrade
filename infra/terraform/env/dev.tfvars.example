@@ -1,0 +1,23 @@
+# Example variables for the dev environment.
+# Copy to env/dev.tfvars (git-ignored) and fill in real values.
+
+aws_region    = "ap-northeast-1"
+environment   = "dev"
+instance_type = "t3.medium"
+
+# Restrict to your office/VPN egress IP — do not use 0.0.0.0/0.
+allowed_cidr = "203.0.113.10/32"
+
+# Set to an EC2 key-pair name to enable SSH, or leave null.
+ssh_key_name = null
+
+# Git URL the VM clones and starts with docker compose.
+repo_url = "https://gitlab.example.com/your-group/stp.git"
+
+# false = compose db container on the VM; true = managed RDS db.t3.micro.
+enable_rds = false
+
+# db_password is sensitive — do NOT put it in this file. Either:
+#   export TF_VAR_db_password='...'
+# or pass it at apply time:
+#   terraform apply -var-file=env/dev.tfvars -var="db_password=..."
