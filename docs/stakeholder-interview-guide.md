@@ -33,20 +33,27 @@ their own words before confirming our proposals.
 1. When you picture the week-3 demo, what is the one moment that makes you say "this was worth building"?
 2. Of the five core modules (order execution, portfolio management, reporting & charting, technical analytics, paper trading), which two must be flawless, and which can be rough? *(Validates our MoSCoW sequencing in DESIGN.md §8 delivery plan.)*
 3. "Single click" — literally one click from where? Watchlist, chart, or order ticket with one confirmation? What confirmation, if any, is acceptable before an order is live? *(Drives the order-ticket UX, FR-ORD-001.)*
+Yes, confirmation, details
+
 
 **Theme: products and orders** — *resolves TBD-17, TBD-18*
 
 4. Which asset classes do your clients actually trade day to day? Is an equities-only MVP credible to you? *(TBD-17 — design currently assumes equities only.)*
+basics, plus, user interface
 5. Beyond MARKET and LIMIT, which order types do traders refuse to live without — stop, stop-limit, iceberg? *(TBD-18.)*
+yes
 6. Are there order restrictions we must enforce up front (restricted lists, per-desk limits, max notional per order)? *(Extends FR-ORD-002 pre-trade validation rules.)*
+yes
+
 
 **Theme: reports, KPIs and the GenAI roadmap**
 
 7. Which three KPIs do you personally check first each morning? What would you want on the dashboard that Excel can't give you today? *(FR-PFM-003, FR-RPT-001.)*
+
 8. Are scheduled/delivered reports (daily/weekly email) genuinely valuable, or is on-demand enough for now? *(TBD-13 — is FR-RPT-004 in MVP scope?)*
 9. Where do you see GenAI adding real value in year one — client Q&A, report writing, trade ideas? And where would you explicitly *not* want it? *(Validates the advisory-only guardrail, FR-AI-003 / C-08.)*
 10. After the program, what would "phase 2" look like in your ideal world — live market connectivity, more products, more analytics? *(Shapes the future-roadmap slide in the final presentation, deliverable 3.)*
-
+yes, link to outer system now, potential for future improvement
 ---
 
 ## 2. Tom Atkins / Patricia Bose — Clients (customer persona)
@@ -117,6 +124,7 @@ Owner of platform/security TBDs.*
 5. CyberArk: which environment do we get — PVWA URL, app authentication method, test safes, is PSM recording available? Who provisions our test accounts? *(TBD-04.)*
 6. What are the house rules for privileged access duration and break-glass? Our proposals: 8 h privileged / 90-day standard grants, 4 h break-glass with 24 h review SLA — do security sign these off, or what would they change? *(TBD-02, TBD-03.)*
 7. Is there an existing segregation-of-duties policy we should encode — which role combinations are actually forbidden at Nomura? *(TBD-15; we seeded Trader↔Ops and Trader↔SecAdmin as a guess.)*
+Risk to see, traders want see 
 8. How long must audit and trade records be retained, and is hash-chaining an acceptable tamper-evidence mechanism, or is there a standard (WORM store, immutable object storage) we should use? *(TBD-08, NFR-CMP-001/002.)*
 9. What does "CFO buy-in" need to see — cost estimate, risk controls, a security story, a demo? Can you help us get 30 minutes with the CFO? *(Opens interview #5.)*
 
