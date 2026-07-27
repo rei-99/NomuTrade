@@ -7,6 +7,30 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-27 — Bug fix: dataset symbols showed "No price data"; switch dev DB to PostgreSQL
+
+**Driver:** user report — switching to a dataset stock (AAPL, TSLA, …) showed
+"No price data" on every timeframe; request to move off SQLite.
+
+- **Root cause (found by inspecting the dev DB, not guessed):** the dev
+  `stp.db` predated the dataset (10 legacy JPY instruments + 1,400 generated
+  ticks). The loader's tick stage used a *global* "table empty?" check, so
+  the presence of those legacy rows skipped the entire tick load — the 7
+  dataset instruments were upserted but had zero price rows. **Not** a
+  dataset-vs-wall-time issue: the simulation clock already decouples replay
+  time from real time by design.
+- **Fix:** per-symbol tick loading (skip only symbols that already have
+  ticks); regression test with a non-empty `price_ticks` table. The healed
+  dev DB now serves 377 intraday candles for AAPL/1D.
+- **PostgreSQL 16 dev database:** selectable at launch —
+  `./dev.sh` / `./dev.sh sqlite` (SQLite, zero setup) vs `./dev.sh postgre`
+  (project-local cluster at `backend/.pgdata`, auto-initialized on first
+  call; `make pg-start/pg-stop`, `make dev-postgre`). SQLite remains the
+  zero-setup default and the test engine.
+- Verified on Postgres: 120,382 ticks + 9,296 news items loaded, AAPL candles
+  on all timeframes, market order FILLED, STP settlement advancing; backend
+  43/43 tests green.
+
 ## 2026-07-26 — Dev convenience: one-command stack start
 
 - `dev.sh` starts backend (:8000) and frontend (:5173) together with clean

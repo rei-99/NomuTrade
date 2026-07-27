@@ -8,6 +8,7 @@ one news day) and drives app.modules.marketdata.loader directly. The real
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select
@@ -176,3 +177,53 @@ async def test_ensure_dataset_instruments_upsert(tmp_path, session):
     assert len(created) == len(again) == 7
     count = await session.scalar(select(func.count(Instrument.instrument_id)))
     assert count == 7
+
+
+async def test_load_dataset_with_foreign_ticks_present(tmp_path, session):
+    """Regression: a non-empty price_ticks table (e.g. a dev DB from the
+    pre-dataset era) must not block dataset symbols from loading — only
+    symbols that already have ticks are skipped."""
+    from datetime import datetime, timezone
+
+    foreign = Instrument(
+        symbol="OLD1.X",
+        name="Legacy instrument",
+        asset_class="EQUITY",
+        currency="JPY",
+        lot_size=100,
+        tick_size=Decimal("0.5"),
+        tradable=True,
+    )
+    session.add(foreign)
+    await session.flush()
+    session.add(
+        PriceTick(
+            instrument_id=foreign.instrument_id,
+            ts=datetime(2026, 1, 5, tzinfo=timezone.utc),
+            open=Decimal("1"),
+            high=Decimal("1"),
+            low=Decimal("1"),
+            close=Decimal("1"),
+            volume=Decimal("1"),
+        )
+    )
+    await session.commit()
+
+    data_dir = _write_mini_dataset(tmp_path)
+    stats = await load_dataset(session, data_dir)
+
+    # Dataset symbol loaded despite the non-empty table; foreign row intact.
+    tsla = await session.scalar(select(Instrument).where(Instrument.symbol == "TSLA"))
+    tsla_ticks = await session.scalar(
+        select(func.count(PriceTick.instrument_id)).where(
+            PriceTick.instrument_id == tsla.instrument_id
+        )
+    )
+    foreign_ticks = await session.scalar(
+        select(func.count(PriceTick.instrument_id)).where(
+            PriceTick.instrument_id == foreign.instrument_id
+        )
+    )
+    assert tsla_ticks == 5
+    assert foreign_ticks == 1
+    assert stats["price_ticks"] == 5
