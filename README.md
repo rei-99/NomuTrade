@@ -71,7 +71,10 @@ npm run dev
 
 UI on <http://localhost:5173> (Vite dev server proxies API calls to :8000).
 
-Or use the shortcuts: `make setup`, then `make dev-backend` / `make dev-frontend`.
+Or use the shortcuts: `make setup`, then **`make dev`** (one command — runs
+`./dev.sh`, which starts backend and frontend together; Ctrl+C stops both).
+The separate targets `make dev-backend` / `make dev-frontend` remain for
+single-service work.
 
 ## Quickstart — Docker
 

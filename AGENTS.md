@@ -4,6 +4,17 @@ This file orients an AI coding agent that knows nothing about the project.
 Everything below was verified against the repository contents; where something
 is documented but not yet exercised, that is called out explicitly.
 
+## Git workflow (standing rule from the project owner)
+
+- **Major change** (new feature, redesign, multi-module work): cut a feature
+  branch from `main` first — e.g. `git checkout -b feature/<name> main`.
+- **Minor change** (fixes, tweaks, small additions): commit directly onto the
+  current branch.
+- When changes are done and verified, **push to the current branch**.
+- **Never merge into `main` without the owner's explicit approval** — pushing
+  is fine, merging is by approval only.
+- All commits still follow the rule: no git mutations without being asked.
+
 ## Project overview
 
 **STP — Next-Generation Trading Platform with Straight-Through Processing.**

@@ -7,6 +7,12 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-26 — Dev convenience: one-command stack start
+
+- `dev.sh` starts backend (:8000) and frontend (:5173) together with clean
+  shutdown (Ctrl+C terminates the whole process tree, incl. uvicorn's reloader
+  and vite); wired as `make dev`; README quickstart updated.
+
 ## 2026-07-26 — Trading workspace: single-screen trader UI (stakeholder interview)
 
 **Driver:** trader interview — 5 requirements, all on one screen: single-click
