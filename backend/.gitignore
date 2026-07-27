@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 stp.db
 .pytest_cache/
+.pgdata/
+.pgdata.log

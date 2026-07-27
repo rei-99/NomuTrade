@@ -2,7 +2,20 @@
 
 PY := ../backend/.venv/bin
 
-.PHONY: setup dev dev-backend dev-frontend test build-frontend clean
+PG_BIN := /opt/homebrew/opt/postgresql@16/bin
+
+.PHONY: setup dev dev-backend dev-frontend test build-frontend clean pg-init pg-start pg-stop
+
+pg-init:
+	$(PG_BIN)/initdb -D backend/.pgdata --no-locale -E UTF8
+	$(PG_BIN)/pg_ctl -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start
+	sleep 2 && $(PG_BIN)/createdb -p 5432 stp
+
+pg-start:
+	$(PG_BIN)/pg_ctl -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start
+
+pg-stop:
+	$(PG_BIN)/pg_ctl -D backend/.pgdata stop
 
 setup:
 	python3 -m venv backend/.venv

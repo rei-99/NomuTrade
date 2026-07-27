@@ -204,30 +204,42 @@ async def load_dataset(session: AsyncSession, data_dir: Path) -> dict:
     by_symbol = {i.symbol: i for i in instruments}
     stats["instruments"] = len(instruments)
 
-    tick_count = await session.scalar(select(func.count(PriceTick.instrument_id)))
-    if not tick_count:
-        loaded = 0
-        for path in sorted((data_dir / HISTORICAL_DIR).glob("*.csv")):
-            symbol = _symbol_from_filename(path, "_2026_historical.csv")
-            instrument = by_symbol.get(symbol)
-            if instrument is None:
-                logger.warning("dataset loader: no instrument for %s", path.name)
-                continue
-            rows = _read_historical(path, instrument.instrument_id)
+    # Tick stage, per symbol (not a global table-empty check): instruments
+    # that already have ticks are skipped, but a non-empty table — e.g. a dev
+    # DB from the pre-dataset JPY era — must NOT block the dataset symbols
+    # from loading (regression: "No price data for AAPL").
+    have_ticks = set(
+        (
+            await session.execute(
+                select(PriceTick.instrument_id).group_by(PriceTick.instrument_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    hist_files = {
+        _symbol_from_filename(p, "_2026_historical.csv"): p
+        for p in (data_dir / HISTORICAL_DIR).glob("*.csv")
+    }
+    live_files = {
+        _symbol_from_filename(p, "_live.csv"): p
+        for p in (data_dir / LIVE_DIR).glob("*.csv")
+    }
+    loaded = 0
+    for symbol, instrument in by_symbol.items():
+        if instrument.instrument_id in have_ticks:
+            continue
+        hist_path = hist_files.get(symbol)
+        if hist_path is not None:
+            rows = _read_historical(hist_path, instrument.instrument_id)
             await _insert_chunked(session, rows)
             loaded += len(rows)
-        for path in sorted((data_dir / LIVE_DIR).glob("*.csv")):
-            symbol = _symbol_from_filename(path, "_live.csv")
-            instrument = by_symbol.get(symbol)
-            if instrument is None:
-                logger.warning("dataset loader: no instrument for %s", path.name)
-                continue
-            rows = _read_live(path, instrument.instrument_id)
+        live_path = live_files.get(symbol)
+        if live_path is not None:
+            rows = _read_live(live_path, instrument.instrument_id)
             await _insert_chunked(session, rows)
             loaded += len(rows)
-        stats["price_ticks"] = loaded
-    else:
-        stats["price_ticks"] = 0
+    stats["price_ticks"] = loaded
 
     news_count = await session.scalar(select(func.count(NewsItem.news_id)))
     news_dir = data_dir / NEWS_DIR

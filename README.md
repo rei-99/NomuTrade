@@ -47,10 +47,27 @@ Full context diagram, event pipeline and technology choices: DESIGN.md §4.
 
 ## Quickstart — local, no Docker
 
-Backend (SQLite + in-process event bus by default; seed data and the simulation
-dataset auto-load on first start — a one-time ~2–4 s load from `data/`; if
-`data/` is absent the app falls back to a generated random-walk feed with the
-same 7 symbols):
+One-time setup: `make setup` (venv + npm). Then one command starts backend
+(:8000) and frontend (:5173) — Ctrl+C stops both:
+
+```bash
+make dev
+```
+
+**Database: PostgreSQL is the dev default** once initialized —
+`make pg-init` (one time; installs nothing, uses the Homebrew
+`postgresql@16` cluster at `backend/.pgdata`, creates the `stp` database).
+`dev.sh` then auto-starts PostgreSQL if needed and points the app at it
+(`postgresql+asyncpg://…localhost:5432/stp`). `make pg-start` / `make pg-stop`
+control it manually; `make pg-stop` before `make clean`. If no
+`backend/.pgdata` exists, the app falls back to SQLite (`stp.db`) with zero
+setup — and tests always use throwaway SQLite DBs.
+
+<details><summary>Manual setup (without make)</summary>
+
+Backend (seed data and the simulation dataset auto-load on first start — a
+one-time ~2–4 s load from `data/`; if `data/` is absent the app falls back
+to a generated random-walk feed with the same 7 symbols):
 
 ```bash
 python3 -m venv backend/.venv
@@ -71,10 +88,7 @@ npm run dev
 
 UI on <http://localhost:5173> (Vite dev server proxies API calls to :8000).
 
-Or use the shortcuts: `make setup`, then **`make dev`** (one command — runs
-`./dev.sh`, which starts backend and frontend together; Ctrl+C stops both).
-The separate targets `make dev-backend` / `make dev-frontend` remain for
-single-service work.
+</details>
 
 ## Quickstart — Docker
 

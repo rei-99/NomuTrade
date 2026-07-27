@@ -19,6 +19,20 @@ echo "  frontend  http://localhost:5173  (dev-login as trader@demo.nomura)"
 echo "Ctrl+C to stop both."
 echo
 
+# PostgreSQL dev database: if the project-local cluster exists
+# (backend/.pgdata, created by `make pg-init`), make sure it is running and
+# point the app at it. Otherwise the app keeps its SQLite default.
+if [ -d backend/.pgdata ]; then
+  PG_CTL=/opt/homebrew/opt/postgresql@16/bin/pg_ctl
+  if ! "$PG_CTL" -D backend/.pgdata status >/dev/null 2>&1; then
+    echo "starting PostgreSQL (backend/.pgdata)..."
+    "$PG_CTL" -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start >/dev/null
+  fi
+  export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://rei99@localhost:5432/stp}"
+  echo "  database  $DATABASE_URL"
+  echo
+fi
+
 (cd backend && exec ../backend/.venv/bin/uvicorn app.main:app --reload --port 8000) &
 BACK_PID=$!
 (cd frontend && exec npm run dev) &

@@ -219,9 +219,13 @@ git-ignored):
 | `SECRET_PROVIDER` | `env` | provider abstraction seam |
 | `ACCESS_TOKEN_TTL_IDLE_SECONDS` / `..._ABSOLUTE_SECONDS` | `1800` / `43200` | session TTLs |
 
-Local dev runs SQLite + in-process bus/sessions; the compose stack runs
-PostgreSQL 15 + Redis Streams. Behavior is equivalent by design, not
-identical infrastructure.
+Local dev runs on a project-local **PostgreSQL 16** cluster once
+`make pg-init` has been run (Homebrew `postgresql@16`, data in
+`backend/.pgdata` — gitignored; `dev.sh` auto-starts it and exports
+`DATABASE_URL=postgresql+asyncpg://rei99@localhost:5432/stp`). Without
+`backend/.pgdata` it falls back to SQLite; tests always use throwaway
+SQLite DBs. The compose stack runs PostgreSQL 15 + Redis Streams. Behavior
+is equivalent by design, not identical infrastructure.
 
 ## Testing instructions
 
