@@ -1,8 +1,22 @@
 #!/bin/bash
 # Start the STP platform for local development: backend (:8000) + frontend (:5173).
 # Ctrl+C stops both. First time? Run `make setup` first (venv + npm install).
+#
+# Usage: ./dev.sh [sqlite|postgre]
+#   sqlite   (default) local file DB, zero setup
+#   postgre  project-local PostgreSQL cluster (backend/.pgdata; auto-initialized
+#            on first use, auto-started afterwards)
 set -u
 cd "$(dirname "$0")"
+
+DB_MODE="${1:-sqlite}"
+case "$DB_MODE" in
+  sqlite | postgre | postgres | pg) ;;
+  *)
+    echo "usage: $0 [sqlite|postgre]" >&2
+    exit 2
+    ;;
+esac
 
 if [ ! -x backend/.venv/bin/uvicorn ]; then
   echo "backend/.venv not found — run: make setup" >&2
@@ -13,25 +27,34 @@ if [ ! -d frontend/node_modules ]; then
   exit 1
 fi
 
+PG_BIN=/opt/homebrew/opt/postgresql@16/bin
+if [ "$DB_MODE" = "sqlite" ]; then
+  export DATABASE_URL="sqlite+aiosqlite:///./stp.db"
+else
+  if [ ! -x "$PG_BIN/pg_ctl" ]; then
+    echo "postgresql@16 not found — run: brew install postgresql@16" >&2
+    exit 1
+  fi
+  if [ ! -d backend/.pgdata ]; then
+    echo "initializing PostgreSQL cluster (backend/.pgdata)..."
+    "$PG_BIN/initdb" -D backend/.pgdata --no-locale -E UTF8 >/dev/null
+    "$PG_BIN/pg_ctl" -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start >/dev/null
+    sleep 2
+    "$PG_BIN/createdb" -p 5432 stp
+  fi
+  if ! "$PG_BIN/pg_ctl" -D backend/.pgdata status >/dev/null 2>&1; then
+    echo "starting PostgreSQL (backend/.pgdata)..."
+    "$PG_BIN/pg_ctl" -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start >/dev/null
+  fi
+  export DATABASE_URL="postgresql+asyncpg://rei99@localhost:5432/stp"
+fi
+
 echo "STP dev stack starting:"
 echo "  backend   http://localhost:8000  (API docs: http://localhost:8000/docs)"
 echo "  frontend  http://localhost:5173  (dev-login as trader@demo.nomura)"
+echo "  database  $DATABASE_URL"
 echo "Ctrl+C to stop both."
 echo
-
-# PostgreSQL dev database: if the project-local cluster exists
-# (backend/.pgdata, created by `make pg-init`), make sure it is running and
-# point the app at it. Otherwise the app keeps its SQLite default.
-if [ -d backend/.pgdata ]; then
-  PG_CTL=/opt/homebrew/opt/postgresql@16/bin/pg_ctl
-  if ! "$PG_CTL" -D backend/.pgdata status >/dev/null 2>&1; then
-    echo "starting PostgreSQL (backend/.pgdata)..."
-    "$PG_CTL" -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start >/dev/null
-  fi
-  export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://rei99@localhost:5432/stp}"
-  echo "  database  $DATABASE_URL"
-  echo
-fi
 
 (cd backend && exec ../backend/.venv/bin/uvicorn app.main:app --reload --port 8000) &
 BACK_PID=$!

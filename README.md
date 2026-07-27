@@ -51,17 +51,16 @@ One-time setup: `make setup` (venv + npm). Then one command starts backend
 (:8000) and frontend (:5173) — Ctrl+C stops both:
 
 ```bash
-make dev
+make dev                # = ./dev.sh sqlite — local file DB, zero setup
+make dev-postgre        # = ./dev.sh postgre — PostgreSQL
 ```
 
-**Database: PostgreSQL is the dev default** once initialized —
-`make pg-init` (one time; installs nothing, uses the Homebrew
-`postgresql@16` cluster at `backend/.pgdata`, creates the `stp` database).
-`dev.sh` then auto-starts PostgreSQL if needed and points the app at it
-(`postgresql+asyncpg://…localhost:5432/stp`). `make pg-start` / `make pg-stop`
-control it manually; `make pg-stop` before `make clean`. If no
-`backend/.pgdata` exists, the app falls back to SQLite (`stp.db`) with zero
-setup — and tests always use throwaway SQLite DBs.
+**Database selection:** `./dev.sh` (or `./dev.sh sqlite`) uses SQLite
+(`backend/stp.db`, no setup). `./dev.sh postgre` uses the project-local
+PostgreSQL 16 cluster — auto-initialized on first call
+(`backend/.pgdata`, needs Homebrew `postgresql@16`) and auto-started
+afterwards; `make pg-start` / `make pg-stop` control it manually. Tests
+always use throwaway SQLite DBs regardless.
 
 <details><summary>Manual setup (without make)</summary>
 

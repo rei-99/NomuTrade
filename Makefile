@@ -25,6 +25,9 @@ setup:
 dev:
 	./dev.sh
 
+dev-postgre:
+	./dev.sh postgre
+
 dev-backend:
 	cd backend && $(PY)/uvicorn app.main:app --reload
 

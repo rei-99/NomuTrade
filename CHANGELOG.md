@@ -22,10 +22,11 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 - **Fix:** per-symbol tick loading (skip only symbols that already have
   ticks); regression test with a non-empty `price_ticks` table. The healed
   dev DB now serves 377 intraday candles for AAPL/1D.
-- **PostgreSQL 16 dev database:** project-local cluster (`backend/.pgdata`,
-  `make pg-init` once); `dev.sh` auto-starts it and sets
-  `DATABASE_URL=postgresql+asyncpg://…/stp`; `make pg-start/pg-stop`;
-  SQLite remains the zero-setup fallback and the test engine.
+- **PostgreSQL 16 dev database:** selectable at launch —
+  `./dev.sh` / `./dev.sh sqlite` (SQLite, zero setup) vs `./dev.sh postgre`
+  (project-local cluster at `backend/.pgdata`, auto-initialized on first
+  call; `make pg-start/pg-stop`, `make dev-postgre`). SQLite remains the
+  zero-setup default and the test engine.
 - Verified on Postgres: 120,382 ticks + 9,296 news items loaded, AAPL candles
   on all timeframes, market order FILLED, STP settlement advancing; backend
   43/43 tests green.
