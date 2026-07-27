@@ -1,5 +1,10 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { api } from "../api/client";
+import type { Instrument, ListResponse } from "../api/types";
 import { useAuth } from "../auth";
+import { fmtJpy } from "../format";
+import { usePoll } from "../hooks";
 import { NotificationBell } from "./NotificationBell";
 
 interface NavItem {
@@ -21,8 +26,132 @@ const NAV: NavItem[] = [
   { to: "/governance", label: "Governance", perms: ["GOVERNANCE_VIEW", "INTEGRATION_MONITOR"] },
 ];
 
+/** Global symbol search: type-to-filter over instruments, Enter/click selects. */
+function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toUpperCase();
+    if (q === "") return [];
+    return instruments
+      .filter(
+        (i) =>
+          i.tradable &&
+          (i.symbol.toUpperCase().includes(q) || i.name.toUpperCase().includes(q)),
+      )
+      .slice(0, 8);
+  }, [instruments, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const pick = useCallback(
+    (i: Instrument) => {
+      navigate(`/?symbol=${encodeURIComponent(i.symbol)}`);
+      setQuery("");
+      setOpen(false);
+    },
+    [navigate],
+  );
+
+  return (
+    <div className="symbol-search" ref={rootRef}>
+      <input
+        type="text"
+        value={query}
+        placeholder="Search symbol…"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && matches.length > 0) pick(matches[0]);
+          if (e.key === "Escape") {
+            setOpen(false);
+            setQuery("");
+          }
+        }}
+        aria-label="Search instruments"
+      />
+      {open && query.trim() !== "" && (
+        <div className="search-dropdown">
+          {matches.length === 0 ? (
+            <div className="search-empty">No instruments match “{query.trim()}”.</div>
+          ) : (
+            matches.map((i, idx) => (
+              <button
+                key={i.instrument_id}
+                className={`search-item${idx === 0 ? " active" : ""}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(i);
+                }}
+              >
+                <span>
+                  <span className="search-item-symbol">{i.symbol}</span>{" "}
+                  <span className="search-item-name">{i.name}</span>
+                </span>
+                <span className="search-item-price num">{fmtJpy(i.latest_price, true)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Layout() {
   const { me, logout, hasPerm } = useAuth();
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [marketLive, setMarketLive] = useState(false);
+  const prevPrices = useRef<Map<string, number>>(new Map());
+
+  // Instruments: fetch once for the search box, then poll 5 s — the market
+  // dot is green when any latest_price moved since the previous poll.
+  usePoll(
+    () => {
+      void (async () => {
+        try {
+          const res = await api<ListResponse<Instrument>>("/instruments", {
+            skipErrorToast: true,
+          });
+          const prev = prevPrices.current;
+          let moved = false;
+          const next = new Map<string, number>();
+          for (const i of res.items) {
+            if (i.latest_price === null) continue;
+            next.set(i.symbol, i.latest_price);
+            const before = prev.get(i.symbol);
+            if (before !== undefined && before !== i.latest_price) moved = true;
+          }
+          if (prev.size === 0) moved = res.items.some((i) => i.latest_price !== null);
+          prevPrices.current = next;
+          setInstruments(res.items);
+          setMarketLive(moved);
+        } catch {
+          setMarketLive(false);
+        }
+      })();
+    },
+    5_000,
+    [],
+  );
+
+  const dotTitle = useCallback(
+    () => (marketLive ? "Market data updating" : "No price updates in the last poll"),
+    [marketLive],
+  );
 
   return (
     <div className="shell">
@@ -47,7 +176,13 @@ export function Layout() {
 
       <div className="main">
         <header className="topbar">
-          <div className="topbar-left muted">Next-Generation Trading Platform — STP</div>
+          <div className="topbar-left">
+            <span className="market-status" title={dotTitle()}>
+              <span className={`market-dot${marketLive ? " live" : ""}`} />
+              {marketLive ? "SIM LIVE" : "SIM IDLE"}
+            </span>
+            <SymbolSearch instruments={instruments} />
+          </div>
           <div className="topbar-right">
             <NotificationBell />
             <div className="topbar-user">

@@ -91,9 +91,15 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
       {summaryState === "forbidden" ? (
         <div className="panel-empty muted">News summary requires the ASSISTANT_USE permission.</div>
       ) : !summary ? (
-        <div className="panel-empty muted">
-          {summaryState === "loading" ? "Summarizing…" : "No summary available."}
-        </div>
+        summaryState === "loading" ? (
+          <div className="skeleton-stack">
+            <div className="skeleton" style={{ height: 14 }} />
+            <div className="skeleton" style={{ height: 34 }} />
+            <div className="skeleton" style={{ height: 14 }} />
+          </div>
+        ) : (
+          <div className="panel-empty muted">No summary available.</div>
+        )
       ) : (
         <div className="news-summary">
           <div className="news-summary-top">
@@ -109,6 +115,21 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
               </>
             )}
           </div>
+          {mean !== null && (
+            <>
+              <div className="senti-strip">
+                <div
+                  className="senti-marker"
+                  style={{ left: `${Math.min(100, Math.max(0, ((mean + 1) / 2) * 100))}%` }}
+                />
+              </div>
+              <div className="senti-scale num">
+                <span>−1 bearish</span>
+                <span>0</span>
+                <span>+1 bullish</span>
+              </div>
+            </>
+          )}
           <p className="news-summary-text">{summary.summary}</p>
           {summary.top_topics.length > 0 && (
             <div className="news-topics">

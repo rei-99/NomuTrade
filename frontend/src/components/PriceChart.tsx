@@ -8,6 +8,7 @@ import type {
   Timeframe,
 } from "../api/types";
 import { INDICATOR_NAMES } from "../api/types";
+import { fmtNum } from "../format";
 import { EChart } from "./EChart";
 import { categoryAxis, CHART_COLORS, tooltipBase, valueAxis } from "./chartTheme";
 
@@ -53,6 +54,14 @@ function buildPriceOption(
   const showRsi = toggles.RSI && (indicators.RSI?.length ?? 0) > 0;
   const showMacd = toggles.MACD && (indicators.MACD?.length ?? 0) > 0;
 
+  const firstCandle = candles.length > 0 ? candles[0] : null;
+  const lastCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+  const dayUp =
+    lastCandle !== null && firstCandle !== null
+      ? lastCandle.close >= firstCandle.open
+      : true;
+  const lastPriceColor = dayUp ? CHART_COLORS.up : CHART_COLORS.down;
+
   // Grid layout: main / volume / [RSI] / [MACD], heights in %.
   const grids: { height: number }[] = [{ height: showRsi || showMacd ? 44 : 56 }, { height: 12 }];
   if (showRsi) grids.push({ height: 13 });
@@ -96,12 +105,36 @@ function buildPriceOption(
       xAxisIndex: 0,
       yAxisIndex: 0,
       data: candles.map((c) => [c.open, c.close, c.low, c.high]),
+      // TV-soft bodies with muted wicks.
       itemStyle: {
         color: CHART_COLORS.up,
         color0: CHART_COLORS.down,
-        borderColor: CHART_COLORS.up,
-        borderColor0: CHART_COLORS.down,
+        borderColor: "rgba(8, 153, 129, 0.65)",
+        borderColor0: "rgba(242, 54, 69, 0.65)",
       },
+      // Last-price line with an axis tag colored by day direction.
+      ...(lastCandle
+        ? {
+            markLine: {
+              silent: true,
+              symbol: "none",
+              animation: false,
+              data: [{ yAxis: lastCandle.close }],
+              lineStyle: { color: lastPriceColor, width: 1, type: "dashed" as const },
+              label: {
+                show: true,
+                position: "end" as const,
+                formatter: (p: unknown) =>
+                  fmtNum(Number((p as { value?: unknown }).value), 2),
+                backgroundColor: lastPriceColor,
+                color: "#fff",
+                padding: [2, 5],
+                borderRadius: 2,
+                fontSize: 10,
+              },
+            },
+          }
+        : {}),
     },
     {
       name: "Volume",
@@ -110,7 +143,9 @@ function buildPriceOption(
       yAxisIndex: 1,
       data: candles.map((c) => ({
         value: c.volume,
-        itemStyle: { color: c.close >= c.open ? "rgba(63,185,80,0.5)" : "rgba(248,81,73,0.5)" },
+        itemStyle: {
+          color: c.close >= c.open ? "rgba(8, 153, 129, 0.3)" : "rgba(242, 54, 69, 0.3)",
+        },
       })),
     },
   ];
@@ -128,16 +163,16 @@ function buildPriceOption(
   });
 
   if (toggles.SMA && indicators.SMA) {
-    series.push(overlay("SMA", align(indicators.SMA, (p) => p.value, (p) => p.ts), "#d29922"));
+    series.push(overlay("SMA", align(indicators.SMA, (p) => p.value, (p) => p.ts), "#f7931a"));
   }
   if (toggles.EMA && indicators.EMA) {
-    series.push(overlay("EMA", align(indicators.EMA, (p) => p.value, (p) => p.ts), "#58a6ff"));
+    series.push(overlay("EMA", align(indicators.EMA, (p) => p.value, (p) => p.ts), "#2962ff"));
   }
   if (toggles.BB && indicators.BB) {
     series.push(
-      overlay("BB upper", align(indicators.BB, (p) => p.upper, (p) => p.ts), "#8b949e"),
-      overlay("BB middle", align(indicators.BB, (p) => p.middle, (p) => p.ts), "#6e7681"),
-      overlay("BB lower", align(indicators.BB, (p) => p.lower, (p) => p.ts), "#8b949e"),
+      overlay("BB upper", align(indicators.BB, (p) => p.upper, (p) => p.ts), "#7b8496"),
+      overlay("BB middle", align(indicators.BB, (p) => p.middle, (p) => p.ts), "#5a6070"),
+      overlay("BB lower", align(indicators.BB, (p) => p.lower, (p) => p.ts), "#7b8496"),
     );
   }
   if (showRsi) {
@@ -149,7 +184,7 @@ function buildPriceOption(
       data: align(indicators.RSI, (p) => p.value, (p) => p.ts),
       showSymbol: false,
       connectNulls: true,
-      lineStyle: { width: 1.2, color: "#f778ba" },
+      lineStyle: { width: 1.2, color: "#ab7df8" },
       markLine: {
         silent: true,
         symbol: "none",
@@ -169,7 +204,7 @@ function buildPriceOption(
         data: align(indicators.MACD, (p) => p.histogram, (p) => p.ts).map((v) => ({
           value: v,
           itemStyle: {
-            color: v !== null && v >= 0 ? "rgba(63,185,80,0.6)" : "rgba(248,81,73,0.6)",
+            color: v !== null && v >= 0 ? "rgba(8, 153, 129, 0.6)" : "rgba(242, 54, 69, 0.6)",
           },
         })),
       },
@@ -181,7 +216,7 @@ function buildPriceOption(
         data: align(indicators.MACD, (p) => p.macd, (p) => p.ts),
         showSymbol: false,
         connectNulls: true,
-        lineStyle: { width: 1.2, color: "#58a6ff" },
+        lineStyle: { width: 1.2, color: "#2962ff" },
       },
       {
         name: "Signal",
@@ -191,7 +226,7 @@ function buildPriceOption(
         data: align(indicators.MACD, (p) => p.signal, (p) => p.ts),
         showSymbol: false,
         connectNulls: true,
-        lineStyle: { width: 1.2, color: "#d29922" },
+        lineStyle: { width: 1.2, color: "#f7931a" },
       },
     );
   }
@@ -202,7 +237,7 @@ function buildPriceOption(
     tooltip: { ...tooltipBase, trigger: "axis", axisPointer: { type: "cross" } },
     axisPointer: {
       link: [{ xAxisIndex: "all" }],
-      label: { backgroundColor: CHART_COLORS.axis },
+      label: { backgroundColor: CHART_COLORS.accent, color: "#fff", fontSize: 10 },
     },
     legend: {
       top: 0,
@@ -289,6 +324,38 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
     [candles, indicators, toggles, timeframe],
   );
 
+  // OHLC legend: follows the hovered candle, falls back to the last one.
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const handleAxisPointer = useCallback((params: unknown) => {
+    const p = params as { dataIndex?: unknown; dataIndexInside?: unknown };
+    const idx =
+      typeof p.dataIndex === "number"
+        ? p.dataIndex
+        : typeof p.dataIndexInside === "number"
+          ? p.dataIndexInside
+          : null;
+    setHoverIdx(idx);
+  }, []);
+
+  const handleGlobalOut = useCallback(() => setHoverIdx(null), []);
+
+  const chartEvents = useMemo(
+    () => ({ updateAxisPointer: handleAxisPointer, globalout: handleGlobalOut }),
+    [handleAxisPointer, handleGlobalOut],
+  );
+
+  const legendCandle =
+    hoverIdx !== null && hoverIdx >= 0 && hoverIdx < candles.length
+      ? candles[hoverIdx]
+      : candles.length > 0
+        ? candles[candles.length - 1]
+        : null;
+  const legendChg =
+    legendCandle && legendCandle.open !== 0
+      ? ((legendCandle.close - legendCandle.open) / legendCandle.open) * 100
+      : null;
+
   return (
     <div className="price-chart">
       {showIndicators && (
@@ -306,12 +373,40 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
           {loading && <span className="muted price-chart-loading">Loading…</span>}
         </div>
       )}
-      {candles.length === 0 && !loading ? (
-        <div className="panel-empty muted">
-          No price data for {symbol ?? "—"} / {timeframe}.
-        </div>
+      {candles.length === 0 ? (
+        loading ? (
+          <div className="skeleton" style={{ height }} />
+        ) : (
+          <div className="panel-empty muted">
+            No price data for {symbol ?? "—"} / {timeframe}.
+          </div>
+        )
       ) : (
-        <EChart option={option} height={height} />
+        <>
+          {legendCandle && (
+            <div className="chart-legend num">
+              <span>
+                O <b>{fmtNum(legendCandle.open, 2)}</b>
+              </span>
+              <span>
+                H <b>{fmtNum(legendCandle.high, 2)}</b>
+              </span>
+              <span>
+                L <b>{fmtNum(legendCandle.low, 2)}</b>
+              </span>
+              <span>
+                C <b>{fmtNum(legendCandle.close, 2)}</b>
+              </span>
+              {legendChg !== null && (
+                <span className={legendChg >= 0 ? "pos" : "neg"}>
+                  {legendChg >= 0 ? "+" : ""}
+                  {fmtNum(legendChg, 2)}%
+                </span>
+              )}
+            </div>
+          )}
+          <EChart option={option} height={height} onEvents={chartEvents} />
+        </>
       )}
     </div>
   );

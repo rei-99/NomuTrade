@@ -6,12 +6,14 @@ import { fmtJpy, fmtNum, fmtPct, fmtSignedJpy, pnlClass } from "../format";
 
 interface PositionsTableProps {
   portfolioId: string;
-  positions: PositionsResponse | null;
+  positions: PositionsResponse;
 }
 
 /**
- * Live positions table. The MARK cell flashes green/red for 300 ms when the
- * latest price changes between polls. Row click navigates to the portfolio.
+ * Live positions blotter. MARK cell flashes green/red for 300 ms on price
+ * changes between polls; uP&L renders as colored chips; a subtle allocation
+ * bar sits under each market value; totals pinned in a footer row. Row click
+ * navigates to the portfolio.
  */
 export function PositionsTable({ portfolioId, positions }: PositionsTableProps) {
   const navigate = useNavigate();
@@ -25,7 +27,7 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
   }, [portfolioId]);
 
   useEffect(() => {
-    const items = positions?.items ?? [];
+    const items = positions.items;
     const next = new Map<string, "up" | "down">();
     for (const p of items) {
       const prev = prevMarks.current.get(p.instrument_symbol);
@@ -40,11 +42,17 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
     return () => window.clearTimeout(t);
   }, [positions]);
 
+  const totalMv = positions.totals.market_value;
+  const totalCost = positions.items.reduce((a, p) => a + p.quantity * p.avg_cost, 0);
+  const totalUpnlPct =
+    totalCost > 0 ? (positions.totals.unrealized_pnl / totalCost) * 100 : null;
+
   return (
     <DataTable
-      rows={positions?.items ?? []}
+      rows={positions.items}
       keyFn={(p) => p.instrument_symbol}
       empty="No open positions"
+      onRowClick={() => navigate(`/portfolios/${portfolioId}`)}
       columns={[
         { header: "Symbol", render: (p) => p.instrument_symbol },
         { header: "Name", render: (p) => p.name },
@@ -63,12 +71,31 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
             );
           },
         },
-        { header: "Mkt value", className: "num", render: (p) => fmtJpy(p.market_value) },
+        {
+          header: "Mkt value",
+          className: "num",
+          render: (p) => {
+            const share = totalMv > 0 ? (p.market_value / totalMv) * 100 : 0;
+            return (
+              <span className="mv-cell">
+                <span>{fmtJpy(p.market_value)}</span>
+                <span className="alloc-bar" title={`${fmtPct(share)} of book`}>
+                  <span
+                    className="alloc-bar-fill"
+                    style={{ width: `${Math.min(100, Math.max(0, share))}%`, display: "block" }}
+                  />
+                </span>
+              </span>
+            );
+          },
+        },
         {
           header: "uP&L",
           className: "num",
           render: (p) => (
-            <span className={pnlClass(p.unrealized_pnl)}>{fmtSignedJpy(p.unrealized_pnl)}</span>
+            <span className={`pnl-chip num ${pnlClass(p.unrealized_pnl)}`}>
+              {fmtSignedJpy(p.unrealized_pnl)}
+            </span>
           ),
         },
         {
@@ -77,11 +104,32 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
           render: (p) => {
             const cost = p.quantity * p.avg_cost;
             const pct = cost > 0 ? (p.unrealized_pnl / cost) * 100 : null;
-            return <span className={pnlClass(pct)}>{fmtPct(pct)}</span>;
+            return (
+              <span className={`pnl-chip num ${pnlClass(pct)}`}>
+                {pct === null ? "—" : `${pct >= 0 ? "+" : ""}${fmtNum(pct, 1)}%`}
+              </span>
+            );
           },
         },
       ]}
-      onRowClick={() => navigate(`/portfolios/${portfolioId}`)}
+      footer={[
+        <span key="t" className="muted">
+          Totals
+        </span>,
+        "",
+        "",
+        "",
+        "",
+        <span key="mv" className="num">
+          {fmtJpy(totalMv)}
+        </span>,
+        <span key="up" className={`pnl-chip num ${pnlClass(positions.totals.unrealized_pnl)}`}>
+          {fmtSignedJpy(positions.totals.unrealized_pnl)}
+        </span>,
+        <span key="upp" className={`pnl-chip num ${pnlClass(totalUpnlPct)}`}>
+          {totalUpnlPct === null ? "—" : `${totalUpnlPct >= 0 ? "+" : ""}${fmtNum(totalUpnlPct, 1)}%`}
+        </span>,
+      ]}
     />
   );
 }

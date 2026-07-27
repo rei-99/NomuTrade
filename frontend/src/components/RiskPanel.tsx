@@ -1,27 +1,31 @@
+import type { CSSProperties } from "react";
 import type { Valuation } from "../api/types";
 import { fmtJpy, fmtPct } from "../format";
 
-type MeterTone = "green" | "amber" | "red";
+type Tone = "green" | "amber" | "red";
 
-function concentrationTone(pct: number): MeterTone {
+function concentrationTone(pct: number): Tone {
   if (pct > 40) return "red";
   if (pct > 25) return "amber";
   return "green";
 }
 
-function volatilityTone(pct: number): MeterTone {
+function volatilityTone(pct: number): Tone {
   if (pct > 60) return "red";
   if (pct > 40) return "amber";
   return "green";
 }
 
-function Meter({ pct, tone }: { pct: number; tone: MeterTone }) {
+/** Pure-CSS conic-gradient ring gauge with the value centered. */
+function Donut({ pct, tone, label, display }: { pct: number | null; tone: Tone | "na"; label: string; display: string }) {
+  const clamped = pct === null ? 0 : Math.min(100, Math.max(0, pct));
+  const style = { "--p": String(clamped) } as CSSProperties;
   return (
-    <div className="meter">
-      <div
-        className={`meter-fill meter-${tone}`}
-        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-      />
+    <div className="donut-wrap">
+      <div className={`donut donut-${tone}`} style={style}>
+        <span className="donut-value num">{display}</span>
+      </div>
+      <div className="donut-label">{label}</div>
     </div>
   );
 }
@@ -30,8 +34,8 @@ interface RiskPanelProps {
   valuation: Valuation | null;
 }
 
-/** Risk exposure: concentration / volatility gauges, top-holding weight bars,
- * invested-vs-cash split. All from the valuation endpoint (5 s parent poll). */
+/** Risk exposure: donut gauges (concentration, volatility) with threshold
+ * coloring, top-holdings weight bars, invested-vs-cash slim split bar. */
 export function RiskPanel({ valuation }: RiskPanelProps) {
   if (!valuation) {
     return (
@@ -39,7 +43,7 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
         <div className="panel-header">
           <h3>Risk exposure</h3>
         </div>
-        <div className="panel-empty muted">No valuation data.</div>
+        <div className="skeleton" style={{ height: 96 }} />
       </section>
     );
   }
@@ -57,24 +61,19 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
         <h3>Risk exposure</h3>
       </div>
 
-      <div className="risk-block">
-        <div className="risk-row">
-          <span className="muted">Concentration</span>
-          <span className="num">{fmtPct(concentration)}</span>
-        </div>
-        <Meter pct={concentration} tone={concentrationTone(concentration)} />
-      </div>
-
-      <div className="risk-block">
-        <div className="risk-row">
-          <span className="muted">Volatility (ann.)</span>
-          <span className="num">{volatility === null ? "N/A" : fmtPct(volatility)}</span>
-        </div>
-        {volatility === null ? (
-          <div className="meter meter-empty" />
-        ) : (
-          <Meter pct={volatility} tone={volatilityTone(volatility)} />
-        )}
+      <div className="donut-row">
+        <Donut
+          pct={concentration}
+          tone={concentrationTone(concentration)}
+          label="Concentration"
+          display={fmtPct(concentration, 0)}
+        />
+        <Donut
+          pct={volatility}
+          tone={volatility === null ? "na" : volatilityTone(volatility)}
+          label="Volatility ann."
+          display={volatility === null ? "N/A" : fmtPct(volatility, 0)}
+        />
       </div>
 
       <div className="risk-block">

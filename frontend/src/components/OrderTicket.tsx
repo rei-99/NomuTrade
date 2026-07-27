@@ -51,7 +51,10 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         const res = await api<ListResponse<Instrument>>("/instruments");
         if (!cancelled) {
           setInstruments(res.items);
-          if (!symbol && res.items.length > 0) setSymbol(res.items[0].symbol);
+          if (!symbol) {
+            const firstTradable = res.items.find((i) => i.tradable);
+            if (firstTradable) setSymbol(firstTradable.symbol);
+          }
         }
       } catch {
         // toast already raised by client
@@ -158,11 +161,13 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         <label className="form-field">
           <span>Instrument</span>
           <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
-            {instruments.map((i) => (
-              <option key={i.instrument_id} value={i.symbol}>
-                {i.symbol} — {i.name}
-              </option>
-            ))}
+            {instruments
+              .filter((i) => i.tradable)
+              .map((i) => (
+                <option key={i.instrument_id} value={i.symbol}>
+                  {i.symbol} — {i.name}
+                </option>
+              ))}
           </select>
         </label>
 
