@@ -22,18 +22,26 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import NotFound, ValidationError
 from app.core.events import write_outbox
-from app.core.models import AlertRule, Instrument, PriceTick
+from app.core.models import (
+    AlertRule,
+    Instrument,
+    NewsItem,
+    NewsSentiment,
+    PriceTick,
+)
 from app.core.security import SessionData, get_current_user
 from app.core.timeutil import as_utc, utcnow
 
 from app.modules.analytics import indicators as ind
+from app.modules.marketdata.registry import get_sim_now
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +58,6 @@ TIMEFRAME_DAYS: dict[str, int | None] = {
     "MAX": None,
 }
 KNOWN_INDICATORS = frozenset({"SMA", "EMA", "RSI", "MACD", "BB"})
-MAX_POINTS = 1000  # keep responses bounded; ticks beyond this are truncated
 
 CONDITIONS = ("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW")
 
@@ -84,20 +91,45 @@ async def get_indicators(
     if instrument is None:
         raise NotFound(f"unknown instrument symbol: {symbol}")
 
+    # Sim-clock reference (D-10): the feed replays dataset time, so ranges are
+    # relative to the latest tick, never utcnow(). While a replay runs, data
+    # beyond the sim clock is withheld (no future knowledge). Wide timeframes
+    # use daily aggregated closes (D-13); 1D uses the intraday minute bars.
+    sim_now = get_sim_now()
+    tick_filter = [PriceTick.instrument_id == instrument.instrument_id]
+    if sim_now is not None:
+        tick_filter.append(PriceTick.ts <= sim_now)
+    latest_ts = await db.scalar(
+        select(func.max(PriceTick.ts)).where(*tick_filter)
+    )
+    if latest_ts is None:
+        return {"symbol": symbol, "timeframe": tf, "indicators": {k: [] for k in requested}}
+
+    ref_day = as_utc(latest_ts).replace(hour=0, minute=0, second=0, microsecond=0)
     stmt = (
         select(PriceTick.ts, PriceTick.close)
-        .where(PriceTick.instrument_id == instrument.instrument_id)
-        .order_by(PriceTick.ts.desc())
-        .limit(MAX_POINTS)
+        .where(*tick_filter)
+        .order_by(PriceTick.ts)
     )
-    days = TIMEFRAME_DAYS[tf]
-    if days is not None:
-        stmt = stmt.where(PriceTick.ts >= utcnow() - timedelta(days=days))
+    if tf == "1D":
+        stmt = stmt.where(PriceTick.ts >= ref_day)
+    else:
+        days = TIMEFRAME_DAYS[tf]
+        if days is not None:
+            stmt = stmt.where(PriceTick.ts >= ref_day - timedelta(days=days))
     rows = (await db.execute(stmt)).all()
-    rows.reverse()  # chronological order
 
-    timestamps = [as_utc(ts).isoformat() for ts, _ in rows]
-    closes = [float(close) for _, close in rows]
+    if tf == "1D":
+        points = [(as_utc(ts).isoformat(), float(close)) for ts, close in rows]
+    else:
+        daily: dict[str, tuple[str, float]] = {}
+        for ts, close in rows:
+            key = as_utc(ts).date().isoformat()
+            daily[key] = (f"{key}T00:00:00+00:00", float(close))  # last close wins
+        points = list(daily.values())
+
+    timestamps = [ts for ts, _ in points]
+    closes = [close for _, close in points]
 
     result: dict[str, list] = {}
     if "SMA" in requested:
@@ -133,6 +165,165 @@ async def get_indicators(
         ]
     # Insufficient data yields an empty series for that indicator, not an error.
     return {"symbol": symbol, "timeframe": tf, "indicators": result}
+
+
+# ---------------------------------------------------------------------------
+# News & sentiment endpoints (dataset news pack, D-14/D-15)
+# ---------------------------------------------------------------------------
+
+
+def _news_item_json(item: NewsItem) -> dict:
+    return {
+        "news_id": item.news_id,
+        "ts": as_utc(item.ts).isoformat(),
+        "title": item.title,
+        "topics": list(item.topics or []),
+        "sentiments": [
+            {
+                "ticker": s.ticker,
+                "relevance_score": float(s.relevance) if s.relevance is not None else None,
+                "sentiment_score": float(s.score) if s.score is not None else None,
+                "label": s.label,
+            }
+            for s in item.sentiments
+        ],
+    }
+
+
+def _news_clock_filter() -> list:
+    """Sim-clock cap for news (D-14): while a replay runs, headlines beyond
+    the simulation clock are withheld — the platform must not know the
+    dataset's future. Empty filter when no replay is running."""
+    sim_now = get_sim_now()
+    return [NewsItem.ts <= sim_now] if sim_now is not None else []
+
+
+@router.get("/instruments/{symbol}/news")
+async def instrument_news(
+    symbol: str,
+    limit: int = Query(50, ge=1, le=200),
+    session: SessionData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest news headlines mentioning the instrument, newest first."""
+    instrument = (
+        await db.execute(select(Instrument).where(Instrument.symbol == symbol))
+    ).scalar_one_or_none()
+    if instrument is None:
+        raise NotFound(f"unknown instrument symbol: {symbol}")
+    items = (
+        (
+            await db.execute(
+                select(NewsItem)
+                .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+                .where(NewsSentiment.ticker == instrument.symbol)
+                .where(*_news_clock_filter())
+                .options(selectinload(NewsItem.sentiments))
+                .order_by(NewsItem.ts.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    return {"items": [_news_item_json(i) for i in items], "next_cursor": None}
+
+
+@router.get("/news/latest")
+async def latest_news(
+    limit: int = Query(20, ge=1, le=100),
+    session: SessionData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest headlines mentioning any platform instrument (dashboard widget)."""
+    items = (
+        (
+            await db.execute(
+                select(NewsItem)
+                .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+                .where(
+                    NewsSentiment.ticker.in_(
+                        select(Instrument.symbol).where(Instrument.tradable.is_(True))
+                    )
+                )
+                .where(*_news_clock_filter())
+                .options(selectinload(NewsItem.sentiments))
+                .order_by(NewsItem.ts.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    return {"items": [_news_item_json(i) for i in items], "next_cursor": None}
+
+
+@router.get("/instruments/{symbol}/sentiment")
+async def instrument_sentiment(
+    symbol: str,
+    timeframe: str = Query("1M"),
+    session: SessionData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily sentiment series for charting: mean score, volume, label mix."""
+    tf = timeframe.upper()
+    if tf not in TIMEFRAME_DAYS:
+        raise ValidationError(
+            f"unknown timeframe {timeframe!r}; expected one of {sorted(TIMEFRAME_DAYS)}"
+        )
+    instrument = (
+        await db.execute(select(Instrument).where(Instrument.symbol == symbol))
+    ).scalar_one_or_none()
+    if instrument is None:
+        raise NotFound(f"unknown instrument symbol: {symbol}")
+
+    # Reference = latest news timestamp for the ticker (news is reference data
+    # with its own clock, like prices — never utcnow()).
+    latest_ts = await db.scalar(
+        select(func.max(NewsItem.ts))
+        .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+        .where(NewsSentiment.ticker == instrument.symbol)
+        .where(*_news_clock_filter())
+    )
+    if latest_ts is None:
+        return {"symbol": symbol, "timeframe": tf, "series": []}
+    ref_day = as_utc(latest_ts).replace(hour=0, minute=0, second=0, microsecond=0)
+    days = TIMEFRAME_DAYS[tf]
+    cutoff = ref_day - timedelta(days=days) if days is not None else None
+
+    stmt = (
+        select(NewsItem.ts, NewsSentiment.score, NewsSentiment.label)
+        .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+        .where(NewsSentiment.ticker == instrument.symbol)
+        .where(*_news_clock_filter())
+        .order_by(NewsItem.ts)
+    )
+    if cutoff is not None:
+        stmt = stmt.where(NewsItem.ts >= cutoff)
+    rows = (await db.execute(stmt)).all()
+
+    by_day: dict[str, dict] = {}
+    for ts, score, label in rows:
+        key = as_utc(ts).date().isoformat()
+        day = by_day.setdefault(key, {"scores": [], "labels": {}})
+        if score is not None:
+            day["scores"].append(float(score))
+        if label:
+            day["labels"][label] = day["labels"].get(label, 0) + 1
+    series = [
+        {
+            "date": key,
+            "mean_score": (
+                round(sum(d["scores"]) / len(d["scores"]), 4) if d["scores"] else None
+            ),
+            "article_count": sum(d["labels"].values()),
+            "label_counts": d["labels"],
+        }
+        for key, d in by_day.items()
+    ]
+    return {"symbol": symbol, "timeframe": tf, "series": series}
 
 
 # ---------------------------------------------------------------------------

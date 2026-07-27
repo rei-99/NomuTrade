@@ -19,7 +19,13 @@ class Base(DeclarativeBase):
 
 
 def get_engine(settings: Settings) -> AsyncEngine:
-    return create_async_engine(settings.DATABASE_URL)
+    connect_args: dict = {}
+    if settings.DATABASE_URL.startswith("sqlite"):
+        # SQLite allows a single writer; give concurrent workers up to 15 s to
+        # wait for the write lock instead of failing with "database is locked"
+        # (matters during the one-time dataset bulk load).
+        connect_args["timeout"] = 15
+    return create_async_engine(settings.DATABASE_URL, connect_args=connect_args)
 
 
 def get_sessionmaker(

@@ -70,7 +70,7 @@ sequenceDiagram
     API->>DB: INSERT Order(ACCEPTED) + outbox event
     API-->>UI: 201 {orderId, status: ACCEPTED}
     DB-->>EX: orders.accepted event
-    MD-->>EX: tick 7203.T @ 2449.5
+    MD-->>EX: tick TSLA @ 210.06
     EX->>DB: INSERT Execution + Order(FILLED) + outbox
     DB-->>STP: trading.executions event
     STP->>DB: TX: upsert Position, adjust cash,<br/>INSERT SettlementInstruction(EXECUTED)

@@ -36,17 +36,21 @@ Full context diagram, event pipeline and technology choices: DESIGN.md §4.
 ├── frontend/           React + TypeScript + Vite SPA (dev :5173)
 │   ├── Dockerfile      multi-stage: node build → nginx serves dist/
 │   └── nginx.conf      SPA fallback + /api and /ws proxy to the api service
+├── data/               simulation dataset (prices, news) — auto-loaded on boot
 ├── docs/design/        module-level design documents (index: README.md there)
 ├── infra/terraform/    AWS single-VM reference deployment (D-06) + Azure parity notes
 ├── docker-compose.yml  db (postgres:15) + redis (7) + api + web
 ├── .gitlab-ci.yml      lint → test → scan → build → deploy_dev → deploy_demo
 ├── Makefile            setup / dev / test / build / clean shortcuts
-└── DESIGN.md           architecture overview, decisions D-01…D-06, traceability
+└── DESIGN.md           architecture overview, decisions D-01…D-16, traceability
 ```
 
 ## Quickstart — local, no Docker
 
-Backend (SQLite + in-process event bus by default; seed data auto-loads on first start):
+Backend (SQLite + in-process event bus by default; seed data and the simulation
+dataset auto-load on first start — a one-time ~2–4 s load from `data/`; if
+`data/` is absent the app falls back to a generated random-walk feed with the
+same 7 symbols):
 
 ```bash
 python3 -m venv backend/.venv
@@ -100,24 +104,30 @@ Seeded automatically on first start (idempotent; re-seeding is a no-op). In
 | secadmin@demo.nomura | Security Administrator |
 | auditor@demo.nomura | Auditor |
 
-Seed data also includes 10 JPY equities (Toyota, Sony, …) and two funded
-portfolios (Client Portfolio A, Desk Book 1).
+Seed data also includes the 7 dataset US equities (AAPL, GOOG, IBM, MSFT,
+TSLA, UL, WMT — USD) and two funded portfolios (Client Portfolio A,
+$1,000,000; Desk Book 1, $500,000).
 
 ## Demo script (~10 minutes)
 
-1. **Trade and STP (trader)** — log in as `trader@demo.nomura`; from the
-   watchlist pick an instrument (e.g. 7203.T Toyota) and place a market order.
-   The execution engine matches it against the tick stream; watch the fill
-   arrive, then the position and cash update, then the STP settlement
-   transition to settled — no manual step (FR-ORD-005).
-2. **Access request (approver + secadmin)** — in a second browser, log in as
+1. **Trade and STP (trader)** — log in as `trader@demo.nomura`; you land on
+   the **Trading workspace**: pick TSLA on the ticker tape, choose size 50 in
+   the order panel and hit **BUY** once. Watch the fill toast, the positions
+   table mark live (green/red flashes), and the STP settlement transition to
+   settled — no manual step (FR-ORD-005).
+2. **News, sentiment & risk (trader)** — same screen: the AI news summary
+   panel (mock GenAI, `mock: true`) summarizes TSLA coverage with a sentiment
+   badge and headline citations, and the risk panel shows concentration /
+   volatility / top-holdings react to the buy (dataset news, D-15; KPIs from
+   FR-PFM-003).
+3. **Access request (approver + secadmin)** — in a second browser, log in as
    `approver@demo.nomura` and approve the pending access request; then as
    `secadmin@demo.nomura` show the grant issued with its time bound
    (request → approval → grant lifecycle).
-3. **Break-glass (sysadmin)** — log in as `sysadmin@demo.nomura`, activate
+4. **Break-glass (sysadmin)** — log in as `sysadmin@demo.nomura`, activate
    break-glass with a justification, perform one privileged action, and point
    out the high-severity audit record and the 4 h expiry.
-4. **Audit (auditor)** — log in as `auditor@demo.nomura`, open audit search,
+5. **Audit (auditor)** — log in as `auditor@demo.nomura`, open audit search,
    filter by the trader and by event type `ORDER` / `BREAK_GLASS`, and show the
    hash-chained, append-only records.
 
@@ -134,11 +144,23 @@ cd backend && ../backend/.venv/bin/python -m pytest
 Env-driven (pydantic-settings, see `backend/app/config.py`): `DATABASE_URL`
 (default SQLite `./stp.db`), `REDIS_URL`, `EVENT_BUS` (`memory`|`redis`),
 `SESSION_STORE` (`memory`|`redis`), `SECRET_PROVIDER`, `DEV_AUTH`,
-`RUN_WORKERS`, `CORS_ORIGINS`. A `.env` file in the working directory is read
-automatically and is git-ignored.
+`RUN_WORKERS`, `CORS_ORIGINS`, `DATA_DIR` (default `data` — the simulation
+dataset, resolved against the cwd, its parent and the repo root; missing dir
+→ generated random-walk fallback feed), `REPLAY_BARS_PER_SECOND` (default
+5.0 ≈ 78 s per market day) and `REPLAY_MODE` (`loop`|`hold` — loop re-bases
+the simulation clock and restarts from the first bar). A `.env` file in the
+working directory is read automatically and is git-ignored.
 
 ## Known limitations / deviations
 
+- **Market data window** — the dataset covers minute bars 2026-06-30 →
+  2026-08-29 with daily history back to 2026-01-02; the replay loops by
+  default (`REPLAY_MODE=loop`), so the platform's simulation clock is dataset
+  time, not wall-clock time. News is static reference data for Jul–Aug 2026,
+  capped at the simulation clock. Without `data/`, the app uses a generated
+  random-walk feed with the same 7 symbols.
+- **No WebSocket in this build** — the UI polls; `/ws` exists only in
+  `frontend/nginx.conf` and the design docs.
 - **Local vs compose wiring** — locally the app uses SQLite and the in-process
   event bus/session store; the compose stack uses PostgreSQL + Redis Streams.
   Behavior is equivalent by design, not identical infrastructure.

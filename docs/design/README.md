@@ -1,6 +1,6 @@
 # Design Document Set — Index
 
-Module-level design documents for the Next-Generation Trading Platform with STP, split out of [DESIGN.md](../../DESIGN.md) (DSN-STP-2026-001 v1.0). DESIGN.md remains the architecture overview (system context, module map, event pipeline, technology selection, decisions D-01…D-06) and carries traceability, open items and the delivery plan; the documents below hold the module-level detail (former DESIGN.md §§5–12). No decisions, IDs or requirement text were changed in the split; `[P]` still marks proposals resolving SRS `[TBD]` points.
+Module-level design documents for the Next-Generation Trading Platform with STP, split out of [DESIGN.md](../../DESIGN.md) (DSN-STP-2026-001 v1.0). DESIGN.md remains the architecture overview (system context, module map, event pipeline, technology selection, decisions D-01…D-06 and D-10…D-16) and carries traceability, open items and the delivery plan; the documents below hold the module-level detail (former DESIGN.md §§5–12). No decisions, IDs or requirement text were changed in the split; `[P]` still marks proposals resolving SRS `[TBD]` points.
 
 Each document follows the same template: Purpose · SRS requirements covered · Components · Flows · Data entities used · API endpoints used · Error / edge cases · Acceptance criteria mapping.
 
@@ -8,13 +8,13 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 
 | Doc | Source (former DESIGN.md) | Summary |
 |---|---|---|
-| [01 — Market-Data Service](01-market-data.md) | §5.1 | `data.zip` load, tick replay to `market.ticks`, latest-price cache, staleness guard |
+| [01 — Market-Data Service](01-market-data.md) | §5.1 | Simulation dataset load, tick replay with simulation clock (D-10/D-11), latest-price registry, staleness guard |
 | [02 — Order Execution & STP](02-order-execution-stp.md) | §5.2, §7.1 | Order ticket, pre-trade validation, matching engine, STP settlement; order state machine |
 | [03 — Portfolio Management & Valuation](03-portfolio-management.md) | §5.3 (+§9 WebSocket) | Valuation projector, KPIs, read APIs, ≤5 s WebSocket push |
 | [04 — Reporting & Charting](04-reporting-charting.md) | §5.4 (reporting half) | Dashboard aggregation, OHLC series API, PDF/CSV report generator |
-| [05 — Technical Analytics](05-technical-analytics.md) | §5.4 (analytics half) | SMA/EMA/RSI/MACD/Bollinger as pure cacheable functions, ECharts overlays |
+| [05 — Technical Analytics](05-technical-analytics.md) | §5.4 (analytics half) | Indicators (SMA/EMA/RSI/MACD/Bollinger), ECharts overlays, news/sentiment endpoints (D-15) |
 | [06 — Paper Trading](06-paper-trading.md) | §5.2 (FR-PTR parts) | Paper = same pipeline; `PAPER` portfolio type, isolation and marking (AC-008) |
-| [07 — GenAI Assistant](07-genai-assistant.md) | §5.8 | Advisory-only assistant; read-only tool whitelist; suggestions via standard ticket (stretch) |
+| [07 — GenAI Assistant](07-genai-assistant.md) | §5.8 | Advisory-only assistant; read-only tool whitelist incl. news/sentiment; suggestions via standard ticket (stretch) |
 
 ## Access governance & privileged access
 
@@ -38,7 +38,7 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 
 | Doc | Source (former DESIGN.md) | Summary |
 |---|---|---|
-| [16 — Data Design](16-data-design.md) | §8 | ER model (from SRS 6.1/6.2) and physical notes: partitioning, immutability, outbox, Redis keys |
+| [16 — Data Design](16-data-design.md) | §8 | ER model (from SRS 6.1/6.2 + news tables, D-14) and physical notes: partitioning, immutability, outbox, Redis keys |
 | [17 — Security Design](17-security-design.md) | §10, §6 | NFR-SEC-001…010 measures, authN/Z middleware, audit writer, secret provider, error model |
 | [18 — DevOps & Deployment](18-devops-deployment.md) | §11 | D-06 single-VM Docker deployment, Terraform, GitLab CI/CD pipeline |
 | [19 — Testing Strategy](19-testing-strategy.md) | §12 | Test levels mapped to ACs/NFRs; 23 acceptance criteria as tests or scripted demos |

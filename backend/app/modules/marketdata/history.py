@@ -1,9 +1,9 @@
 """History bootstrap and live-tick price math for the simulated feed.
 
-There is no `data.zip` in this environment (TBD-06 open item), so the loader
-generates a deterministic 120-day daily OHLC random walk per tradable
-instrument instead. Prices respect each instrument's tick size; start prices
-are between 1000 and 9000 JPY.
+Used only when the simulation dataset (data/, INT-04) is absent — the loader
+falls back to a deterministic 120-day daily OHLC random walk per tradable
+instrument. Prices respect each instrument's tick size; start prices are
+between 100 and 500 (USD-scale, matching the dataset universe).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def generate_daily_history(instruments: list[Instrument]) -> list[PriceTick]:
     for instrument in instruments:
         rng = random.Random(f"stp-history-{instrument.symbol}")
         price = round_to_tick(
-            Decimal(str(rng.uniform(1000, 9000))), instrument.tick_size
+            Decimal(str(rng.uniform(100, 500))), instrument.tick_size
         )
         for days_ago in range(HISTORY_DAYS, 0, -1):
             day = today - timedelta(days=days_ago)

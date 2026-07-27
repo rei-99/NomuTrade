@@ -50,6 +50,7 @@ async def worker_client(tmp_path):
         SESSION_STORE="memory",
         RUN_WORKERS=True,
         DEV_AUTH=True,
+        DATA_DIR=str(tmp_path / "no-such-data-dir"),  # fallback feed, not the real dataset
     )
     app = create_app(settings)
     async with LifespanManager(app) as manager:
@@ -121,7 +122,7 @@ async def test_notification_worker_delivery_and_read(worker_client):
                 "user_id": trader_id,
                 "category": "TEST",
                 "title": "Order filled",
-                "body": "7203.T filled",
+                "body": "TSLA filled",
             },
         )
         await session.commit()
@@ -141,7 +142,7 @@ async def test_notification_worker_delivery_and_read(worker_client):
     assert notification["status"] == "UNREAD"
     assert notification["payload"] == {
         "title": "Order filled",
-        "body": "7203.T filled",
+        "body": "TSLA filled",
     }
     assert response.json()["next_cursor"] is None
 
@@ -204,7 +205,7 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
     headers = await login(client, CLIENT)
 
     portfolio_id = await _portfolio_id(app, "Client Portfolio A")
-    instrument_id = await _instrument_id(app, "7203.T")
+    instrument_id = await _instrument_id(app, "TSLA")
     async with app.state.sessionmaker() as session:
         session.add(
             Position(
@@ -215,7 +216,7 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
             )
         )
         await session.commit()
-    await _insert_tick(app, "7203.T", "2600")
+    await _insert_tick(app, "TSLA", "2600")
 
     payload = {
         "type": "HOLDINGS",
@@ -237,10 +238,10 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     text = response.text
-    assert "7203.T" in text
+    assert "TSLA" in text
     assert "2600.00" in text  # last price
     assert "260000.00" in text  # market value = 100 x 2600
-    assert "100260000.00" in text  # total incl. 100M cash
+    assert "1260000.00" in text  # total incl. 1M cash
 
     # List + metadata endpoints.
     response = await client.get("/api/v1/reports", headers=headers)
@@ -281,7 +282,7 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
 
 async def test_indicators_from_price_ticks(client, app):
     headers = await login(client, CLIENT)
-    instrument_id = await _instrument_id(app, "7203.T")
+    instrument_id = await _instrument_id(app, "TSLA")
     closes = [round(3000.0 + 10.0 * i + 50.0 * math.sin(i / 5.0), 4) for i in range(60)]
     base = utcnow() - timedelta(days=59)
     async with app.state.sessionmaker() as session:
@@ -301,13 +302,13 @@ async def test_indicators_from_price_ticks(client, app):
         await session.commit()
 
     response = await client.get(
-        "/api/v1/instruments/7203.T/indicators",
+        "/api/v1/instruments/TSLA/indicators",
         params={"timeframe": "MAX", "indicators": "SMA,EMA,RSI,MACD,BB"},
         headers=headers,
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["symbol"] == "7203.T"
+    assert body["symbol"] == "TSLA"
     assert body["timeframe"] == "MAX"
     series = body["indicators"]
 
@@ -329,7 +330,7 @@ async def test_indicators_from_price_ticks(client, app):
     response = await client.get("/api/v1/instruments/NOPE/indicators", headers=headers)
     assert response.status_code == 404
     response = await client.get(
-        "/api/v1/instruments/7203.T/indicators",
+        "/api/v1/instruments/TSLA/indicators",
         params={"indicators": "VWAP"},
         headers=headers,
     )
@@ -344,17 +345,17 @@ async def test_indicators_from_price_ticks(client, app):
 async def test_alert_rule_trigger_via_handle_tick(client, app):
     headers = await login(client, TRADER)
     user_id = await _user_id(client, headers)
-    instrument_id = await _instrument_id(app, "7203.T")
+    instrument_id = await _instrument_id(app, "TSLA")
 
     response = await client.post(
         "/api/v1/analytics/alerts",
-        json={"instrument": "7203.T", "condition": "ABOVE", "threshold": 999999},
+        json={"instrument": "TSLA", "condition": "ABOVE", "threshold": 999999},
         headers=headers,
     )
     assert response.status_code == 201, response.text
     rule = response.json()
     assert rule["status"] == "ACTIVE"
-    assert rule["instrument"] == "7203.T"
+    assert rule["instrument"] == "TSLA"
 
     response = await client.get("/api/v1/analytics/alerts", headers=headers)
     assert response.status_code == 200
@@ -364,7 +365,7 @@ async def test_alert_rule_trigger_via_handle_tick(client, app):
 
     tick = {
         "instrument_id": instrument_id,
-        "symbol": "7203.T",
+        "symbol": "TSLA",
         "ts": utcnow().isoformat(),
         "price": 1000000,
         "open": 1000000,
@@ -495,19 +496,19 @@ async def test_assistant_grounding_and_guardrail(client, app):
     assert body["suggested_ticket"] is None
     valuation_cites = [c for c in body["citations"] if c["kind"] == "valuation"]
     assert valuation_cites
-    assert any(c["figures"]["total_value"] == 100000000 for c in valuation_cites)
+    assert any(c["figures"]["total_value"] == 1000000 for c in valuation_cites)
 
     # Price intent after inserting a tick.
-    await _insert_tick(app, "7203.T", "2600")
+    await _insert_tick(app, "TSLA", "2600")
     response = await client.post(
         "/api/v1/assistant/query",
-        json={"question": "what is the price of 7203.T?"},
+        json={"question": "what is the price of TSLA?"},
         headers=headers,
     )
     assert response.status_code == 200
     body = response.json()
     price_cites = [c for c in body["citations"] if c["kind"] == "price"]
-    assert price_cites and price_cites[0]["ref"] == "7203.T"
+    assert price_cites and price_cites[0]["ref"] == "TSLA"
     assert price_cites[0]["figures"]["price"] == 2600
 
     # Buy intent -> suggested ticket only, NEVER an order (FR-AI-003 guardrail).
@@ -518,14 +519,14 @@ async def test_assistant_grounding_and_guardrail(client, app):
     before = await _order_count()
     response = await client.post(
         "/api/v1/assistant/query",
-        json={"question": "buy 100 Sony"},
+        json={"question": "buy 100 Tesla"},
         headers=headers,
     )
     assert response.status_code == 200
     body = response.json()
     ticket = body["suggested_ticket"]
     assert ticket is not None
-    assert ticket["instrument"] == "6758.T"
+    assert ticket["instrument"] == "TSLA"
     assert ticket["side"] == "BUY"
     assert ticket["quantity"] == 100
     assert "can't place trades" in body["answer"]
@@ -568,3 +569,179 @@ async def test_assistant_grounding_and_guardrail(client, app):
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+# ---------------------------------------------------------------------------
+# 7 — News & sentiment (dataset news pack, D-14/D-15)
+# ---------------------------------------------------------------------------
+
+
+async def _insert_news(app, ticker="TSLA"):
+    from app.core.models import NewsItem, NewsSentiment
+
+    async with app.state.sessionmaker() as session:
+        items = [
+            NewsItem(
+                ts=utcnow() - timedelta(hours=2),
+                title=f"{ticker} rallies on strong guidance",
+                topics=["Technology"],
+                sentiments=[
+                    NewsSentiment(
+                        ticker=ticker,
+                        relevance=Decimal("0.9"),
+                        score=Decimal("0.42"),
+                        label="Bullish",
+                    )
+                ],
+            ),
+            NewsItem(
+                ts=utcnow() - timedelta(hours=1),
+                title=f"{ticker} slips in quiet trade",
+                topics=[],
+                sentiments=[
+                    NewsSentiment(
+                        ticker=ticker,
+                        relevance=Decimal("0.6"),
+                        score=Decimal("-0.1"),
+                        label="Neutral",
+                    )
+                ],
+            ),
+        ]
+        session.add_all(items)
+        await session.commit()
+
+
+async def test_news_and_sentiment_endpoints(client, app):
+    headers = await login(client, CLIENT)
+    await _insert_news(app)
+
+    # Instrument-scoped headlines, newest first.
+    response = await client.get("/api/v1/instruments/TSLA/news", headers=headers)
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert len(items) == 2
+    assert items[0]["title"] == "TSLA slips in quiet trade"
+    assert items[1]["sentiments"][0]["label"] == "Bullish"
+    assert items[1]["sentiments"][0]["sentiment_score"] == 0.42
+
+    # Cross-ticker latest feed.
+    response = await client.get("/api/v1/news/latest?limit=5", headers=headers)
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 2
+
+    # Unknown instrument -> 404.
+    response = await client.get("/api/v1/instruments/NOPE/news", headers=headers)
+    assert response.status_code == 404
+
+    # Daily sentiment series: one day, mean of [0.42, -0.1] = 0.16.
+    response = await client.get(
+        "/api/v1/instruments/TSLA/sentiment", params={"timeframe": "1W"}, headers=headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "TSLA"
+    assert len(body["series"]) == 1
+    point = body["series"][0]
+    assert point["article_count"] == 2
+    assert point["mean_score"] == pytest.approx(0.16, abs=1e-4)
+    assert point["label_counts"] == {"Bullish": 1, "Neutral": 1}
+
+    # No news for GOOG -> empty series, not an error.
+    response = await client.get(
+        "/api/v1/instruments/GOOG/sentiment", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["series"] == []
+
+
+async def test_assistant_news_intent(client, app):
+    headers = await login(client, CLIENT)
+    await _insert_news(app)
+
+    # Instrument-scoped: grounded answer + news citations with figures.
+    response = await client.post(
+        "/api/v1/assistant/query",
+        json={"question": "what is the news on TSLA?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "TSLA" in body["answer"]
+    news_cites = [c for c in body["citations"] if c["kind"] == "news"]
+    assert len(news_cites) == 2
+    assert news_cites[0]["ref"] == "TSLA"
+    assert any("strong guidance" in c["figures"]["title"] for c in news_cites)
+
+    # Market-wide overview without an instrument mention.
+    response = await client.post(
+        "/api/v1/assistant/query",
+        json={"question": "what is the market sentiment today?"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "sentiment" in body["answer"].lower()
+    assert any(c["kind"] == "news" for c in body["citations"])
+
+    # No news for GOOG -> explicit non-fabricating decline (FR-AI-001).
+    response = await client.post(
+        "/api/v1/assistant/query",
+        json={"question": "any news about GOOG?"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "don't have any news" in body["answer"]
+    assert body["citations"] == []
+
+
+async def test_news_summary_endpoint(client, app):
+    headers = await login(client, CLIENT)
+    await _insert_news(app)
+
+    response = await client.get(
+        "/api/v1/assistant/news-summary",
+        params={"symbol": "TSLA"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["symbol"] == "TSLA"
+    assert body["mock"] is True and body["model"] == "rules-v1"
+    assert body["article_count_7d"] == 2
+    assert body["sentiment_mean_7d"] == pytest.approx(0.16, abs=1e-4)
+    assert body["label_mix"] == {"Bullish": 1, "Neutral": 1}
+    assert body["as_of"] is not None
+    assert "TSLA" in body["summary"] and "sentiment" in body["summary"]
+    assert len(body["headlines"]) == 2
+    assert body["headlines"][0]["label"] in ("Bullish", "Neutral")
+
+    # Unknown symbol -> 404.
+    response = await client.get(
+        "/api/v1/assistant/news-summary",
+        params={"symbol": "NOPE"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+    # No news for GOOG -> graceful empty summary (not an error).
+    response = await client.get(
+        "/api/v1/assistant/news-summary",
+        params={"symbol": "GOOG"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["article_count_7d"] == 0
+    assert body["headlines"] == []
+    assert "no news coverage" in body["summary"]
+
+    # auditor@ lacks ASSISTANT_USE -> 403.
+    auditor = await login(client, AUDITOR)
+    response = await client.get(
+        "/api/v1/assistant/news-summary",
+        params={"symbol": "TSLA"},
+        headers=auditor,
+    )
+    assert response.status_code == 403

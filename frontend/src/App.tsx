@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { Access } from "./pages/Access";
@@ -7,14 +7,13 @@ import { Admin } from "./pages/Admin";
 import { Approvals } from "./pages/Approvals";
 import { Assistant } from "./pages/Assistant";
 import { Audit } from "./pages/Audit";
-import { Charts } from "./pages/Charts";
-import { Dashboard } from "./pages/Dashboard";
 import { Governance } from "./pages/Governance";
 import { Login } from "./pages/Login";
 import { Orders } from "./pages/Orders";
 import { Paper } from "./pages/Paper";
 import { PortfolioDetail } from "./pages/PortfolioDetail";
 import { Reports } from "./pages/Reports";
+import { Trading } from "./pages/Trading";
 
 function FullScreen({ children }: { children: ReactElement }) {
   return <div className="fullscreen">{children}</div>;
@@ -48,6 +47,12 @@ function Guard({ perms, children }: { perms?: string[]; children: ReactElement }
   return children;
 }
 
+/** Legacy /charts routes land on the Trading workspace. */
+function ChartsRedirect() {
+  const { symbol } = useParams();
+  return <Navigate to={symbol ? `/?symbol=${encodeURIComponent(symbol)}` : "/"} replace />;
+}
+
 export default function App() {
   const { me, loading } = useAuth();
 
@@ -64,10 +69,10 @@ export default function App() {
           </Guard>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<Trading />} />
         <Route path="portfolios/:id" element={<PortfolioDetail />} />
-        <Route path="charts" element={<Charts />} />
-        <Route path="charts/:symbol" element={<Charts />} />
+        <Route path="charts" element={<ChartsRedirect />} />
+        <Route path="charts/:symbol" element={<ChartsRedirect />} />
         <Route path="orders" element={<Orders />} />
         <Route path="reports" element={<Reports />} />
         <Route

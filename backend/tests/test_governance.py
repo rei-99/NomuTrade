@@ -53,6 +53,7 @@ def gov_settings(tmp_path):
         SESSION_STORE="memory",
         RUN_WORKERS=True,
         DEV_AUTH=True,
+        DATA_DIR=str(tmp_path / "no-such-data-dir"),  # fallback feed, not the real dataset
     )
 
 

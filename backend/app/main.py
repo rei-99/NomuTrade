@@ -53,6 +53,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Process-local market-data state belongs to this app instance.
+        from app.modules.marketdata.registry import reset_registry
+
+        reset_registry()
+
         # DB: engine/sessionmaker cached on app.state; create_all in dev.
         engine = get_engine(settings)
         sessionmaker = get_sessionmaker(settings, engine)

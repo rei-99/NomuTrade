@@ -26,7 +26,12 @@ from app.core.models import (
     ValuationSnapshot,
 )
 from app.core.timeutil import as_utc, utcnow
-from app.modules.marketdata.registry import PriceSnapshot, get_snapshot, warm_from_db
+from app.modules.marketdata.registry import (
+    PriceSnapshot,
+    get_sim_now,
+    get_snapshot,
+    warm_from_db,
+)
 
 STALE_PRICE_SECONDS = 60.0
 
@@ -48,7 +53,10 @@ async def value_positions(
     rows = await session_positions(db, portfolio_id)
     instrument_ids = [position.instrument_id for position, _i in rows]
     await warm_from_db(db, instrument_ids)
-    now = utcnow()
+    # Staleness is measured against the simulation clock when one is running
+    # (D-10): replayed dataset ticks carry dataset timestamps, so comparing
+    # them to wall-clock utcnow() would mark every price permanently stale.
+    now = get_sim_now() or utcnow()
     valuations: list[PositionValuation] = []
     for position, instrument in rows:
         snapshot: PriceSnapshot | None = get_snapshot(position.instrument_id)

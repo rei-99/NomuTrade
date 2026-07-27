@@ -489,3 +489,69 @@ export interface AdminHealth {
   outbox_unpublished: number;
   stp_exceptions: StpException[];
 }
+
+// ---------- news / sentiment ----------
+
+export type SentimentLabel =
+  | "Bullish"
+  | "Somewhat-Bullish"
+  | "Neutral"
+  | "Somewhat-Bearish"
+  | "Bearish";
+
+/** The US-equities universe of the platform dataset. */
+export const PLATFORM_TICKERS = ["AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT"] as const;
+
+export interface NewsSentiment {
+  ticker: string;
+  relevance_score: number | null;
+  sentiment_score: number | null;
+  label: SentimentLabel | null;
+}
+
+export interface NewsItem {
+  news_id: string;
+  ts: string;
+  title: string;
+  topics: string[];
+  sentiments: NewsSentiment[];
+}
+
+/** GET /instruments/{symbol}/news and GET /news/latest (items newest-first). */
+export type NewsListResponse = ListResponse<NewsItem>;
+
+export interface SentimentPoint {
+  date: string; // YYYY-MM-DD
+  mean_score: number | null; // roughly -1..+1, positive = bullish
+  article_count: number;
+  label_counts: Partial<Record<SentimentLabel, number>>;
+}
+
+export interface SentimentResponse {
+  symbol: string;
+  timeframe: string;
+  series: SentimentPoint[];
+}
+
+// ---------- assistant news summary (mock GenAI) ----------
+
+export interface NewsSummaryHeadline {
+  ts: string;
+  title: string;
+  label: SentimentLabel | null;
+  score: number | null;
+}
+
+/** GET /assistant/news-summary — rules-based mock summary (mock: true). */
+export interface NewsSummary {
+  symbol: string;
+  as_of: string | null;
+  sentiment_mean_7d: number | null;
+  article_count_7d: number;
+  label_mix: Partial<Record<SentimentLabel, number>>;
+  top_topics: string[];
+  summary: string;
+  headlines: NewsSummaryHeadline[];
+  mock: boolean;
+  model: string;
+}

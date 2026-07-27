@@ -12,9 +12,10 @@ interface DataTableProps<T> {
   keyFn: (row: T, index: number) => string;
   empty?: string;
   dense?: boolean;
+  onRowClick?: (row: T) => void;
 }
 
-export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = true }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = true, onRowClick }: DataTableProps<T>) {
   return (
     <div className="table-wrap">
       <table className={`table${dense ? " table-dense" : ""}`}>
@@ -36,7 +37,11 @@ export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = 
             </tr>
           ) : (
             rows.map((row, ri) => (
-              <tr key={keyFn(row, ri)}>
+              <tr
+                key={keyFn(row, ri)}
+                className={onRowClick ? "row-clickable" : undefined}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+              >
                 {columns.map((c, ci) => (
                   <td key={ci} className={c.className}>
                     {c.render(row, ri)}

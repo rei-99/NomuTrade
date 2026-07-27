@@ -27,16 +27,19 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.db import get_db
-from app.core.errors import ValidationError
+from app.core.errors import NotFound, ValidationError
 from app.core.models import (
     AssistantInteraction,
     Execution,
     Instrument,
+    NewsItem,
+    NewsSentiment,
     Order,
     Portfolio,
     Position,
@@ -44,6 +47,7 @@ from app.core.models import (
 )
 from app.core.security import SessionData, require_permission
 from app.core.timeutil import as_utc
+from app.modules.marketdata.registry import get_sim_now
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +192,201 @@ async def get_prices(db: AsyncSession, symbol: str) -> dict | None:
     }
 
 
+async def get_news(
+    db: AsyncSession, ticker: str, limit: int = 5
+) -> dict:
+    """Latest headlines + per-ticker sentiment for one ticker (news pack, D-14).
+
+    Returns {"items": [...], "mean_score_7d": float|None, "latest_ts": str|None};
+    the 7-day mean is relative to the latest news timestamp (news is reference
+    data with its own clock, like prices — never utcnow()). While a replay
+    runs, headlines beyond the simulation clock are withheld.
+    """
+    sim_now = get_sim_now()
+    clock_filter = [NewsItem.ts <= sim_now] if sim_now is not None else []
+    items = (
+        (
+            await db.execute(
+                select(NewsItem)
+                .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+                .where(NewsSentiment.ticker == ticker)
+                .where(*clock_filter)
+                .options(selectinload(NewsItem.sentiments))
+                .order_by(NewsItem.ts.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    latest_ts = await db.scalar(
+        select(func.max(NewsItem.ts))
+        .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+        .where(NewsSentiment.ticker == ticker)
+        .where(*clock_filter)
+    )
+    mean_score: float | None = None
+    if latest_ts is not None:
+        from datetime import timedelta
+
+        mean_score = await db.scalar(
+            select(func.avg(NewsSentiment.score))
+            .join(NewsItem, NewsSentiment.news_id == NewsItem.news_id)
+            .where(
+                NewsSentiment.ticker == ticker,
+                NewsItem.ts >= as_utc(latest_ts) - timedelta(days=7),
+                *clock_filter,
+            )
+        )
+        mean_score = round(float(mean_score), 4) if mean_score is not None else None
+    return {
+        "items": [
+            {
+                "news_id": item.news_id,
+                "ts": as_utc(item.ts).isoformat(),
+                "title": item.title,
+                "sentiments": [
+                    {
+                        "ticker": s.ticker,
+                        "score": float(s.score) if s.score is not None else None,
+                        "label": s.label,
+                    }
+                    for s in item.sentiments
+                ],
+            }
+            for item in items
+        ],
+        "mean_score_7d": mean_score,
+        "latest_ts": as_utc(latest_ts).isoformat() if latest_ts is not None else None,
+    }
+
+
+async def get_news_summary(db: AsyncSession, instrument: Instrument) -> dict:
+    """Mock-GenAI news summary for the Trading workspace (FR-AI-002 style).
+
+    Deterministic template over the sim-clock-capped news pack — no LLM call
+    (`mock: true`, `model: "rules-v1"` so the UI can badge it honestly; the
+    AssistantEngine LLM seam can later draft the prose instead). All figures
+    come straight from NewsItem/NewsSentiment: symbol, 7-day sentiment mean,
+    article count, label mix, top topics, up to 3 driving headlines.
+    """
+    from datetime import timedelta
+
+    sim_now = get_sim_now()
+    clock_filter = [NewsItem.ts <= sim_now] if sim_now is not None else []
+    ticker = instrument.symbol
+
+    latest_ts = await db.scalar(
+        select(func.max(NewsItem.ts))
+        .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+        .where(NewsSentiment.ticker == ticker, *clock_filter)
+    )
+    empty = {
+        "symbol": ticker,
+        "as_of": None,
+        "sentiment_mean_7d": None,
+        "article_count_7d": 0,
+        "label_mix": {},
+        "top_topics": [],
+        "summary": (
+            f"There is no news coverage for {ticker} ({instrument.name}) "
+            "in the dataset window to summarise."
+        ),
+        "headlines": [],
+        "mock": True,
+        "model": "rules-v1",
+    }
+    if latest_ts is None:
+        return empty
+
+    window_start = as_utc(latest_ts) - timedelta(days=7)
+    rows = (
+        (
+            await db.execute(
+                select(NewsItem, NewsSentiment)
+                .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
+                .where(
+                    NewsSentiment.ticker == ticker,
+                    NewsItem.ts >= window_start,
+                    *clock_filter,
+                )
+                .order_by(NewsItem.ts.desc())
+            )
+        )
+        .all()
+    )
+
+    scores = [float(s.score) for _i, s in rows if s.score is not None]
+    mean = round(sum(scores) / len(scores), 4) if scores else None
+    label_mix: dict[str, int] = {}
+    topics: dict[str, int] = {}
+    for item, s in rows:
+        if s.label:
+            label_mix[s.label] = label_mix.get(s.label, 0) + 1
+        for topic in item.topics or []:
+            if topic:
+                topics[topic] = topics.get(topic, 0) + 1
+    top_topics = sorted(topics, key=topics.get, reverse=True)[:3]
+
+    if mean is None:
+        tone = "unscored"
+    elif mean >= 0.2:
+        tone = "bullish"
+    elif mean >= 0.05:
+        tone = "mildly bullish"
+    elif mean > -0.05:
+        tone = "neutral"
+    elif mean > -0.2:
+        tone = "mildly bearish"
+    else:
+        tone = "bearish"
+
+    seen: set[str] = set()
+    headlines: list[dict] = []
+    for item, s in rows:
+        if item.news_id in seen or len(headlines) >= 3:
+            continue
+        seen.add(item.news_id)
+        headlines.append(
+            {
+                "ts": as_utc(item.ts).isoformat(),
+                "title": item.title,
+                "label": s.label,
+                "score": float(s.score) if s.score is not None else None,
+            }
+        )
+
+    article_count = len({item.news_id for item, _s in rows})
+    if article_count == 0:
+        return empty
+
+    parts = [
+        f"{ticker} coverage this week is {tone}"
+        + (f" (mean sentiment {mean:+.2f} across {article_count} articles)."
+           if mean is not None else f" across {article_count} articles."),
+    ]
+    if top_topics:
+        parts.append("Recurring themes: " + ", ".join(top_topics) + ".")
+    if headlines:
+        drivers = "; ".join(
+            f"'{h['title']}' ({h['label'] or 'unlabeled'})" for h in headlines
+        )
+        parts.append(f"Notable headlines: {drivers}.")
+    return {
+        "symbol": ticker,
+        "as_of": as_utc(latest_ts).isoformat(),
+        "sentiment_mean_7d": mean,
+        "article_count_7d": article_count,
+        "label_mix": label_mix,
+        "top_topics": top_topics,
+        "summary": " ".join(parts),
+        "headlines": headlines,
+        "mock": True,
+        "model": "rules-v1",
+    }
+
+
 # ---------------------------------------------------------------------------
 # AssistantEngine — rule-based intents with an LLM seam
 # ---------------------------------------------------------------------------
@@ -197,9 +396,9 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 DECLINE_TEXT = (
     "I'm the STP platform assistant — I can answer questions about your "
-    "positions, portfolio valuation, recent transactions and latest prices, "
-    "and I can prepare (but never place) trade tickets. Your question looks "
-    "outside that scope; could you rephrase it?"
+    "positions, portfolio valuation, recent transactions, latest prices and "
+    "market news/sentiment, and I can prepare (but never place) trade "
+    "tickets. Your question looks outside that scope; could you rephrase it?"
 )
 
 
@@ -253,6 +452,11 @@ class AssistantEngine:
         ):
             intent = "price"
             result = await self._handle_price(db, instrument)
+        elif any(
+            word in lowered for word in ("news", "headline", "sentiment", "moving")
+        ):
+            intent = "news"
+            result = await self._handle_news(db, instrument)
         else:
             intent = "out_of_scope"
             result = {"answer": DECLINE_TEXT, "citations": [], "suggested_ticket": None}
@@ -459,9 +663,87 @@ class AssistantEngine:
         }
         answer = (
             f"{instrument.symbol} ({instrument.name}) last traded at "
-            f"¥{float(price):,.2f} as of {as_utc(ts).isoformat()}."
+            f"${float(price):,.2f} as of {as_utc(ts).isoformat()}."
         )
         return {"answer": answer, "citations": [citation], "suggested_ticket": None}
+
+    async def _handle_news(
+        self, db: AsyncSession, instrument: Instrument | None
+    ) -> dict:
+        """News/sentiment intent (dataset news pack, D-15). Grounded in
+        NewsItem/NewsSentiment only; declines explicitly when there is no
+        news for the asked scope (FR-AI-001)."""
+        if instrument is not None:
+            news = await get_news(db, instrument.symbol)
+            if not news["items"]:
+                return {
+                    "answer": (
+                        f"I don't have any news for {instrument.symbol} "
+                        f"({instrument.name}) in the dataset window."
+                    ),
+                    "citations": [],
+                    "suggested_ticket": None,
+                }
+            sentiment_text = (
+                f"average sentiment over the last 7 covered days is "
+                f"{news['mean_score_7d']:+.2f}"
+                if news["mean_score_7d"] is not None
+                else "no scored sentiment in the last 7 covered days"
+            )
+            headlines = "; ".join(
+                f"- {item['title']} ({item['ts'][:10]})"
+                for item in news["items"][:3]
+            )
+            citations = [
+                {
+                    "kind": "news",
+                    "ref": instrument.symbol,
+                    "figures": {
+                        "title": item["title"],
+                        "ts": item["ts"],
+                        "sentiments": item["sentiments"],
+                    },
+                }
+                for item in news["items"]
+            ]
+            answer = (
+                f"For {instrument.symbol} ({instrument.name}): {sentiment_text}. "
+                f"Latest headlines: {headlines}"
+            )
+            return {"answer": answer, "citations": citations, "suggested_ticket": None}
+
+        # Market-wide overview across platform tickers.
+        instruments = (await db.execute(select(Instrument))).scalars().all()
+        parts: list[str] = []
+        citations: list[dict] = []
+        for inst in instruments:
+            news = await get_news(db, inst.symbol, limit=2)
+            if news["mean_score_7d"] is not None:
+                parts.append(f"{inst.symbol} {news['mean_score_7d']:+.2f}")
+            citations.extend(
+                {
+                    "kind": "news",
+                    "ref": inst.symbol,
+                    "figures": {
+                        "title": item["title"],
+                        "ts": item["ts"],
+                        "sentiments": item["sentiments"],
+                    },
+                }
+                for item in news["items"]
+            )
+        if not citations:
+            return {
+                "answer": "There is no market news in the dataset window to summarise.",
+                "citations": [],
+                "suggested_ticket": None,
+            }
+        answer = (
+            "7-day average news sentiment by ticker: "
+            + ", ".join(parts)
+            + ". Positive values lean bullish; see the cited headlines for detail."
+        )
+        return {"answer": answer, "citations": citations, "suggested_ticket": None}
 
 
 engine = AssistantEngine()
@@ -519,3 +801,23 @@ async def query_assistant(
         "citations": result["citations"],
         "suggested_ticket": result["suggested_ticket"],
     }
+
+
+@router.get("/assistant/news-summary")
+async def news_summary(
+    symbol: str,
+    session: SessionData = Depends(require_permission("ASSISTANT_USE")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mock-GenAI news summary for one instrument (Trading workspace panel).
+
+    Advisory-only; every figure is grounded in NewsItem/NewsSentiment. The
+    response is deliberately marked `mock: true` until a real LLM is wired
+    into the AssistantEngine prose seam.
+    """
+    instrument = (
+        await db.execute(select(Instrument).where(Instrument.symbol == symbol))
+    ).scalar_one_or_none()
+    if instrument is None:
+        raise NotFound(f"unknown instrument symbol: {symbol}")
+    return await get_news_summary(db, instrument)

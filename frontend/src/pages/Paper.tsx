@@ -146,8 +146,8 @@ export function Paper() {
           )}
         </div>
         <p className="muted panel-note">
-          Paper accounts trade through the same order pipeline — open an order ticket from the
-          Dashboard watchlist or Charts page and pick the PAPER portfolio in the ticket.
+          Paper accounts trade through the same order pipeline — use the order panel on the
+          Trading workspace and pick the PAPER portfolio there.
         </p>
       </section>
 

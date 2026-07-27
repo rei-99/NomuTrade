@@ -1,7 +1,7 @@
 # 16 — Data Design
 
 > Part of the STP platform design set — overview: [DESIGN.md](../../DESIGN.md) · index: [README.md](README.md)
-> Source: former DESIGN.md §8 (entity-relationship model and physical design notes), incl. the ER diagram. Decisions, IDs and requirement text unchanged.
+> Source: former DESIGN.md §8 (entity-relationship model and physical design notes), incl. the ER diagram; news tables added for the dataset news pack (D-14). Decisions, IDs and requirement text unchanged.
 
 ## Purpose
 
@@ -16,6 +16,7 @@ Define the platform's persistent data model — directly from SRS section 6.1/6.
 - **NFR-SEC-008** — audit table write restrictions (tamper evidence; see [13 — Audit Logging](13-audit-logging.md)).
 - **C-10** — timestamps `timestamptz` UTC, rendered ISO 8601.
 - **D-03** (design decision) — PostgreSQL 15; partitioning for `PriceTick` / `AuditEvent`.
+- **D-14** (design decision) — news as reference data: `news_items` + `news_sentiments`, loaded once, never replayed, sim-clock capped.
 
 ## Components
 
@@ -27,6 +28,7 @@ Physical mechanisms (from the physical design notes):
 - **Single-writer positions** — `Position` updated only by the STP worker.
 - **Outbox table** — `(id, stream, payload, created_at, published_at)`; relay marks published; periodic purge (event pipeline, DESIGN.md §4.2).
 - **Redis key namespaces** — `sess:*`, `perm:{user}`, `px:latest:{symbol}`, `val:{portfolio}`.
+- **News reference tables** — `news_items` + `news_sentiments`; loaded once by the dataset loader (D-14), never replayed (see notes below).
 
 ## Flows
 
@@ -34,7 +36,7 @@ No runtime flow diagram in this document. The ER diagram below is the structural
 
 ## Data entities used
 
-Entity-relationship model (directly from SRS section 6.1/6.2, with physical notes added):
+Entity-relationship model (directly from SRS section 6.1/6.2, with physical notes added; `NewsItem`/`NewsSentiment` added for the dataset news pack, D-14):
 
 ```mermaid
 erDiagram
@@ -58,6 +60,7 @@ erDiagram
     Instrument ||--o{ Position : "held as"
     Order ||--o{ Execution : "filled by"
     Execution ||--|| SettlementInstruction : "settled by"
+    NewsItem ||--o{ NewsSentiment : "annotated by"
 
     User {
         uuid user_id PK
@@ -230,9 +233,23 @@ erDiagram
         text response
         jsonb grounded_refs
     }
+    NewsItem {
+        uuid news_id PK
+        timestamptz ts
+        text title
+        jsonb topics
+    }
+    NewsSentiment {
+        int id PK
+        uuid news_id FK
+        string ticker "logical ref to Instrument.symbol"
+        numeric relevance
+        numeric score
+        string label
+    }
 ```
 
-Physical design notes (verbatim from the source design):
+Physical design notes (verbatim from the source design, plus the news tables):
 
 - `PriceTick` and `AuditEvent` are **monthly partitioned** (volume: ~500 k ticks/day, ~50 k audit events/day; SRS 6.3). BRIN index on `ts` for ticks; btree on `(actor_id, ts)`, `(event_type, ts)` for audit search (NFR-PER-006).
 - `Order`, `Execution`, `SettlementInstruction` are **immutable** after creation except for defined status fields; enforced by trigger, supporting NFR-CMP-001.
@@ -241,6 +258,8 @@ Physical design notes (verbatim from the source design):
 - All timestamps `timestamptz` UTC, rendered ISO 8601 (C-10). Money/quantities as `numeric`, never float.
 - Outbox table: `(id, stream, payload, created_at, published_at)` — relay marks published; periodic purge.
 - Redis keys namespaced: `sess:*`, `perm:{user}`, `px:latest:{symbol}`, `val:{portfolio}`.
+- `NewsItem`/`NewsSentiment` (D-14) are **reference data**: loaded once by the dataset loader (skipped when `NewsItem` is non-empty), never replayed; visibility capped at the simulation clock (D-10). Indexes on `NewsItem.ts`, `NewsSentiment.news_id`, `NewsSentiment.ticker`.
+- `NewsSentiment.ticker` logically references `Instrument.symbol` but has **no hard FK** — news covers off-platform tickers (META, NVDA, CRYPTO:BTC, …); those sentiments are stored but only platform tickers are queryable via the API.
 
 ## API endpoints used
 
@@ -253,6 +272,7 @@ None — this document defines persistence only. Entities are exposed through mo
 - **Lost updates on positions** — avoided structurally: `Position` PK `(portfolio_id, instrument_id)`, updated only by the STP worker (see [02](02-order-execution-stp.md)).
 - **Precision/timezones** — money/quantities as `numeric`, never float; all timestamps `timestamptz` UTC, rendered ISO 8601 (C-10).
 - **Outbox growth** — relay marks published; periodic purge.
+- **News for off-platform tickers** — stored (no FK enforcing the platform universe) but not queryable; news visibility is sim-clock capped while a replay runs (D-10/D-14).
 
 ## Acceptance criteria mapping
 

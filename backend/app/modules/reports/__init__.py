@@ -126,9 +126,22 @@ async def _holdings_rows(db: AsyncSession, portfolio: Portfolio) -> tuple[list, 
         ("positions_value", _num(positions_value)),
         ("cash", _num(cash)),
         ("total_value", _num(positions_value + cash)),
-        ("currency", "JPY"),
+        ("currency", await _portfolio_currency(db, portfolio)),
     ]
     return rows, summary
+
+
+async def _portfolio_currency(db: AsyncSession, portfolio: Portfolio) -> str:
+    """Currency of the portfolio's first held instrument; USD when empty
+    (the dataset universe is USD-denominated, D-16)."""
+    return (
+        await db.scalar(
+            select(Instrument.currency)
+            .join(Position, Position.instrument_id == Instrument.instrument_id)
+            .where(Position.portfolio_id == portfolio.portfolio_id)
+            .limit(1)
+        )
+    ) or "USD"
 
 
 async def _build_holdings(db: AsyncSession, portfolio: Portfolio, start, end):
@@ -175,7 +188,7 @@ async def _build_transactions(db: AsyncSession, portfolio: Portfolio, start, end
     summary = [
         ("executions", str(len(rows))),
         ("gross_value", _num(total_value)),
-        ("currency", "JPY"),
+        ("currency", executions[0][2].currency if executions else "USD"),
     ]
     headers = [
         "executed_at",
@@ -245,7 +258,7 @@ async def _build_performance(db: AsyncSession, portfolio: Portfolio, start, end)
         ("end_total_value", _num(end_total)),
         ("change", _num(change)),
         ("change_pct", _num(change_pct)),
-        ("currency", "JPY"),
+        ("currency", await _portfolio_currency(db, portfolio)),
     ]
     headers = ["ts", "market_value", "cash", "total_value", "realized_pnl", "unrealized_pnl"]
     title = f"Performance report — {portfolio.name}"

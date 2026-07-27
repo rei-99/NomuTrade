@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Iterable
@@ -26,6 +27,8 @@ from app.core.models import OutboxEvent
 from app.core.timeutil import utcnow
 
 SHUTDOWN_GRACE_SECONDS = 3.0
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus(ABC):
@@ -167,6 +170,12 @@ async def outbox_relay(
             except Exception:
                 pass
             raise
+        except Exception:
+            # A failed batch (e.g. SQLite write lock during the dataset bulk
+            # load) must not kill the relay — and with it, via the supervisor's
+            # gather, every other worker. Log and retry next cycle.
+            logger.exception("outbox relay: batch failed; retrying")
+            published = 0
         if not published:
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)

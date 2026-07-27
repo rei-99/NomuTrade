@@ -35,6 +35,38 @@ class PriceSnapshot:
 
 
 _LATEST: dict[str, PriceSnapshot] = {}
+_SIM_NOW: datetime | None = None
+
+
+def reset_registry() -> None:
+    """Clear all process-local state (called at app startup).
+
+    The registry belongs to one app instance; without a reset, a second app
+    in the same process (e.g. the next test) would inherit its sim clock and
+    latest prices.
+    """
+    global _SIM_NOW
+    _LATEST.clear()
+    _SIM_NOW = None
+
+
+def set_sim_now(ts: datetime | None) -> None:
+    """Move the simulation clock explicitly (replay start position).
+
+    Needed because warm_from_db seeds the clock from the latest *stored* tick
+    (the dataset's end); the replay then re-bases it to the first bar being
+    replayed so consumers never see past the replay position.
+    """
+    global _SIM_NOW
+    _SIM_NOW = ts
+
+
+def get_sim_now() -> datetime | None:
+    """The simulation clock (D-10): latest tick timestamp seen across all
+    instruments. When replaying dataset history this is a dataset timestamp,
+    not wall-clock time — price staleness and chart ranges are measured
+    against it, never against utcnow(). None before the first tick."""
+    return _SIM_NOW
 
 
 def get_snapshot(instrument_id: str) -> PriceSnapshot | None:
@@ -56,7 +88,10 @@ def set_tick(
     volume: Decimal,
 ) -> PriceSnapshot:
     """Record a live tick, maintaining running intraday OHLC/volume."""
+    global _SIM_NOW
     ts = as_utc(ts)
+    if _SIM_NOW is None or ts > _SIM_NOW:
+        _SIM_NOW = ts
     snap = _LATEST.get(instrument_id)
     if snap is None or snap.day != ts.date():
         snap = PriceSnapshot(
@@ -100,6 +135,9 @@ async def warm_from_db(
         if row is None:
             continue
         ts = as_utc(row.ts)
+        global _SIM_NOW
+        if _SIM_NOW is None or ts > _SIM_NOW:
+            _SIM_NOW = ts
         _LATEST[instrument_id] = PriceSnapshot(
             instrument_id=instrument_id,
             symbol=(symbols or {}).get(instrument_id, ""),

@@ -25,3 +25,8 @@ class Settings(BaseSettings):
     SECRET_PROVIDER: str = "env"
     ACCESS_TOKEN_TTL_IDLE_SECONDS: int = 1800
     ACCESS_TOKEN_TTL_ABSOLUTE_SECONDS: int = 43200
+    # Simulation dataset (INT-04, D-10..D-12). DATA_DIR is resolved against the
+    # cwd, its parent, and the repo root; missing dir -> generated fallback feed.
+    DATA_DIR: str = "data"
+    REPLAY_BARS_PER_SECOND: float = 5.0
+    REPLAY_MODE: Literal["loop", "hold"] = "loop"

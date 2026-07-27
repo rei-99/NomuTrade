@@ -12,6 +12,7 @@ import type {
 import { fmtJpy, fmtNum } from "../format";
 import { useToast } from "./Toast";
 import { Modal } from "./Modal";
+import { detailsToList, postOrder } from "./orderUtils";
 
 export interface TicketPrefill {
   instrument?: string;
@@ -25,36 +26,6 @@ interface OrderTicketProps {
   portfolios: Portfolio[];
   onClose: () => void;
   onSubmitted?: () => void;
-}
-
-/** Normalize the 422 `details` payload into displayable rule-reason strings. */
-function detailsToList(details: unknown): string[] {
-  if (details === null || details === undefined) return [];
-  if (typeof details === "string") return [details];
-  if (Array.isArray(details)) {
-    return details.map((d) => {
-      if (typeof d === "string") return d;
-      if (d && typeof d === "object") {
-        const rec = d as Record<string, unknown>;
-        const rule = typeof rec.rule === "string" ? rec.rule : "";
-        const reason =
-          typeof rec.reason === "string"
-            ? rec.reason
-            : typeof rec.message === "string"
-              ? rec.message
-              : "";
-        const joined = [rule, reason].filter(Boolean).join(": ");
-        return joined || JSON.stringify(d);
-      }
-      return String(d);
-    });
-  }
-  if (typeof details === "object") {
-    return Object.entries(details as Record<string, unknown>).map(
-      ([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`,
-    );
-  }
-  return [String(details)];
 }
 
 export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: OrderTicketProps) {
@@ -145,13 +116,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
     setSubmitting(true);
     try {
       // Raw response: 201 = created, 200 = duplicate idempotency key replay.
-      const res = await api<Response>("/orders", {
-        method: "POST",
-        body,
-        headers: { "Idempotency-Key": idempotencyKey },
-        raw: true,
-        skipErrorToast: true,
-      });
+      const res = await postOrder(body, idempotencyKey);
       if (res.status === 200) {
         toast("Duplicate submission ignored — order was already accepted.", "info");
         onClose();

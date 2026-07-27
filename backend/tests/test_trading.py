@@ -31,11 +31,10 @@ from conftest import login
 
 TRADER = "trader@demo.nomura"
 CLIENT = "client@demo.nomura"
-DESK_CASH_INITIAL = Decimal("50000000")
+DESK_CASH_INITIAL = Decimal("500000")
 
 SYMBOLS = {
-    "7203.T", "6758.T", "9984.T", "8306.T", "9433.T",
-    "6861.T", "6501.T", "7974.T", "4063.T", "8001.T",
+    "AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT",
 }
 
 
@@ -49,6 +48,7 @@ def settings(tmp_path):
         TICK_INTERVAL_MS=50,
         SETTLEMENT_DELAY_SECONDS=0.2,
         DEV_AUTH=True,
+        DATA_DIR=str(tmp_path / "no-such-data-dir"),  # fallback feed, not the real dataset
     )
 
 
@@ -136,7 +136,7 @@ async def wait_for_prices(client, headers, timeout=3.0):
     return await wait_until(check, timeout=timeout)
 
 
-async def submit_market_buy(client, headers, portfolio_id, symbol="7203.T", qty=100):
+async def submit_market_buy(client, headers, portfolio_id, symbol="TSLA", qty=100):
     response = await client.post(
         "/api/v1/orders",
         headers={**headers, "Idempotency-Key": uuid.uuid4().hex},
@@ -169,21 +169,21 @@ async def wait_order_status(client, headers, order_id, status, timeout=5.0):
 
 async def test_seed_integrity_and_live_prices(client, trader):
     items = await wait_for_prices(client, trader)  # appears within ~2 s
-    assert len(items) == 10
+    assert len(items) == 7
     assert {i["symbol"] for i in items} == SYMBOLS
     for item in items:
         assert item["latest_price"] > 0
-        assert item["lot_size"] == 100
-        assert item["tick_size"] == 0.5
+        assert item["lot_size"] == 1
+        assert item["tick_size"] == 0.01
         assert item["tradable"] is True
-        assert item["currency"] == "JPY"
+        assert item["currency"] == "USD"
 
     response = await client.get(
-        "/api/v1/instruments/7203.T/prices?timeframe=1M", headers=trader
+        "/api/v1/instruments/TSLA/prices?timeframe=1M", headers=trader
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["symbol"] == "7203.T"
+    assert body["symbol"] == "TSLA"
     assert body["timeframe"] == "1M"
     assert len(body["candles"]) >= 25  # ~30 daily rows from generated history
     candle = body["candles"][0]
@@ -212,7 +212,7 @@ async def test_market_buy_end_to_end(client, app, trader, ids):
         )
         assert response.status_code == 200
         for item in response.json()["items"]:
-            if item["instrument_symbol"] == "7203.T" and item["quantity"] == 100:
+            if item["instrument_symbol"] == "TSLA" and item["quantity"] == 100:
                 return item
         return None
 
@@ -264,7 +264,7 @@ async def test_validation_rejection(client, trader, ids):
         headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
         json={
             "portfolio_id": ids["desk"],
-            "instrument": "7203.T",
+            "instrument": "TSLA",
             "side": "BUY",
             "order_type": "MARKET",
             "quantity": 10_000_000_000,  # cost >> cash balance
@@ -297,7 +297,7 @@ async def test_idempotency_key_replay(client, trader, ids):
     key = uuid.uuid4().hex
     payload = {
         "portfolio_id": ids["desk"],
-        "instrument": "6758.T",
+        "instrument": "GOOG",
         "side": "BUY",
         "order_type": "MARKET",
         "quantity": 100,
@@ -333,7 +333,7 @@ async def test_permissions(client, client_user, ids):
         headers={**client_user, "Idempotency-Key": uuid.uuid4().hex},
         json={
             "portfolio_id": ids["client_pf"],
-            "instrument": "7203.T",
+            "instrument": "TSLA",
             "side": "BUY",
             "order_type": "MARKET",
             "quantity": 100,
@@ -401,7 +401,7 @@ async def test_limit_order_open_then_cancel(client, trader, ids):
         headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
         json={
             "portfolio_id": ids["desk"],
-            "instrument": "7203.T",
+            "instrument": "TSLA",
             "side": "BUY",
             "order_type": "LIMIT",
             "quantity": 100,
@@ -446,7 +446,7 @@ async def test_stp_position_and_cash_exact(client, app, trader, ids):
                 )
             ).scalar_one()
             position = await session.get(
-                Position, (ids["desk"], ids["instrument_id"]["7203.T"])
+                Position, (ids["desk"], ids["instrument_id"]["TSLA"])
             )
             portfolio = await session.get(Portfolio, ids["desk"])
             if position is None or position.quantity != Decimal("200"):
@@ -455,7 +455,7 @@ async def test_stp_position_and_cash_exact(client, app, trader, ids):
 
     execution, position, portfolio = await wait_until(stp_done)
     price = Decimal(str(execution.price))
-    assert position.avg_cost == pytest.approx(float(price))
+    assert position.avg_cost == pytest.approx(price)
     assert portfolio.cash_balance == pytest.approx(
-        float(DESK_CASH_INITIAL - Decimal("200") * price)
+        DESK_CASH_INITIAL - Decimal("200") * price
     )

@@ -44,6 +44,12 @@ const TONE_BY_STATUS: Record<string, string> = {
   JUSTIFIED: "green",
   ESCALATED: "red",
   PENDING_REVIEW: "amber",
+  // news sentiment labels
+  BULLISH: "green",
+  "SOMEWHAT-BULLISH": "green",
+  NEUTRAL: "gray",
+  "SOMEWHAT-BEARISH": "red",
+  BEARISH: "red",
 };
 
 export function Badge({ text }: { text: string | null | undefined }) {

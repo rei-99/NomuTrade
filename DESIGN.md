@@ -182,11 +182,25 @@ The audit path is deliberately **synchronous for security-critical actions** (ch
 
 **Decision D-05 [P]:** Sessions are **opaque server-side tokens stored in Redis** (idle 30 min / absolute 12 h, NFR-SEC-006) rather than long-lived JWTs, because FR-IAM-005 and FR-JIT-002 require revocation to take effect within ~60 s — server-side sessions make invalidation trivial.
 
+**Decision D-10:** Market data uses a **single store** (`PriceTick`, dailies and minute bars together) plus a **simulation clock** (`registry.get_sim_now()`): chart ranges, stale-price flags and news visibility are measured against it, never `utcnow()`; while a replay runs, data beyond the sim clock is withheld.
+
+**Decision D-11:** The replay **loops the dataset**: minute bars are replayed in dataset-time order at `REPLAY_BARS_PER_SECOND` (default 5.0 ≈ 78 s per market day); `REPLAY_MODE=loop|hold` (default `loop`).
+
+**Decision D-12:** Instruments come from the **dataset loader** (7 US equities; USD, lot 1, tick 0.01); the seed keeps users/roles/portfolios (USD cash 1M/500k); a missing data dir falls back to a generated random-walk feed with the same 7 symbols.
+
+**Decision D-13:** The historical/live overlap (Jun 30 – Jul 10) is resolved by loading dailies only before Jun 30; wide chart timeframes get server-side daily aggregation (API shapes unchanged).
+
+**Decision D-14:** News is **reference data** (`news_items` + `news_sentiments`): loaded once by the dataset loader, never replayed, sim-clock capped.
+
+**Decision D-15:** News consumers: the assistant's news/sentiment intent; the analytics endpoints `GET /instruments/{symbol}/news`, `GET /news/latest`, `GET /instruments/{symbol}/sentiment`; the frontend Charts News tab + sentiment panel and the Dashboard market-news widget.
+
+**Decision D-16:** USD display formatting (resolves **TBD-16**: USD; **TBD-17**: the dataset's US-equities universe).
+
 ---
 
 ## 5. Detailed module designs
 
-Module-level design has been split into self-contained documents under [`docs/design/`](docs/design/README.md) — see that index for the full set. (Former §§5–12 of this document moved there; former §§13–15 are now §§6–8 below.) The architecture overview above (§§3–4) remains the single source for system context, the module map, the event pipeline, technology selection and decisions D-01…D-06.
+Module-level design has been split into self-contained documents under [`docs/design/`](docs/design/README.md) — see that index for the full set. (Former §§5–12 of this document moved there; former §§13–15 are now §§6–8 below.) The architecture overview above (§§3–4) remains the single source for system context, the module map, the event pipeline, technology selection and decisions D-01…D-06 and D-10…D-16.
 
 ### Trading & market data
 
@@ -251,9 +265,11 @@ Design proposals awaiting week-1 confirmation (SRS §9); defaults adopted in the
 
 - **TBD-01/02/03** approval chains, JIT duration caps, break-glass policy — defaults: manager→owner (+security for privileged); 8 h privileged / 90 d standard; 4 h break-glass, 24 h review SLA.
 - **TBD-04/05** CyberArk and IdP specifics — D-04 assumes OIDC; cert-based PVWA app auth.
-- **TBD-06** dataset schema — loader built after week-1 inspection of `data.zip`; instrument scope (TBD-17) assumed equities-only for MVP.
+- **TBD-06** dataset schema — **RESOLVED**: three packs under `data/` (daily OHLC 2026-01-02→2026-07-10; 1-minute bars 2026-06-30→2026-08-29; news with per-ticker sentiment, Jul–Aug) — loaded by the dataset loader (see [01 — Market-Data Service](docs/design/01-market-data.md); D-10…D-14).
 - **TBD-07** performance targets — NFR proposals adopted as test thresholds.
 - **TBD-11** cloud provider — Terraform written provider-portable until confirmed.
+- **TBD-16** currency — **RESOLVED**: USD (D-16).
+- **TBD-17** instrument scope — **RESOLVED**: the dataset's US-equities universe — AAPL, GOOG, IBM, MSFT, TSLA, UL, WMT (D-12/D-16).
 
 ---
 

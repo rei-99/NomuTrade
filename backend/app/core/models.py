@@ -320,6 +320,43 @@ class PriceTick(Base):
     volume: Mapped[Decimal] = mapped_column(Numeric(24, 8))
 
 
+class NewsItem(Base):
+    """A simulated market-news headline (dataset pack 3, D-14).
+
+    Reference data only — loaded once by the dataset loader, never replayed.
+    """
+
+    __tablename__ = "news_items"
+
+    news_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=uuid_str
+    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    topics: Mapped[list] = mapped_column(JSON, default=list)
+
+    sentiments: Mapped[list["NewsSentiment"]] = relationship(
+        back_populates="news_item", cascade="all, delete-orphan"
+    )
+
+
+class NewsSentiment(Base):
+    """Per-ticker sentiment annotation of a NewsItem (dataset schema)."""
+
+    __tablename__ = "news_sentiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    news_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("news_items.news_id"), index=True
+    )
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    relevance: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    score: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    news_item: Mapped[NewsItem] = relationship(back_populates="sentiments")
+
+
 class Portfolio(Base):
     __tablename__ = "portfolios"
 

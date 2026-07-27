@@ -5,15 +5,19 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.core.errors import NotFound, ValidationError
 from app.core.models import Instrument, PriceTick
 from app.core.security import SessionData, get_current_user
-from app.core.timeutil import utcnow
-from app.modules.marketdata.registry import get_latest_price, warm_from_db
+from app.core.timeutil import as_utc
+from app.modules.marketdata.registry import (
+    get_latest_price,
+    get_sim_now,
+    warm_from_db,
+)
 
 router = APIRouter(tags=["marketdata"])
 
@@ -36,6 +40,33 @@ def _candle(ts, open_, high, low, close, volume) -> dict:
         "close": float(close),
         "volume": float(volume),
     }
+
+
+def _aggregate_daily(rows) -> list[dict]:
+    """Aggregate ts-ordered ticks into daily candles (D-13).
+
+    Works for both stored daily rows (one per day) and minute bars (~390 per
+    day); gaps in the dataset are simply absent days.
+    """
+    days: dict[str, dict] = {}
+    for r in rows:
+        key = as_utc(r.ts).date().isoformat()
+        candle = days.get(key)
+        if candle is None:
+            days[key] = {
+                "ts": key,
+                "open": float(r.open),
+                "high": float(r.high),
+                "low": float(r.low),
+                "close": float(r.close),
+                "volume": float(r.volume),
+            }
+        else:
+            candle["high"] = max(candle["high"], float(r.high))
+            candle["low"] = min(candle["low"], float(r.low))
+            candle["close"] = float(r.close)
+            candle["volume"] += float(r.volume)
+    return list(days.values())
 
 
 @router.get("/instruments")
@@ -93,68 +124,70 @@ async def get_prices(
     if instrument is None:
         raise NotFound(f"instrument not found: {symbol}")
 
-    now = utcnow()
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Reference day = the simulation clock's latest tick date for this
+    # instrument (D-10), not wall-clock today: the feed replays dataset time.
+    # While a replay is running, data beyond the sim clock is withheld — the
+    # platform must not "know the future" of the dataset.
+    sim_now = get_sim_now()
+    if sim_now is not None:
+        latest_ts = await db.scalar(
+            select(func.max(PriceTick.ts)).where(
+                PriceTick.instrument_id == instrument.instrument_id,
+                PriceTick.ts <= sim_now,
+            )
+        )
+    else:  # no replay running (tests, RUN_WORKERS=false): latest stored tick
+        latest_ts = await db.scalar(
+            select(func.max(PriceTick.ts)).where(
+                PriceTick.instrument_id == instrument.instrument_id
+            )
+        )
+    if latest_ts is None:
+        return {"symbol": symbol, "timeframe": timeframe, "candles": []}
+    ref_day = as_utc(latest_ts).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if timeframe == "1D":
-        # Today's live ticks only; gaps are simply omitted.
-        rows = (
-            (
-                await db.execute(
-                    select(PriceTick)
-                    .where(
-                        PriceTick.instrument_id == instrument.instrument_id,
-                        PriceTick.ts >= today,
-                    )
-                    .order_by(PriceTick.ts)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        candles = [
-            _candle(r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows
-        ]
-    else:
-        days = TIMEFRAMES[timeframe]
-        cutoff = today - timedelta(days=days) if days is not None else None
+        # Intraday minute bars of the reference day; gaps are simply omitted.
         stmt = select(PriceTick).where(
             PriceTick.instrument_id == instrument.instrument_id,
-            PriceTick.ts < today,
+            PriceTick.ts >= ref_day,
         )
-        if cutoff is not None:
-            stmt = stmt.where(PriceTick.ts >= cutoff)
+        if sim_now is not None:
+            stmt = stmt.where(PriceTick.ts <= sim_now)
         rows = (
             (await db.execute(stmt.order_by(PriceTick.ts))).scalars().all()
         )
         candles = [
             _candle(r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows
         ]
-        # Fold today's live ticks into one partial candle at the end.
-        today_rows = (
-            (
-                await db.execute(
-                    select(PriceTick)
-                    .where(
-                        PriceTick.instrument_id == instrument.instrument_id,
-                        PriceTick.ts >= today,
-                    )
-                    .order_by(PriceTick.ts)
-                )
-            )
-            .scalars()
-            .all()
+    else:
+        days = TIMEFRAMES[timeframe]
+        cutoff = ref_day - timedelta(days=days) if days is not None else None
+        stmt = select(PriceTick).where(
+            PriceTick.instrument_id == instrument.instrument_id,
         )
-        if today_rows:
-            candles.append(
-                _candle(
-                    today_rows[-1].ts,
-                    today_rows[0].open,
-                    max(r.high for r in today_rows),
-                    min(r.low for r in today_rows),
-                    today_rows[-1].close,
-                    sum(r.volume for r in today_rows),
-                )
+        if cutoff is not None:
+            stmt = stmt.where(PriceTick.ts >= cutoff)
+        if sim_now is not None:
+            stmt = stmt.where(PriceTick.ts <= sim_now)
+        rows = (
+            (await db.execute(stmt.order_by(PriceTick.ts))).scalars().all()
+        )
+        daily = _aggregate_daily(rows)
+        # Fold the reference day's minute bars into one partial candle so the
+        # last candle tracks the live feed.
+        ref_key = ref_day.date().isoformat()
+        ref_rows = [r for r in rows if as_utc(r.ts) >= ref_day]
+        if ref_rows and daily:
+            daily[-1] = _candle(
+                as_utc(ref_rows[-1].ts),
+                ref_rows[0].open,
+                max(r.high for r in ref_rows),
+                min(r.low for r in ref_rows),
+                ref_rows[-1].close,
+                sum(r.volume for r in ref_rows),
             )
+            daily[-1]["ts"] = ref_key
+        candles = daily
 
     return {"symbol": symbol, "timeframe": timeframe, "candles": candles}

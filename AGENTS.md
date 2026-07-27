@@ -21,7 +21,7 @@ settlement sweeper) driven by a transactional-outbox event pipeline.
 Key documents (read these before non-trivial work):
 
 - `README.md` — quickstart, demo users, demo script, known limitations.
-- `DESIGN.md` — architecture overview, decisions D-01…D-06, SRS traceability.
+- `DESIGN.md` — architecture overview, decisions D-01…D-16, SRS traceability.
 - `docs/design/README.md` — index of 19 module-level design docs; each backend
   module's docstring names its design doc (e.g. orders →
   `docs/design/02-order-execution-stp.md`).
@@ -37,7 +37,7 @@ the docs and code comments for traceability — keep them intact when editing.
 │   ├── app/
 │   │   ├── main.py     app factory: lifespan, module auto-discovery, /api/v1/health
 │   │   ├── config.py   pydantic-settings (env-driven, no prefix)
-│   │   ├── seed.py     idempotent seed: roles, demo users, JPY instruments, portfolios
+│   │   ├── seed.py     idempotent seed: roles, demo users, US-equity instruments, portfolios
 │   │   ├── core/       db.py, events.py (bus + outbox), security.py (sessions/RBAC),
 │   │   │               audit.py (hash-chained audit), secrets.py, models.py (all
 │   │   │               SQLAlchemy entities), errors.py (error envelope + trace id),
@@ -48,10 +48,11 @@ the docs and code comments for traceability — keep them intact when editing.
 │   └── Dockerfile      python:3.13-slim → uvicorn app.main:app
 ├── frontend/           React 18 + TypeScript (strict) + Vite 6 SPA (dev :5173)
 │   ├── src/api/        client.ts (fetch wrapper, token, error envelope), types.ts
-│   ├── src/pages/      one page per module area (Dashboard, Orders, Audit, …)
+│   ├── src/pages/      Trading workspace (landing) + one page per module area
 │   ├── src/components/ hand-rolled components; ECharts for charts; no UI library
 │   ├── Dockerfile      multi-stage: node:22-alpine build → nginx:alpine serves dist/
 │   └── nginx.conf      SPA fallback + /api and /ws proxy to the `api` service
+├── data/               simulation dataset (daily/minute prices, news) — auto-loaded
 ├── docs/design/        module-level design documents
 ├── infra/terraform/    AWS single-VM reference deployment (D-06) + Azure parity notes
 ├── docker-compose.yml  db (postgres:15) + redis (7) + api + web
@@ -61,9 +62,10 @@ the docs and code comments for traceability — keep them intact when editing.
 ```
 
 Backend modules under `backend/app/modules/`: `access` (requests/approvals/
-grants/JIT), `admin` (governance dashboard), `analytics` (indicators, alerts),
-`assistant` (rule-based GenAI stub), `auditlog` (search/export), `auth`
-(dev-login, session profile), `breakglass`, `marketdata` (tick replay), `notifications`,
+grants/JIT), `admin` (governance dashboard), `analytics` (indicators, alerts,
+news/sentiment), `assistant` (rule-based GenAI stub), `auditlog` (search/export), `auth`
+(dev-login, session profile), `breakglass`, `marketdata` (dataset loader, tick
+replay, simulation clock), `notifications`,
 `orders` (order API + execution/STP/settlement workers), `pam` (mock CyberArk),
 `paper` (paper trading = `PAPER` portfolio type), `portfolios` (positions/
 valuation/KPIs + valuation projector), `reports` (PDF/CSV via reportlab).
@@ -96,7 +98,7 @@ Docker (whole stack): `POSTGRES_PASSWORD=changeme docker compose up --build`
 CI pipeline are written and statically reviewed but were not run in the dev
 environment** — treat them as unverified and report issues as MRs.
 
-Test suite status: `cd backend && ./.venv/bin/python -m pytest` → **35 passed
+Test suite status: `cd backend && ./.venv/bin/python -m pytest` → **41 passed
 in ~17 s** (verified 2026-07-26).
 
 There is **no linter/formatter configured** (no ruff/black/eslint configs).
@@ -163,7 +165,8 @@ returning ad-hoc error JSON.
 
 All SQLAlchemy entities live in one module: users/roles/permissions/grants,
 access requests + approval steps, break-glass, SoD rules, instruments,
-`PriceTick`, portfolios, orders, executions, settlement instructions,
+`PriceTick`, news (`NewsItem`/`NewsSentiment`), portfolios, orders, executions,
+settlement instructions,
 positions, valuation snapshots, reports, alert rules, notifications,
 assistant interactions, `AuditEvent`, `OutboxEvent`. Enums (`OrderStatus`,
 `GrantStatus`, …) are `StrEnum`s defined at the top of the file.
@@ -197,7 +200,10 @@ git-ignored):
 | `DEV_AUTH` | `true` | enables passwordless dev-login |
 | `RUN_WORKERS` | `true` | background workers; tests set `false` |
 | `SETTLEMENT_DELAY_SECONDS` | `5.0` | settlement sweeper timing |
-| `TICK_INTERVAL_MS` | `500` | market-data replay cadence |
+| `TICK_INTERVAL_MS` | `500` | random-walk fallback cadence (used when no dataset) |
+| `DATA_DIR` | `data` | simulation dataset; resolved vs cwd/parent/repo root; missing → generated fallback feed |
+| `REPLAY_BARS_PER_SECOND` | `5.0` | dataset replay speed (≈78 s per market day) |
+| `REPLAY_MODE` | `loop` | `loop` \| `hold` at dataset end |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
 | `SECRET_PROVIDER` | `env` | provider abstraction seam |
 | `ACCESS_TOKEN_TTL_IDLE_SECONDS` / `..._ABSOLUTE_SECONDS` | `1800` / `43200` | session TTLs |
@@ -264,11 +270,17 @@ cd backend && ../backend/.venv/bin/python -m pytest    # or: make test
   seams only; do not hard-code credentials or live endpoints.
 - Break-glass activations are high-severity audited with a 4 h expiry —
   preserve that behavior.
-- Market data is simulated replay (`data.zip` dataset) — do not add live
+- Market data is replayed from the simulation dataset in `data/` (generated
+  random-walk fallback only when `data/` is absent) — do not add live
   market connectivity; the SRS forbids it.
 
 ## Known limitations / deviations (from README.md, verified)
 
+- The simulation dataset covers minute bars 2026-06-30 → 2026-08-29 (daily
+  history back to 2026-01-02) and loops by default (`REPLAY_MODE=loop`); the
+  simulation clock is dataset time, not wall-clock time. News is static
+  reference data for Jul–Aug 2026. Without `data/`, a generated random-walk
+  feed with the same 7 symbols is used.
 - Partial order fills are out of MVP scope; orders fill whole or rest unfilled.
 - Notification preferences are kept in memory; they reset on restart.
 - The GenAI assistant is rule-based grounding over platform data; no external
@@ -283,5 +295,6 @@ cd backend && ../backend/.venv/bin/python -m pytest    # or: make test
 Seeded automatically on first start (idempotent; re-seeding is a no-op) when
 the user table is empty: 8 demo users (`trader@`, `client@`, `ops@`, `risk@`,
 `approver@`, `sysadmin@`, `secadmin@`, `auditor@` `@demo.nomura` — see
-README.md for roles), 10 JPY equities, and two funded portfolios. Re-seed
+README.md for roles), the 7 dataset US equities (AAPL…WMT, USD), and two
+funded portfolios (USD 1M / 500k). Re-seed
 manually with `cd backend && ./.venv/bin/python -m app.seed`.

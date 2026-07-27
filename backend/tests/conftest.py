@@ -23,6 +23,10 @@ def settings(tmp_path):
         SESSION_STORE="memory",
         RUN_WORKERS=False,
         DEV_AUTH=True,
+        # Never load the real dataset in tests (120k rows + SQLite lock
+        # contention); the marketdata fallback feed is used instead. Loader
+        # behavior is covered by test_marketdata_loader with a mini fixture.
+        DATA_DIR=str(tmp_path / "no-such-data-dir"),
     )
 
 

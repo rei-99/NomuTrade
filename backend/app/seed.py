@@ -93,18 +93,18 @@ DEMO_USERS: list[tuple[str, str, str]] = [
     ("auditor@demo.nomura", "Demo Auditor", "Auditor"),
 ]
 
-# (symbol, name) — 10 JPY equities; lot 100, tick 0.5, tradable.
+# (symbol, name) — fallback instrument universe when the simulation dataset
+# (data/, INT-04) is absent: 7 US equities, USD, lot 1, tick 0.01. When the
+# dataset is present the marketdata loader upserts these same symbols from it.
+# Kept in sync with app.modules.marketdata.loader.DATASET_INSTRUMENTS.
 INSTRUMENTS: list[tuple[str, str]] = [
-    ("7203.T", "Toyota"),
-    ("6758.T", "Sony"),
-    ("9984.T", "SoftBank"),
-    ("8306.T", "MUFG"),
-    ("9433.T", "KDDI"),
-    ("6861.T", "Keyence"),
-    ("6501.T", "Hitachi"),
-    ("7974.T", "Nintendo"),
-    ("4063.T", "Shin-Etsu"),
-    ("8001.T", "ITOCHU"),
+    ("AAPL", "Apple"),
+    ("GOOG", "Alphabet"),
+    ("IBM", "IBM"),
+    ("MSFT", "Microsoft"),
+    ("TSLA", "Tesla"),
+    ("UL", "Unilever"),
+    ("WMT", "Walmart"),
 ]
 
 
@@ -178,27 +178,27 @@ async def seed(session: AsyncSession) -> None:
             )
         )
 
-    # Instruments (10 JPY equities).
+    # Instruments (7 US equities, USD — dataset universe, D-12).
     for symbol, name in INSTRUMENTS:
         session.add(
             Instrument(
                 symbol=symbol,
                 name=name,
                 asset_class="EQUITY",
-                currency="JPY",
-                lot_size=Decimal("100"),
-                tick_size=Decimal("0.5"),
+                currency="USD",
+                lot_size=Decimal("1"),
+                tick_size=Decimal("0.01"),
                 tradable=True,
             )
         )
 
-    # Demo portfolios.
+    # Demo portfolios (USD).
     session.add(
         Portfolio(
             name="Client Portfolio A",
             type=PortfolioType.CLIENT,
             owner_id=users["client@demo.nomura"].user_id,
-            cash_balance=Decimal("100000000"),  # 100M JPY
+            cash_balance=Decimal("1000000"),  # 1M USD
         )
     )
     session.add(
@@ -206,7 +206,7 @@ async def seed(session: AsyncSession) -> None:
             name="Desk Book 1",
             type=PortfolioType.HOUSE,
             owner_id=users["trader@demo.nomura"].user_id,
-            cash_balance=Decimal("50000000"),  # 50M JPY
+            cash_balance=Decimal("500000"),  # 500k USD
         )
     )
 
