@@ -1269,6 +1269,8 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--accent); color: #fff; }
 
+.seg-4 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.03em; }
+
 .stepper {
   display: inline-flex;
   align-items: stretch;
@@ -1322,6 +1324,55 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .feedback-chip.ok { border-color: rgba(8, 153, 129, 0.5); color: var(--green); }
 .feedback-chip.err { border-color: rgba(242, 54, 69, 0.5); color: var(--red); }
 .feedback-chip.info { border-color: rgba(41, 98, 255, 0.5); color: var(--blue); }
+
+/* ---------- v3: confirm card (§A1) ---------- */
+
+.confirm-card {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm-card.buy { border-color: rgba(8, 153, 129, 0.55); }
+.confirm-card.sell { border-color: rgba(242, 54, 69, 0.55); }
+
+.confirm-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.confirm-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+  font-size: 12px;
+}
+
+.confirm-grid > span:nth-child(even) { text-align: right; }
+
+.confirm-issues {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--red);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ticket-bond-note { font-size: 10px; }
 
 /* ---------- v2: positions (chips, alloc bar, totals) ---------- */
 

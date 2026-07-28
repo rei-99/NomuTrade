@@ -24,6 +24,7 @@ from app.core.security import (
     get_effective_permissions,
 )
 from app.core.timeutil import as_utc, utcnow
+from app.modules.orders.validation import trade_value
 from app.modules.portfolios.valuation import (
     annualized_volatility_pct,
     compute_realized,
@@ -138,6 +139,17 @@ async def get_positions(
             "unrealized_pnl": (
                 float(v.unrealized_pnl) if v.unrealized_pnl is not None else None
             ),
+            # Per-position day change (design 21 §A5): sim-day open from the
+            # price registry; nulls when no snapshot exists.
+            "prev_day_open": (
+                float(v.day_open) if v.day_open is not None else None
+            ),
+            "day_change": (
+                float(v.day_change) if v.day_change is not None else None
+            ),
+            "day_change_pct": (
+                float(v.day_change_pct) if v.day_change_pct is not None else None
+            ),
             "stale_price": v.stale,
         }
         for v in valuations
@@ -187,7 +199,10 @@ async def get_valuation(
     for v in valuations:
         prev = prev_closes.get(v.instrument.instrument_id)
         if prev is not None and v.latest_price is not None:
-            day_change += v.position.quantity * (v.latest_price - prev)
+            # Bond-aware (§A2): face × (price - prev_close) / 100 for bonds.
+            day_change += trade_value(
+                v.instrument, v.position.quantity, v.latest_price - prev
+            )
 
     # KPIs (FR-PFM-003). allocation/top/concentration percentages are relative
     # to the total market value of holdings (cash excluded).
@@ -286,7 +301,8 @@ async def get_transactions(
     next_cursor = str(offset + PAGE_SIZE) if len(rows) > PAGE_SIZE else None
     items = []
     for execution, order, instrument in rows[:PAGE_SIZE]:
-        gross = execution.quantity * execution.price
+        # Bond-aware cash effect (§A2): face × price / 100 for bonds.
+        gross = trade_value(instrument, execution.quantity, execution.price)
         amount = -gross if order.side == "BUY" else gross
         items.append(
             {

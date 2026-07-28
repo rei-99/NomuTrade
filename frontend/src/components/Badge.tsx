@@ -34,6 +34,7 @@ const TONE_BY_STATUS: Record<string, string> = {
   CLIENT: "blue",
   HOUSE: "amber",
   PAPER: "violet",
+  BOND: "violet",
   // severities
   INFO: "blue",
   WARNING: "amber",

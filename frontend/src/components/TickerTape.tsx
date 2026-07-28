@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Instrument } from "../api/types";
 import { fmtJpy, fmtNum } from "../format";
+import { Badge } from "./Badge";
 
 export interface DayOhlc {
   open: number;
@@ -84,6 +85,7 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
           {tradable.map((i) => (
             <option key={i.instrument_id} value={i.symbol}>
               {i.symbol} — {i.name}
+              {i.asset_class === "BOND" ? " (BOND)" : ""}
             </option>
           ))}
         </select>
@@ -118,6 +120,7 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
             >
               <span className="chip-symbol-top">
                 <span>{i.symbol}</span>
+                {i.asset_class === "BOND" && <Badge text="BOND" />}
                 <span className={`chip-symbol-chg ${chg === null ? "muted" : up ? "pos" : "neg"}`}>
                   {chg === null ? "—" : `${up ? "+" : ""}${fmtNum(chg, 1)}%`}
                 </span>

@@ -120,9 +120,12 @@ Seeded automatically on first start (idempotent; re-seeding is a no-op). In
 | secadmin@demo.nomura | Security Administrator |
 | auditor@demo.nomura | Auditor |
 
-Seed data also includes the 7 dataset US equities (AAPL, GOOG, IBM, MSFT,
-TSLA, UL, WMT — USD) and two funded portfolios (Client Portfolio A,
-$1,000,000; Desk Book 1, $500,000).
+Seed data also includes 11 tradable instruments: the 7 dataset US equities
+(AAPL, GOOG, IBM, MSFT, TSLA, UL, WMT — USD) plus 4 bonds (UST10Y, UST2Y,
+AAPL29, MSFT31 — USD, quoted % of par; generated prices, since data.zip is
+equities-only), and two funded portfolios (Client Portfolio A,
+$1,000,000; Desk Book 1, $500,000). Order types: MARKET, LIMIT, STOP,
+STOP_LIMIT.
 
 ## Demo script (~10 minutes)
 

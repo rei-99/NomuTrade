@@ -3,7 +3,8 @@
 Latest prices come from the marketdata module's in-process registry (with a
 DB fallback for the RUN_WORKERS=false case). Cross-module import is safe: the
 platform is a single-process modular monolith and registry.py is side-effect
-free.
+free. Cash math is bond-aware via `trade_value` (bonds quote % of par,
+quantity = face value, design 21 §A2).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from app.modules.marketdata.registry import (
     get_snapshot,
     warm_from_db,
 )
+from app.modules.orders.validation import trade_value
 
 STALE_PRICE_SECONDS = 60.0
 
@@ -44,6 +46,11 @@ class PositionValuation:
     stale: bool
     market_value: Decimal | None
     unrealized_pnl: Decimal | None
+    # Per-position day change (design 21 §A5): from the registry snapshot's
+    # running day open; None when no snapshot exists.
+    day_open: Decimal | None = None
+    day_change: Decimal | None = None
+    day_change_pct: Decimal | None = None
 
 
 async def value_positions(
@@ -66,11 +73,27 @@ async def value_positions(
             )
             continue
         stale = (now - as_utc(snapshot.ts)).total_seconds() > STALE_PRICE_SECONDS
-        market_value = position.quantity * snapshot.price
-        unrealized = position.quantity * (snapshot.price - position.avg_cost)
+        market_value = trade_value(instrument, position.quantity, snapshot.price)
+        unrealized = market_value - trade_value(
+            instrument, position.quantity, position.avg_cost
+        )
+        day_open = snapshot.day_open
+        day_change = trade_value(
+            instrument, position.quantity, snapshot.price - day_open
+        )
+        base = trade_value(instrument, position.quantity, day_open)
+        day_change_pct = (day_change / base * 100) if base else None
         valuations.append(
             PositionValuation(
-                position, instrument, snapshot.price, stale, market_value, unrealized
+                position,
+                instrument,
+                snapshot.price,
+                stale,
+                market_value,
+                unrealized,
+                day_open,
+                day_change,
+                day_change_pct,
             )
         )
     return valuations
@@ -100,12 +123,13 @@ async def compute_realized(db: AsyncSession, portfolio_id: str) -> Decimal:
     """
     rows = (
         await db.execute(
-            select(Execution, Order)
+            select(Execution, Order, Instrument)
             .join(Order, Execution.order_id == Order.order_id)
+            .join(Instrument, Order.instrument_id == Instrument.instrument_id)
             .where(Order.portfolio_id == portfolio_id, Order.side == "SELL")
         )
     ).all()
-    instrument_ids = {order.instrument_id for _e, order in rows}
+    instrument_ids = {order.instrument_id for _e, order, _i in rows}
     avg_costs: dict[str, Decimal] = {}
     for instrument_id in instrument_ids:
         position = await db.get(Position, (portfolio_id, instrument_id))
@@ -113,10 +137,11 @@ async def compute_realized(db: AsyncSession, portfolio_id: str) -> Decimal:
             position.avg_cost if position is not None else Decimal("0")
         )
     realized = Decimal("0")
-    for execution, order in rows:
-        realized += (
-            execution.price - avg_costs[order.instrument_id]
-        ) * execution.quantity
+    for execution, order, instrument in rows:
+        # Bond-aware (§A2): face × (price - avg_cost) / 100 for bonds.
+        realized += trade_value(
+            instrument, execution.quantity, execution.price - avg_costs[order.instrument_id]
+        )
     return realized
 
 

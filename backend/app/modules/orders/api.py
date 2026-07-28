@@ -1,9 +1,9 @@
 """Order ticket + trade blotter endpoints.
 
 Audit event types emitted here: ORDER_SUBMITTED, ORDER_REJECTED,
-ORDER_CANCELLED, ORDER_AMENDED (ORDER_FILLED is emitted by the execution
-engine worker). Notifications are published to the shared `notify` stream;
-a parallel module persists them.
+ORDER_CANCELLED, ORDER_AMENDED (ORDER_FILLED and STOP_TRIGGERED are emitted
+by the execution engine worker). Notifications are published to the shared
+`notify` stream; a parallel module persists them.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -41,7 +41,7 @@ from app.core.security import (
     require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
-from app.modules.orders.validation import validate_order
+from app.modules.orders.validation import Rejection, validate_order
 
 router = APIRouter(tags=["orders"])
 
@@ -62,14 +62,16 @@ class OrderTicket(BaseModel):
     portfolio_id: str
     instrument: str  # symbol
     side: Literal["BUY", "SELL"]
-    order_type: Literal["MARKET", "LIMIT"]
+    order_type: Literal["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]
     quantity: Decimal
     limit_price: Decimal | None = None
+    stop_price: Decimal | None = None  # required for STOP / STOP_LIMIT (§A3)
 
 
 class OrderAmendment(BaseModel):
     quantity: Decimal | None = None
     limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
 
 
 def _iso(dt) -> str:
@@ -86,6 +88,9 @@ def order_json(order: Order, symbol: str) -> dict:
         "quantity": float(order.quantity),
         "limit_price": (
             float(order.limit_price) if order.limit_price is not None else None
+        ),
+        "stop_price": (
+            float(order.stop_price) if order.stop_price is not None else None
         ),
         "status": order.status,
         "reject_reason": order.reject_reason,
@@ -122,6 +127,15 @@ def _parse_cursor(cursor: str | None) -> int:
     if offset < 0:
         raise ValidationError("invalid cursor")
     return offset
+
+
+def _rejection_detail(rejection: Rejection) -> dict:
+    """422 details payload: machine code + message + rule-specific extras
+    (restricted-list reason, notional limit/actual)."""
+    detail = {"code": rejection.code, "message": rejection.message}
+    if rejection.details:
+        detail.update(rejection.details)
+    return detail
 
 
 async def _notify(db: AsyncSession, user_id: str, title: str, body: str) -> None:
@@ -163,6 +177,7 @@ async def _symbol_map(db: AsyncSession, instrument_ids: set[str]) -> dict[str, s
 @router.post("/orders", status_code=201)
 async def submit_order(
     body: OrderTicket,
+    request: Request,
     response: Response,
     user: SessionData = Depends(require_permission("ORDER_SUBMIT")),
     db: AsyncSession = Depends(get_db),
@@ -199,6 +214,8 @@ async def submit_order(
         order_type=body.order_type,
         quantity=body.quantity,
         limit_price=body.limit_price,
+        stop_price=body.stop_price,
+        settings=request.app.state.settings,
     )
     if rejection is not None:
         order = Order(
@@ -208,6 +225,7 @@ async def submit_order(
             order_type=body.order_type,
             quantity=body.quantity,
             limit_price=body.limit_price,
+            stop_price=body.stop_price,
             status=OrderStatus.REJECTED,
             reject_reason=rejection.code,
             idempotency_key=idempotency_key,
@@ -238,7 +256,7 @@ async def submit_order(
         await db.commit()
         raise BusinessRuleViolation(
             rejection.message,
-            details=[{"code": rejection.code, "message": rejection.message}],
+            details=[_rejection_detail(rejection)],
         )
 
     order = Order(
@@ -248,6 +266,7 @@ async def submit_order(
         order_type=body.order_type,
         quantity=body.quantity,
         limit_price=body.limit_price,
+        stop_price=body.stop_price,
         status=OrderStatus.ACCEPTED,
         idempotency_key=idempotency_key,
         created_by=user.user_id,
@@ -268,6 +287,7 @@ async def submit_order(
             "order_type": body.order_type,
             "quantity": str(body.quantity),
             "limit_price": str(body.limit_price) if body.limit_price else None,
+            "stop_price": str(body.stop_price) if body.stop_price else None,
         },
     )
     try:
@@ -398,11 +418,18 @@ async def cancel_order(
 async def amend_order(
     order_id: str,
     body: OrderAmendment,
+    request: Request,
     user: SessionData = Depends(require_permission("ORDER_CANCEL")),
     db: AsyncSession = Depends(get_db),
 ):
-    if body.quantity is None and body.limit_price is None:
-        raise ValidationError("nothing to amend: provide quantity and/or limit_price")
+    if (
+        body.quantity is None
+        and body.limit_price is None
+        and body.stop_price is None
+    ):
+        raise ValidationError(
+            "nothing to amend: provide quantity, limit_price and/or stop_price"
+        )
     order, portfolio = await _load_owned_order(db, user, order_id)
     if order.status != OrderStatus.OPEN:
         raise StateConflict(
@@ -413,6 +440,7 @@ async def amend_order(
     new_limit = (
         body.limit_price if body.limit_price is not None else order.limit_price
     )
+    new_stop = body.stop_price if body.stop_price is not None else order.stop_price
     instrument = await db.get(Instrument, order.instrument_id)
     rejection = await validate_order(
         db,
@@ -422,6 +450,8 @@ async def amend_order(
         order_type=order.order_type,
         quantity=new_quantity,
         limit_price=new_limit,
+        stop_price=new_stop,
+        settings=request.app.state.settings,
     )
     if rejection is not None:
         # Consistent with submission: a failed amendment rejects the order.
@@ -446,10 +476,11 @@ async def amend_order(
         await db.commit()
         raise BusinessRuleViolation(
             rejection.message,
-            details=[{"code": rejection.code, "message": rejection.message}],
+            details=[_rejection_detail(rejection)],
         )
     order.quantity = new_quantity
     order.limit_price = new_limit
+    order.stop_price = new_stop
     order.updated_at = utcnow()
     await write_audit(
         db,
@@ -460,6 +491,7 @@ async def amend_order(
         payload={
             "quantity": str(new_quantity),
             "limit_price": str(new_limit) if new_limit else None,
+            "stop_price": str(new_stop) if new_stop else None,
         },
     )
     await db.commit()

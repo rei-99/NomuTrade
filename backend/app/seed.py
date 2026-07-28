@@ -1,5 +1,5 @@
 """Idempotent seed: permission catalog, built-in roles, demo users + grants,
-JPY instruments, and demo portfolios.
+US-equity + bond instruments, and demo portfolios.
 
 Usage:
     python -m app.seed          # seeds the default ./stp.db from Settings
@@ -93,18 +93,24 @@ DEMO_USERS: list[tuple[str, str, str]] = [
     ("auditor@demo.nomura", "Demo Auditor", "Auditor"),
 ]
 
-# (symbol, name) — fallback instrument universe when the simulation dataset
-# (data/, INT-04) is absent: 7 US equities, USD, lot 1, tick 0.01. When the
-# dataset is present the marketdata loader upserts these same symbols from it.
-# Kept in sync with app.modules.marketdata.loader.DATASET_INSTRUMENTS.
-INSTRUMENTS: list[tuple[str, str]] = [
-    ("AAPL", "Apple"),
-    ("GOOG", "Alphabet"),
-    ("IBM", "IBM"),
-    ("MSFT", "Microsoft"),
-    ("TSLA", "Tesla"),
-    ("UL", "Unilever"),
-    ("WMT", "Walmart"),
+# (symbol, name, asset_class, lot_size, tick_size) — fallback instrument
+# universe when the simulation dataset (data/, INT-04) is absent: 7 US
+# equities (lot 1) + 4 bonds quoted % of par (lot 1000 face value, design 21
+# §A2), USD, tick 0.01. When the dataset is present the marketdata loader
+# upserts these same symbols from it. Kept in sync with
+# app.modules.marketdata.loader.DATASET_INSTRUMENTS / BOND_INSTRUMENTS.
+INSTRUMENTS: list[tuple[str, str, str, Decimal, Decimal]] = [
+    ("AAPL", "Apple", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("GOOG", "Alphabet", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("IBM", "IBM", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("MSFT", "Microsoft", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("TSLA", "Tesla", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("UL", "Unilever", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("WMT", "Walmart", "EQUITY", Decimal("1"), Decimal("0.01")),
+    ("UST10Y", "US Treasury 4.25% 2035", "BOND", Decimal("1000"), Decimal("0.01")),
+    ("UST2Y", "US Treasury 3.75% 2027", "BOND", Decimal("1000"), Decimal("0.01")),
+    ("AAPL29", "Apple Corp 3.40% 2029", "BOND", Decimal("1000"), Decimal("0.01")),
+    ("MSFT31", "Microsoft Corp 3.10% 2031", "BOND", Decimal("1000"), Decimal("0.01")),
 ]
 
 
@@ -178,16 +184,17 @@ async def seed(session: AsyncSession) -> None:
             )
         )
 
-    # Instruments (7 US equities, USD — dataset universe, D-12).
-    for symbol, name in INSTRUMENTS:
+    # Instruments (7 US equities + 4 generated-price bonds, USD — dataset
+    # universe, D-12 + design 21 §A2).
+    for symbol, name, asset_class, lot_size, tick_size in INSTRUMENTS:
         session.add(
             Instrument(
                 symbol=symbol,
                 name=name,
-                asset_class="EQUITY",
+                asset_class=asset_class,
                 currency="USD",
-                lot_size=Decimal("1"),
-                tick_size=Decimal("0.01"),
+                lot_size=lot_size,
+                tick_size=tick_size,
                 tradable=True,
             )
         )

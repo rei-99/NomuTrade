@@ -1,11 +1,15 @@
 """STP pipeline workers (docs/design/02-order-execution-stp.md).
 
 - execution_engine: consumes `orders.accepted` + `market.ticks`; MARKET fills
-  immediately at the latest price, LIMIT rests OPEN until crossed. Full fills
-  only — partial fills are a documented MVP non-goal (design A1).
+  immediately at the latest price, LIMIT rests OPEN until crossed. STOP /
+  STOP_LIMIT rest OPEN until a tick crosses the stop price (BUY >= stop,
+  SELL <= stop, design 21 §A3): STOP then fills as MARKET at the tick,
+  STOP_LIMIT converts in place to a resting LIMIT (STOP_TRIGGERED audited).
+  Full fills only — partial fills are a documented MVP non-goal (design A1).
 - stp_worker: consumes `trading.executions`; in ONE transaction upserts the
-  Position, adjusts cash, inserts the SettlementInstruction and writes the
-  `stp.lifecycle` outbox event. Idempotent per execution.
+  Position, adjusts cash (bond-aware via `trade_value`, §A2), inserts the
+  SettlementInstruction and writes the `stp.lifecycle` outbox event.
+  Idempotent per execution.
 - settlement_sweeper: advances EXECUTED -> AFFIRMED -> SETTLED after the
   configured simulated delay, publishing `stp.lifecycle` per transition.
 
@@ -41,10 +45,12 @@ from app.core.models import (
 )
 from app.core.timeutil import as_utc, utcnow
 from app.modules.marketdata.registry import get_snapshot
+from app.modules.orders.validation import trade_value
 
 logger = logging.getLogger(__name__)
 
 ORDER_FILLED = "ORDER_FILLED"
+STOP_TRIGGERED = "STOP_TRIGGERED"
 STP_EXCEPTION = "STP_EXCEPTION"
 
 _CLOSED_STATUSES = (
@@ -52,6 +58,9 @@ _CLOSED_STATUSES = (
     OrderStatus.CANCELLED,
     OrderStatus.REJECTED,
 )
+
+# Order types that rest in the working book as OPEN until crossed/triggered.
+_RESTING_TYPES = (OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT)
 
 
 async def _shielded(coro):
@@ -79,6 +88,51 @@ def _marketable(order: Order, price: Decimal) -> bool:
     return price >= order.limit_price
 
 
+def _stop_triggered(order: Order, price: Decimal) -> bool:
+    """STOP/STOP_LIMIT trigger check (design 21 §A3): BUY triggers when the
+    tick is at/above the stop price, SELL when it is at/below it."""
+    if order.stop_price is None:
+        return False
+    if order.side == "BUY":
+        return price >= order.stop_price
+    return price <= order.stop_price
+
+
+async def _convert_stop_limit(session, order: Order, tick_price: Decimal) -> None:
+    """Triggered STOP_LIMIT (§A3): convert in place to a LIMIT order at
+    limit_price (stop_price stays on the record); audit + notify the owner."""
+    instrument = await session.get(Instrument, order.instrument_id)
+    portfolio = await session.get(Portfolio, order.portfolio_id)
+    order.order_type = OrderType.LIMIT
+    order.updated_at = utcnow()
+    await write_audit(
+        session,
+        actor_id=None,  # system actor: the matching engine
+        event_type=STOP_TRIGGERED,
+        resource_type="ORDER",
+        resource_id=order.order_id,
+        payload={
+            "symbol": instrument.symbol,
+            "side": order.side,
+            "stop_price": str(order.stop_price),
+            "limit_price": str(order.limit_price) if order.limit_price else None,
+            "tick_price": str(tick_price),
+        },
+    )
+    await write_outbox(
+        session,
+        "notify",
+        {
+            "user_id": portfolio.owner_id,
+            "category": "ORDER",
+            "title": "Stop triggered",
+            "body": f"{order.side} {order.quantity} {instrument.symbol}: stop "
+            f"{order.stop_price} triggered at {tick_price}; now resting as "
+            f"LIMIT {order.limit_price}.",
+        },
+    )
+
+
 async def _fill_order(sessionmaker, order_id: str) -> str:
     """Attempt to fill one order in a single transaction.
 
@@ -94,7 +148,18 @@ async def _fill_order(sessionmaker, order_id: str) -> str:
         if snapshot is None:
             return "working"  # feed stale: leave the order working
         if order.status == OrderStatus.OPEN or order.status == OrderStatus.ACCEPTED:
-            if not _marketable(order, snapshot.price):
+            if order.order_type in (OrderType.STOP, OrderType.STOP_LIMIT):
+                # Resting stop: works until a tick crosses the stop price.
+                if not _stop_triggered(order, snapshot.price):
+                    return "working"
+                if order.order_type == OrderType.STOP_LIMIT:
+                    await _convert_stop_limit(session, order, snapshot.price)
+                    await session.commit()
+                    # Re-enter as a LIMIT order in a fresh unit-of-work: fills
+                    # immediately when the limit is crossed, else rests OPEN.
+                    return await _fill_order(sessionmaker, order_id)
+                # STOP: triggered -> fill as MARKET at the tick price below.
+            elif not _marketable(order, snapshot.price):
                 return "working"
             now = utcnow()
             execution = Execution(
@@ -197,9 +262,9 @@ async def _rebuild_book(sessionmaker, book: dict[str, set[str]]) -> None:
         )
         changed = False
         for order in orders:
-            # LIMIT orders that were ACCEPTED before a restart rest as OPEN.
+            # Orders that were ACCEPTED before a restart rest as OPEN.
             if (
-                order.order_type == OrderType.LIMIT
+                order.order_type in _RESTING_TYPES
                 and order.status == OrderStatus.ACCEPTED
             ):
                 order.status = OrderStatus.OPEN
@@ -211,14 +276,14 @@ async def _rebuild_book(sessionmaker, book: dict[str, set[str]]) -> None:
 
 
 async def _park_open(sessionmaker, order_id: str) -> tuple[str | None, bool]:
-    """Mark a still-working accepted LIMIT order OPEN; return (instrument_id,
-    working?) so the caller can track it in the in-memory book."""
+    """Mark a still-working accepted LIMIT/STOP/STOP_LIMIT order OPEN; return
+    (instrument_id, working?) so the caller can track it in the book."""
     async with sessionmaker() as session:
         order = await session.get(Order, order_id)
         if order is None or order.status in _CLOSED_STATUSES:
             return None, False
         if (
-            order.order_type == OrderType.LIMIT
+            order.order_type in _RESTING_TYPES
             and order.status == OrderStatus.ACCEPTED
         ):
             order.status = OrderStatus.OPEN
@@ -231,7 +296,7 @@ async def _on_accepted(sessionmaker, book: dict[str, set[str]], order_id: str) -
     result = await _shielded(_fill_order(sessionmaker, order_id))
     if result in ("filled", "closed"):
         return
-    # Still working: park LIMIT orders as OPEN and track in the book.
+    # Still working: park resting orders as OPEN and track in the book.
     instrument_id, working = await _shielded(_park_open(sessionmaker, order_id))
     if working and instrument_id is not None:
         book[instrument_id].add(order_id)
@@ -278,6 +343,7 @@ async def _process_execution(sessionmaker, event: dict) -> None:
         execution = await session.get(Execution, execution_id)
         order = await session.get(Order, execution.order_id)
         portfolio = await session.get(Portfolio, order.portfolio_id)
+        instrument = await session.get(Instrument, order.instrument_id)
 
         position = await session.get(
             Position, (order.portfolio_id, order.instrument_id)
@@ -291,6 +357,9 @@ async def _process_execution(sessionmaker, event: dict) -> None:
             )
             session.add(position)
             await session.flush()
+        # Cash moves by the bond-aware trade value (bonds: face × price / 100,
+        # §A2); avg_cost stays a per-unit price (% of par for bonds).
+        cash_effect = trade_value(instrument, execution.quantity, execution.price)
         if order.side == "BUY":
             new_qty = position.quantity + execution.quantity
             position.avg_cost = (
@@ -298,12 +367,12 @@ async def _process_execution(sessionmaker, event: dict) -> None:
                 + (execution.quantity * execution.price)
             ) / new_qty
             position.quantity = new_qty
-            portfolio.cash_balance -= execution.quantity * execution.price
+            portfolio.cash_balance -= cash_effect
         else:
             # Realized P&L = (exec_price - avg_cost) * qty; computed on read
             # (see portfolios.valuation.compute_realized), no column to store.
             position.quantity -= execution.quantity
-            portfolio.cash_balance += execution.quantity * execution.price
+            portfolio.cash_balance += cash_effect
         position.updated_at = utcnow()
 
         instruction = SettlementInstruction(

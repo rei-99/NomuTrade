@@ -42,3 +42,5 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 | [17 — Security Design](17-security-design.md) | §10, §6 | NFR-SEC-001…010 measures, authN/Z middleware, audit writer, secret provider, error model |
 | [18 — DevOps & Deployment](18-devops-deployment.md) | §11 | D-06 single-VM Docker deployment, Terraform, GitLab CI/CD pipeline |
 | [19 — Testing Strategy](19-testing-strategy.md) | §12 | Test levels mapped to ACs/NFRs; 23 acceptance criteria as tests or scripted demos |
+| [20 — Trading Workspace UI](20-trading-workspace-ui.md) | — | Research synthesis (TradingView/IBKR/Kite) + design language for the terminal UI |
+| [21 — Product-owner feedback](21-product-owner-feedback.md) | — | Interview analysis: two-click confirm, bonds, STOP/STOP_LIMIT, order restrictions, day-change KPIs, news provider seam |

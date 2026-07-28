@@ -5,6 +5,7 @@ import type { Instrument, ListResponse } from "../api/types";
 import { useAuth } from "../auth";
 import { fmtJpy } from "../format";
 import { usePoll } from "../hooks";
+import { Badge } from "./Badge";
 import { NotificationBell } from "./NotificationBell";
 
 interface NavItem {
@@ -99,6 +100,7 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
               >
                 <span>
                   <span className="search-item-symbol">{i.symbol}</span>{" "}
+                  {i.asset_class === "BOND" && <Badge text="BOND" />}{" "}
                   <span className="search-item-name">{i.name}</span>
                 </span>
                 <span className="search-item-price num">{fmtJpy(i.latest_price, true)}</span>
