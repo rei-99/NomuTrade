@@ -7,6 +7,37 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-28 — Product-owner feedback round: two-click confirm, bonds, stops, order restrictions
+
+**Driver:** stakeholder interview with the Head of Product Development
+(`docs/interview_outcome.md`; analysis & design in docs/design/21).
+
+- **Two-click order flow (A1):** BUY/SELL now opens an in-panel confirmation
+  card (instrument, side, type, qty, est. cost, cash before/after) — Confirm
+  submits, Cancel/Esc dismisses; idempotency key minted at Confirm.
+- **Bonds (A2, resolves TBD-17):** 4 bonds added (UST10Y, UST2Y, AAPL29,
+  MSFT31; USD, % of par, lot 1000) with generated mean-reverting price
+  series in dataset time (data.zip is equities-only — documented). Proper
+  bond cash math (`qty × price / 100`) in validation, STP and valuation;
+  allocation KPI now splits EQUITY vs BOND.
+- **STOP & STOP_LIMIT (A3, resolves TBD-18):** `orders.stop_price` column
+  (+ additive auto-migration for existing DBs); trigger engine (BUY ≥ stop,
+  SELL ≤ stop; STOP fills as MARKET, STOP_LIMIT converts to LIMIT with
+  `STOP_TRIGGERED` audit + notification); amendable; 4-type selector in UI.
+- **Order restrictions (A4):** per-order max notional (`ORDER_MAX_NOTIONAL`,
+  422 `MAX_NOTIONAL_EXCEEDED`) + SecAdmin-managed restricted list
+  (`GET/POST/DELETE /restricted-instruments`, 422 `RESTRICTED_INSTRUMENT`,
+  audited add/remove).
+- **Day-change KPIs (A5):** positions carry `prev_day_open`, `day_change`,
+  `day_change_pct`; new Day chg column in the positions table.
+- **News provider seam (A6):** `NewsProvider` interface — dataset provider
+  (default) + Alpha Vantage live provider (`NEWS_PROVIDER`/`ALPHAVANTAGE_API_KEY`,
+  off by default; the phase-2 integration point the business asked to see).
+- Verified: **62/62 backend tests** (9 trading + 10 governance new), frontend
+  build clean, live smoke on PostgreSQL (migration applied, bond fill with
+  correct % of par cash, stop trigger, restriction 422, notional 422) and a
+  headless screenshot of the 11-instrument workspace.
+
 ## 2026-07-28 — TradingView-calibrated terminal UI + instrument hygiene
 
 **Driver:** owner request — research modern trading front-ends and make ours

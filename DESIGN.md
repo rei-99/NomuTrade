@@ -186,7 +186,7 @@ The audit path is deliberately **synchronous for security-critical actions** (ch
 
 **Decision D-11:** The replay **loops the dataset**: minute bars are replayed in dataset-time order at `REPLAY_BARS_PER_SECOND` (default 5.0 ≈ 78 s per market day); `REPLAY_MODE=loop|hold` (default `loop`).
 
-**Decision D-12:** Instruments come from the **dataset loader** (7 US equities; USD, lot 1, tick 0.01); the seed keeps users/roles/portfolios (USD cash 1M/500k); a missing data dir falls back to a generated random-walk feed with the same 7 symbols.
+**Decision D-12:** Instruments come from the **dataset loader** (7 US equities + 4 generated-price bonds; USD; equities lot 1/tick 0.01, bonds lot 1000/tick 0.01 quoted % of par); the seed keeps users/roles/portfolios (USD cash 1M/500k); a missing data dir falls back to a generated random-walk feed with the same symbols.
 
 **Decision D-13:** The historical/live overlap (Jun 30 – Jul 10) is resolved by loading dailies only before Jun 30; wide chart timeframes get server-side daily aggregation (API shapes unchanged).
 
@@ -269,7 +269,8 @@ Design proposals awaiting week-1 confirmation (SRS §9); defaults adopted in the
 - **TBD-07** performance targets — NFR proposals adopted as test thresholds.
 - **TBD-11** cloud provider — Terraform written provider-portable until confirmed.
 - **TBD-16** currency — **RESOLVED**: USD (D-16).
-- **TBD-17** instrument scope — **RESOLVED**: the dataset's US-equities universe — AAPL, GOOG, IBM, MSFT, TSLA, UL, WMT (D-12/D-16).
+- **TBD-17** instrument scope — **RESOLVED**: dataset's 7 US equities **plus 4 bonds** (generated prices; product-owner interview, docs/design/21) — equities-only rejected by the business.
+- **TBD-18** order types — **RESOLVED**: MARKET, LIMIT, STOP, STOP_LIMIT (product-owner interview; iceberg/TIF/trailing stay roadmap, docs/design/21).
 
 ---
 

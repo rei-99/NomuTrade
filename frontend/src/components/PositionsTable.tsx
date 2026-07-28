@@ -46,6 +46,11 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
   const totalCost = positions.items.reduce((a, p) => a + p.quantity * p.avg_cost, 0);
   const totalUpnlPct =
     totalCost > 0 ? (positions.totals.unrealized_pnl / totalCost) * 100 : null;
+  const dayChanges = positions.items
+    .map((p) => p.day_change)
+    .filter((v): v is number => v !== null);
+  const totalDayChange =
+    dayChanges.length > 0 ? dayChanges.reduce((a, v) => a + v, 0) : null;
 
   return (
     <DataTable
@@ -67,6 +72,20 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
               <span className={`mark-cell${dir ? ` flash-${dir}` : ""}`}>
                 {fmtJpy(p.latest_price, true)}{" "}
                 {p.stale_price && <span className="badge badge-amber">STALE</span>}
+              </span>
+            );
+          },
+        },
+        {
+          header: "Day chg",
+          className: "num",
+          render: (p) => {
+            if (p.day_change === null) return <span className="muted">—</span>;
+            const pct = p.day_change_pct;
+            return (
+              <span className={`pnl-chip num ${pnlClass(p.day_change)}`}>
+                {fmtSignedJpy(p.day_change)}
+                {pct !== null && ` (${pct >= 0 ? "+" : ""}${fmtNum(pct, 1)}%)`}
               </span>
             );
           },
@@ -120,6 +139,15 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
         "",
         "",
         "",
+        totalDayChange === null ? (
+          <span key="dc" className="muted">
+            —
+          </span>
+        ) : (
+          <span key="dc" className={`pnl-chip num ${pnlClass(totalDayChange)}`}>
+            {fmtSignedJpy(totalDayChange)}
+          </span>
+        ),
         <span key="mv" className="num">
           {fmtJpy(totalMv)}
         </span>,

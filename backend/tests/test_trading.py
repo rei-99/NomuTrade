@@ -24,6 +24,8 @@ from app.core.models import (
     Order,
     Portfolio,
     Position,
+    PriceTick,
+    RestrictedInstrument,
     SettlementInstruction,
 )
 from app.main import create_app
@@ -36,6 +38,9 @@ DESK_CASH_INITIAL = Decimal("500000")
 SYMBOLS = {
     "AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT",
 }
+
+# Generated bond universe (design 21 §A2): % of par, lot 1000 face value.
+BOND_SYMBOLS = {"UST10Y", "UST2Y", "AAPL29", "MSFT31"}
 
 
 @pytest.fixture
@@ -169,14 +174,19 @@ async def wait_order_status(client, headers, order_id, status, timeout=5.0):
 
 async def test_seed_integrity_and_live_prices(client, trader):
     items = await wait_for_prices(client, trader)  # appears within ~2 s
-    assert len(items) == 7
-    assert {i["symbol"] for i in items} == SYMBOLS
+    assert len(items) == 11  # 7 dataset equities + 4 generated bonds (§A2)
+    assert {i["symbol"] for i in items} == SYMBOLS | BOND_SYMBOLS
     for item in items:
         assert item["latest_price"] > 0
-        assert item["lot_size"] == 1
         assert item["tick_size"] == 0.01
         assert item["tradable"] is True
         assert item["currency"] == "USD"
+    for item in items:
+        if item["asset_class"] == "EQUITY":
+            assert item["lot_size"] == 1
+        else:
+            assert item["asset_class"] == "BOND"
+            assert item["lot_size"] == 1000  # face value per lot
 
     response = await client.get(
         "/api/v1/instruments/TSLA/prices?timeframe=1M", headers=trader
@@ -458,4 +468,442 @@ async def test_stp_position_and_cash_exact(client, app, trader, ids):
     assert position.avg_cost == pytest.approx(price)
     assert portfolio.cash_balance == pytest.approx(
         DESK_CASH_INITIAL - Decimal("200") * price
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Bonds (A2): universe present, tradable, generated prices stay near par
+# ---------------------------------------------------------------------------
+
+
+async def test_bond_universe_and_calm_prices(client, app, trader, ids):
+    items = await wait_for_prices(client, trader)
+    bonds = {i["symbol"]: i for i in items if i["asset_class"] == "BOND"}
+    assert set(bonds) == BOND_SYMBOLS
+    for bond in bonds.values():
+        assert bond["tradable"] is True
+        assert bond["currency"] == "USD"
+        assert bond["lot_size"] == 1000  # face value per lot
+        assert bond["tick_size"] == 0.01
+        # Mean-reverting around par 100: visibly calmer than equities.
+        assert 90 <= bond["latest_price"] <= 110
+
+    # Fallback mode: the generated 120-day daily history is persisted and
+    # stays near par (dataset mode would add minute bars on the live window).
+    async with app.state.sessionmaker() as session:
+        closes = (
+            (
+                await session.execute(
+                    select(PriceTick.close).where(
+                        PriceTick.instrument_id == ids["instrument_id"]["UST10Y"]
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(closes) >= 100
+    assert all(90 <= float(close) <= 110 for close in closes)
+
+    # The candles endpoint serves bonds like any equity.
+    response = await client.get(
+        "/api/v1/instruments/UST10Y/prices?timeframe=1M", headers=trader
+    )
+    assert response.status_code == 200
+    assert len(response.json()["candles"]) >= 25
+
+
+# ---------------------------------------------------------------------------
+# 10. Bond cash math (A2): face value × price / 100 in validation + STP cash
+# ---------------------------------------------------------------------------
+
+
+async def test_bond_cash_math(client, app, trader, ids):
+    await wait_for_prices(client, trader)
+
+    # Buying power uses the bond convention: 600M face costs ~600M at par,
+    # far beyond the desk's 500k cash (600M × price, unscaled, would be ~60B).
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "UST10Y",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 600_000_000,
+        },
+    )
+    assert response.status_code == 422
+    details = response.json()["error"]["details"]
+    assert details[0]["code"] == "INSUFFICIENT_BUYING_POWER"
+
+    # BUY 2000 face fills; the position quantity is the face value.
+    order_id = await submit_market_buy(
+        client, trader, ids["desk"], symbol="UST10Y", qty=2000
+    )
+    order = await wait_order_status(client, trader, order_id, "FILLED")
+    execution = order["executions"][0]
+    exec_price = Decimal(str(execution["price"]))
+
+    async def stp_done():
+        async with app.state.sessionmaker() as session:
+            position = await session.get(
+                Position, (ids["desk"], ids["instrument_id"]["UST10Y"])
+            )
+            portfolio = await session.get(Portfolio, ids["desk"])
+            if position is None or position.quantity != Decimal("2000"):
+                return None
+            return position, portfolio
+
+    position, portfolio = await wait_until(stp_done)
+    expected_cost = Decimal("2000") * exec_price / Decimal("100")
+    assert position.avg_cost == pytest.approx(exec_price)
+    # Cash moves by face × price / 100 (~2k), not face × price (~200k).
+    assert expected_cost < 2500
+    assert portfolio.cash_balance == pytest.approx(
+        DESK_CASH_INITIAL - expected_cost
+    )
+
+    # Position valuation uses the same convention.
+    response = await client.get(
+        f"/api/v1/portfolios/{ids['desk']}/positions", headers=trader
+    )
+    assert response.status_code == 200
+    item = next(
+        i for i in response.json()["items"] if i["instrument_symbol"] == "UST10Y"
+    )
+    assert item["quantity"] == 2000
+    assert item["market_value"] == pytest.approx(
+        2000 * item["latest_price"] / 100
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. STOP validation (A3): stop_price required; STOP_LIMIT needs limit too
+# ---------------------------------------------------------------------------
+
+
+async def test_stop_price_required(client, trader, ids):
+    await wait_for_prices(client, trader)
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "STOP",
+            "quantity": 100,
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["code"] == "STOP_PRICE_REQUIRED"
+
+    # STOP_LIMIT also requires a positive limit_price.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "STOP_LIMIT",
+            "quantity": 100,
+            "stop_price": 500.0,
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["code"] == "LIMIT_PRICE_REQUIRED"
+
+
+# ---------------------------------------------------------------------------
+# 12. STOP SELL (A3): rests below market, triggers at/above the stop
+# ---------------------------------------------------------------------------
+
+
+async def test_stop_sell_resting_then_triggered(client, trader, ids):
+    await wait_for_prices(client, trader)
+    buy_id = await submit_market_buy(client, trader, ids["desk"], qty=100)
+    await wait_order_status(client, trader, buy_id, "FILLED")
+
+    async def position_ready():
+        response = await client.get(
+            f"/api/v1/portfolios/{ids['desk']}/positions", headers=trader
+        )
+        for item in response.json()["items"]:
+            if item["instrument_symbol"] == "TSLA" and item["quantity"] == 100:
+                return item
+        return None
+
+    await wait_until(position_ready)  # STP worker must book the position first
+
+    # Stop far below the market: rests OPEN, never triggers.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "SELL",
+            "order_type": "STOP",
+            "quantity": 100,
+            "stop_price": 1.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    resting_id = response.json()["order_id"]
+    order = await wait_order_status(client, trader, resting_id, "OPEN")
+    assert order["order_type"] == "STOP"
+    assert order["stop_price"] == 1.0
+    await asyncio.sleep(0.5)
+    order = (
+        await client.get(f"/api/v1/orders/{resting_id}", headers=trader)
+    ).json()
+    assert order["status"] == "OPEN"  # tick (100+) never falls to 1.0
+
+    # Stop far above the market: the next tick is at/below it -> the STOP
+    # fills immediately as MARKET at the tick price.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "SELL",
+            "order_type": "STOP",
+            "quantity": 100,
+            "stop_price": 100000.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    order = await wait_order_status(
+        client, trader, response.json()["order_id"], "FILLED"
+    )
+    assert order["executions"][0]["quantity"] == 100
+
+
+# ---------------------------------------------------------------------------
+# 13. STOP BUY (A3): triggers at/above the stop; far stop rests + cancels
+# ---------------------------------------------------------------------------
+
+
+async def test_stop_buy_triggered_and_resting(client, trader, ids):
+    await wait_for_prices(client, trader)
+    # Stop below the market: every tick is at/above it -> immediate fill.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "STOP",
+            "quantity": 50,
+            "stop_price": 1.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    order = await wait_order_status(
+        client, trader, response.json()["order_id"], "FILLED"
+    )
+    assert order["executions"][0]["quantity"] == 50
+
+    # Stop far above the market: rests OPEN and can be cancelled.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "STOP",
+            "quantity": 50,
+            "stop_price": 100000.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    resting_id = response.json()["order_id"]
+    order = await wait_order_status(client, trader, resting_id, "OPEN")
+    assert order["stop_price"] == 100000.0
+    cancelled = await client.post(
+        f"/api/v1/orders/{resting_id}/cancel", headers=trader
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "CANCELLED"
+
+
+# ---------------------------------------------------------------------------
+# 14. STOP_LIMIT (A3): rests untriggered; amended stop -> converts to LIMIT
+# ---------------------------------------------------------------------------
+
+
+async def test_stop_limit_converts_to_limit_on_trigger(client, app, trader, ids):
+    await wait_for_prices(client, trader)
+    # Stop far above the market: rests OPEN without triggering.
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "STOP_LIMIT",
+            "quantity": 100,
+            "limit_price": 1.0,
+            "stop_price": 100000.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    order_id = response.json()["order_id"]
+    order = await wait_order_status(client, trader, order_id, "OPEN")
+    assert order["order_type"] == "STOP_LIMIT"
+    assert order["stop_price"] == 100000.0
+    assert order["limit_price"] == 1.0
+
+    # Amend the stop below the market: the next tick triggers and the order
+    # converts in place to a resting LIMIT (limit 1.0 never crosses).
+    response = await client.patch(
+        f"/api/v1/orders/{order_id}", headers=trader, json={"stop_price": 1.0}
+    )
+    assert response.status_code == 200, response.text
+
+    async def converted():
+        body = (
+            await client.get(f"/api/v1/orders/{order_id}", headers=trader)
+        ).json()
+        return body if body["order_type"] == "LIMIT" else None
+
+    order = await wait_until(converted)
+    assert order["status"] == "OPEN"  # BUY limit 1.0 is never marketable
+    assert order["stop_price"] == 1.0  # stop kept on the record
+    assert order["limit_price"] == 1.0
+
+    # The trigger is audited with the tick price.
+    async with app.state.sessionmaker() as session:
+        audits = (
+            (
+                await session.execute(
+                    select(AuditEvent).where(
+                        AuditEvent.resource_id == order_id,
+                        AuditEvent.event_type == "STOP_TRIGGERED",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(audits) == 1
+    assert audits[0].payload["tick_price"]
+    assert float(audits[0].payload["stop_price"]) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# 15. Restricted list (A4): active entry blocks orders; inactive does not
+# ---------------------------------------------------------------------------
+
+
+async def test_restricted_instrument_blocks_orders(client, app, trader, ids):
+    await wait_for_prices(client, trader)
+    async with app.state.sessionmaker() as session:
+        session.add(
+            RestrictedInstrument(
+                symbol="TSLA",
+                reason="test restriction",
+                active=True,
+                created_by="test",
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 100,
+        },
+    )
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "BUSINESS_RULE_VIOLATION"
+    assert error["details"][0]["code"] == "RESTRICTED_INSTRUMENT"
+    assert error["details"][0]["reason"] == "test restriction"
+
+    # Deactivated entries no longer block.
+    async with app.state.sessionmaker() as session:
+        row = (
+            await session.execute(
+                select(RestrictedInstrument).where(
+                    RestrictedInstrument.symbol == "TSLA"
+                )
+            )
+        ).scalar_one()
+        row.active = False
+        await session.commit()
+
+    order_id = await submit_market_buy(client, trader, ids["desk"])
+    await wait_order_status(client, trader, order_id, "FILLED")
+
+
+# ---------------------------------------------------------------------------
+# 16. Max notional (A4): ORDER_MAX_NOTIONAL cap -> 422 with limit + notional
+# ---------------------------------------------------------------------------
+
+
+async def test_max_notional_exceeded(client, app, trader, ids):
+    await wait_for_prices(client, trader)
+    app.state.settings.ORDER_MAX_NOTIONAL = 1000.0  # tiny cap for this test
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": ids["desk"],
+            "instrument": "TSLA",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 100,  # notional 100 × price (>= 100) >> 1000
+        },
+    )
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "BUSINESS_RULE_VIOLATION"
+    detail = error["details"][0]
+    assert detail["code"] == "MAX_NOTIONAL_EXCEEDED"
+    assert detail["limit"] == 1000.0
+    assert detail["notional"] > 1000.0
+
+
+# ---------------------------------------------------------------------------
+# 17. Per-position day change (A5): prev_day_open / day_change / pct fields
+# ---------------------------------------------------------------------------
+
+
+async def test_positions_day_change_fields(client, trader, ids):
+    await wait_for_prices(client, trader)
+    order_id = await submit_market_buy(client, trader, ids["desk"], qty=100)
+    await wait_order_status(client, trader, order_id, "FILLED")
+
+    async def position_item():
+        response = await client.get(
+            f"/api/v1/portfolios/{ids['desk']}/positions", headers=trader
+        )
+        assert response.status_code == 200
+        for item in response.json()["items"]:
+            if item["instrument_symbol"] == "TSLA":
+                return item
+        return None
+
+    item = await wait_until(position_item)
+    # Workers are running, so the registry snapshot exists -> non-null (§A5).
+    assert item["prev_day_open"] is not None
+    assert item["day_change"] is not None
+    assert item["day_change_pct"] is not None
+    expected = 100 * (item["latest_price"] - item["prev_day_open"])
+    assert item["day_change"] == pytest.approx(expected)
+    assert item["day_change_pct"] == pytest.approx(
+        item["day_change"] / (100 * item["prev_day_open"]) * 100
     )

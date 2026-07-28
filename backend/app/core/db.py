@@ -36,14 +36,47 @@ def get_sessionmaker(
 
 
 async def create_all(engine: AsyncEngine) -> None:
-    """Create all tables (dev convenience).
+    """Create all tables (dev convenience), then apply additive column patches.
 
     TODO: replace create_all with Alembic migrations before production.
+
+    create_all never alters existing tables, so columns added to the model
+    after a dev DB was created are patched in here (additive-only, idempotent):
     """
     from app.core import models  # noqa: F401  (register tables on the metadata)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_additive_columns(conn)
+
+
+# table -> {column: DDL type} — additive patches only, never drops/changes.
+_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
+    "orders": {"stop_price": "NUMERIC(24, 8)"},
+}
+
+
+async def _ensure_additive_columns(conn) -> None:
+    from sqlalchemy import text
+
+    for table, columns in _ADDITIVE_COLUMNS.items():
+        if conn.dialect.name == "sqlite":
+            rows = await conn.execute(text(f"PRAGMA table_info({table})"))
+            existing = {r[1] for r in rows}
+        else:  # postgres
+            rows = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = :table"
+                ),
+                {"table": table},
+            )
+            existing = {r[0] for r in rows}
+        for column, ddl in columns.items():
+            if column not in existing:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                )
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:

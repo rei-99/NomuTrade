@@ -12,7 +12,7 @@ import type {
 import { fmtJpy, fmtNum } from "../format";
 import { useToast } from "./Toast";
 import { Modal } from "./Modal";
-import { detailsToList, postOrder } from "./orderUtils";
+import { detailsToList, postOrder, tradeValue } from "./orderUtils";
 
 export interface TicketPrefill {
   instrument?: string;
@@ -36,6 +36,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [qty, setQty] = useState(prefill.quantity ? String(prefill.quantity) : "");
   const [limitPrice, setLimitPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
   const [portfolioId, setPortfolioId] = useState(
     prefill.portfolioId ?? portfolios[0]?.portfolio_id ?? "",
   );
@@ -71,12 +72,32 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
     [instruments, symbol],
   );
 
+  const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
+  const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
+
+  const pickType = (t: OrderType) => {
+    setOrderType(t);
+    const last = instrument?.latest_price;
+    if ((t === "STOP" || t === "STOP_LIMIT") && stopPrice === "" && last !== null && last !== undefined) {
+      setStopPrice(String(last));
+    }
+    if ((t === "LIMIT" || t === "STOP_LIMIT") && limitPrice === "" && last !== null && last !== undefined) {
+      setLimitPrice(String(last));
+    }
+  };
+
   const qtyNum = Number(qty);
   const limitNum = Number(limitPrice);
-  const refPrice = orderType === "LIMIT" && limitPrice !== "" ? limitNum : instrument?.latest_price;
+  const stopNum = Number(stopPrice);
+  const refPrice =
+    needsLimit && limitPrice !== "" && !Number.isNaN(limitNum) && limitNum > 0
+      ? limitNum
+      : needsStop && stopPrice !== "" && !Number.isNaN(stopNum) && stopNum > 0
+        ? stopNum
+        : instrument?.latest_price;
   const estCost =
     refPrice !== null && refPrice !== undefined && qty !== "" && !Number.isNaN(qtyNum)
-      ? qtyNum * refPrice
+      ? tradeValue(instrument?.asset_class, qtyNum, refPrice)
       : null;
 
   const lotHint =
@@ -102,8 +123,12 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       setViolations(["Quantity must be a positive number."]);
       return;
     }
-    if (orderType === "LIMIT" && (limitPrice === "" || Number.isNaN(limitNum) || limitNum <= 0)) {
-      setViolations(["Limit price is required for LIMIT orders."]);
+    if (needsLimit && (limitPrice === "" || Number.isNaN(limitNum) || limitNum <= 0)) {
+      setViolations(["Limit price is required for LIMIT / STOP-LIMIT orders."]);
+      return;
+    }
+    if (needsStop && (stopPrice === "" || Number.isNaN(stopNum) || stopNum <= 0)) {
+      setViolations(["Stop price is required for STOP / STOP-LIMIT orders."]);
       return;
     }
 
@@ -113,7 +138,8 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       side,
       order_type: orderType,
       quantity: qtyNum,
-      ...(orderType === "LIMIT" ? { limit_price: limitNum } : {}),
+      ...(needsLimit ? { limit_price: limitNum } : {}),
+      ...(needsStop ? { stop_price: stopNum } : {}),
     };
 
     setSubmitting(true);
@@ -166,6 +192,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
               .map((i) => (
                 <option key={i.instrument_id} value={i.symbol}>
                   {i.symbol} — {i.name}
+                  {i.asset_class === "BOND" ? " (BOND)" : ""}
                 </option>
               ))}
           </select>
@@ -211,27 +238,38 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
           )}
         </label>
 
-        <div className="form-field">
+        <div className="form-field form-field-full">
           <span>Order type</span>
-          <div className="side-toggle">
-            <button
-              className={`btn btn-ghost${orderType === "MARKET" ? " active" : ""}`}
-              onClick={() => setOrderType("MARKET")}
-              type="button"
-            >
-              MARKET
-            </button>
-            <button
-              className={`btn btn-ghost${orderType === "LIMIT" ? " active" : ""}`}
-              onClick={() => setOrderType("LIMIT")}
-              type="button"
-            >
-              LIMIT
-            </button>
+          <div className="seg seg-4">
+            {(["MARKET", "LIMIT", "STOP", "STOP_LIMIT"] as OrderType[]).map((t) => (
+              <button
+                key={t}
+                className={`seg-btn${orderType === t ? " active" : ""}`}
+                onClick={() => pickType(t)}
+                type="button"
+              >
+                {t === "STOP_LIMIT" ? "STOP-LIMIT" : t}
+              </button>
+            ))}
           </div>
         </div>
 
-        {orderType === "LIMIT" && (
+        {needsStop && (
+          <label className="form-field">
+            <span>Stop price</span>
+            <input
+              type="number"
+              min="0"
+              step={instrument ? instrument.tick_size : "any"}
+              value={stopPrice}
+              onChange={(e) => setStopPrice(e.target.value)}
+              placeholder="0.00"
+              className="num"
+            />
+          </label>
+        )}
+
+        {needsLimit && (
           <label className="form-field">
             <span>Limit price</span>
             <input
@@ -241,13 +279,19 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
               value={limitPrice}
               onChange={(e) => setLimitPrice(e.target.value)}
               placeholder="0.00"
+              className="num"
             />
           </label>
         )}
 
         <div className="form-field">
           <span>Estimated cost</span>
-          <div className="num ticket-price">{fmtJpy(estCost)}</div>
+          <div className="num ticket-price">
+            {fmtJpy(estCost)}
+            {instrument?.asset_class === "BOND" && (
+              <span className="muted ticket-bond-note"> (qty × px / 100)</span>
+            )}
+          </div>
         </div>
       </div>
 

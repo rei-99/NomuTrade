@@ -30,3 +30,10 @@ class Settings(BaseSettings):
     DATA_DIR: str = "data"
     REPLAY_BARS_PER_SECOND: float = 5.0
     REPLAY_MODE: Literal["loop", "hold"] = "loop"
+    # Order restrictions (A4, design 21): per-order notional cap in the
+    # instrument's currency; 0 disables the check.
+    ORDER_MAX_NOTIONAL: float = 1_000_000.0
+    # News provider (A6, design 21): "dataset" (default) or "alphavantage"
+    # (live fetch-on-demand; requires ALPHAVANTAGE_API_KEY).
+    NEWS_PROVIDER: Literal["dataset", "alphavantage"] = "dataset"
+    ALPHAVANTAGE_API_KEY: str = ""

@@ -114,12 +114,13 @@ async def test_load_dataset(tmp_path, session):
     data_dir = _write_mini_dataset(tmp_path)
     stats = await load_dataset(session, data_dir)
 
-    # Instruments upserted (the full dataset universe is ensured).
+    # Instruments upserted (the full dataset universe is ensured: 7 equities
+    # + 4 bonds, design 21 §A2).
     instruments = (await session.execute(select(Instrument))).scalars().all()
-    assert len(instruments) == 7
+    assert len(instruments) == 11
     tsla = next(i for i in instruments if i.symbol == "TSLA")
     assert tsla.currency == "USD" and tsla.lot_size == 1 and tsla.tradable
-    assert stats["instruments"] == 7
+    assert stats["instruments"] == 11
 
     # Ticks: 2 historical rows (the 2026-07-01 row is >= LIVE_START and must
     # be skipped — live window wins, D-13) + 3 minute bars.
@@ -138,6 +139,11 @@ async def test_load_dataset(tmp_path, session):
     assert all(t.ts.date() < LIVE_START for t in ticks[:2])
     assert float(ticks[2].close) == 200.5  # first live bar
     assert stats["price_ticks"] == 5
+
+    # Bonds (§A2): the dataset ships no bond data, so each bond gets a
+    # generated series — 120 daily bars + one minute bar per reference live
+    # timestamp (TSLA's 3 here).
+    assert stats["bond_ticks"] == 4 * (120 + 3)
 
     # News flattened: 2 items, 3 sentiment rows, ticker link intact.
     assert stats["news_items"] == 2
@@ -164,9 +170,11 @@ async def test_load_dataset_idempotent(tmp_path, session):
     second = await load_dataset(session, data_dir)
     assert first["price_ticks"] == 5 and first["news_items"] == 2
     assert second["price_ticks"] == 0 and second["news_items"] == 0
+    assert second["bond_ticks"] == 0  # bonds already have their generated ticks
     tick_count = await session.scalar(select(func.count(PriceTick.instrument_id)))
     news_count = await session.scalar(select(func.count(NewsItem.news_id)))
-    assert tick_count == 5 and news_count == 2
+    # 5 equity rows + 4 bonds × (120 daily + 3 generated minute bars).
+    assert tick_count == 5 + 4 * (120 + 3) and news_count == 2
 
 
 async def test_ensure_dataset_instruments_upsert(tmp_path, session):
@@ -174,9 +182,9 @@ async def test_ensure_dataset_instruments_upsert(tmp_path, session):
     await session.commit()
     again = await ensure_dataset_instruments(session)
     await session.commit()
-    assert len(created) == len(again) == 7
+    assert len(created) == len(again) == 11  # 7 equities + 4 bonds (§A2)
     count = await session.scalar(select(func.count(Instrument.instrument_id)))
-    assert count == 7
+    assert count == 11
 
 
 async def test_load_dataset_with_foreign_ticks_present(tmp_path, session):
@@ -235,4 +243,7 @@ async def test_load_dataset_with_foreign_ticks_present(tmp_path, session):
         i.symbol for i in (await session.execute(select(Instrument))).scalars().all()
         if i.tradable
     }
-    assert dataset_symbols == {"AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT"}
+    assert dataset_symbols == {
+        "AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT",
+        "UST10Y", "UST2Y", "AAPL29", "MSFT31",  # generated bonds (§A2)
+    }

@@ -106,7 +106,7 @@ export interface IndicatorsResponse {
 // ---------- orders / trades ----------
 
 export type OrderSide = "BUY" | "SELL";
-export type OrderType = "MARKET" | "LIMIT";
+export type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT";
 export type OrderStatus =
   | "ACCEPTED"
   | "REJECTED"
@@ -130,6 +130,7 @@ export interface Order {
   order_type: OrderType;
   quantity: number;
   limit_price: number | null;
+  stop_price: number | null;
   status: OrderStatus;
   reject_reason: string | null;
   created_at: string;
@@ -143,6 +144,7 @@ export interface OrderRequest {
   order_type: OrderType;
   quantity: number;
   limit_price?: number;
+  stop_price?: number;
 }
 
 export interface OrderCreated {
@@ -186,6 +188,9 @@ export interface Position {
   market_value: number;
   unrealized_pnl: number;
   stale_price: boolean;
+  prev_day_open: number | null;
+  day_change: number | null;
+  day_change_pct: number | null;
 }
 
 export interface PositionsResponse {

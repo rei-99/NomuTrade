@@ -11,6 +11,10 @@ Loads the three dataset packs from `data/` into the platform's own tables:
 - `simulation_news_data_July_1-Aug_30/simulated_<Month>_news_2026.json` —
   market news with per-ticker sentiment, flattened into NewsItem +
   NewsSentiment (reference data, never replayed, D-14).
+- Bonds (design 21 §A2): the dataset pack ships no bond data, so every bond
+  with zero ticks gets a GENERATED daily + minute series from
+  `history.generate_bond_series` (mean-reverting around par 100, minute bars
+  on the equities' own live timestamps so bonds replay in lockstep).
 
 Everything lands in the existing PriceTick/Instrument tables plus the news
 tables (D-10: single store). Idempotent: instruments are upserted by symbol;
@@ -32,6 +36,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Instrument, NewsItem, NewsSentiment, PriceTick
+from app.core.timeutil import as_utc
+from app.modules.marketdata.history import generate_bond_series
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +58,17 @@ DATASET_INSTRUMENTS: dict[str, str] = {
     "TSLA": "Tesla",
     "UL": "Unilever",
     "WMT": "Walmart",
+}
+
+# (symbol, name) — generated bond universe (design 21 §A2): asset_class BOND,
+# USD, lot 1000 (face value), tick 0.01, quoted % of par. The dataset has no
+# bond feed; prices are generated (see history.generate_bond_series).
+# Kept in sync with seed.py's INSTRUMENTS.
+BOND_INSTRUMENTS: dict[str, str] = {
+    "UST10Y": "US Treasury 4.25% 2035",
+    "UST2Y": "US Treasury 3.75% 2027",
+    "AAPL29": "Apple Corp 3.40% 2029",
+    "MSFT31": "Microsoft Corp 3.10% 2031",
 }
 
 _CHUNK = 5000
@@ -79,7 +96,7 @@ def _symbol_from_filename(path: Path, suffix: str) -> str:
 
 
 async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
-    """Upsert the 7 dataset instruments (matched by symbol).
+    """Upsert the dataset universe: 7 equities + 4 bonds (matched by symbol).
 
     Instruments from other eras (e.g. the pre-dataset JPY seed) are retired
     (tradable=False) so they disappear from watchlists and cannot be traded —
@@ -104,8 +121,26 @@ async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
             )
             session.add(instrument)
         instruments.append(instrument)
+    for symbol, name in BOND_INSTRUMENTS.items():
+        instrument = existing.get(symbol)
+        if instrument is None:
+            instrument = Instrument(
+                symbol=symbol,
+                name=name,
+                asset_class="BOND",
+                currency="USD",
+                lot_size=Decimal("1000"),  # face value per lot
+                tick_size=Decimal("0.01"),
+                tradable=True,
+            )
+            session.add(instrument)
+        instruments.append(instrument)
     for symbol, instrument in existing.items():
-        if symbol not in DATASET_INSTRUMENTS and instrument.tradable:
+        if (
+            symbol not in DATASET_INSTRUMENTS
+            and symbol not in BOND_INSTRUMENTS
+            and instrument.tradable
+        ):
             instrument.tradable = False
             logger.info("dataset loader: retired off-dataset instrument %s", symbol)
     await session.flush()
@@ -202,6 +237,38 @@ def _to_decimal(value) -> Decimal | None:
         return None
 
 
+async def _reference_minute_timestamps(
+    session: AsyncSession, by_symbol: dict[str, Instrument]
+) -> list[datetime]:
+    """Live-window minute timestamps of the first equity that has any.
+
+    The generated bond series is built on these exact timestamps so bonds
+    replay in lockstep with the equity tape.
+    """
+    live_from = datetime(*LIVE_START.timetuple()[:3], tzinfo=timezone.utc)
+    for symbol in DATASET_INSTRUMENTS:
+        instrument = by_symbol.get(symbol)
+        if instrument is None:
+            continue
+        rows = (
+            (
+                await session.execute(
+                    select(PriceTick.ts)
+                    .where(
+                        PriceTick.instrument_id == instrument.instrument_id,
+                        PriceTick.ts >= live_from,
+                    )
+                    .order_by(PriceTick.ts)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if rows:
+            return [as_utc(ts) for ts in rows]
+    return []
+
+
 async def load_dataset(session: AsyncSession, data_dir: Path) -> dict:
     """Load instruments, price history and news from the dataset packs.
 
@@ -249,6 +316,29 @@ async def load_dataset(session: AsyncSession, data_dir: Path) -> dict:
             await _insert_chunked(session, rows)
             loaded += len(rows)
     stats["price_ticks"] = loaded
+
+    # Bond stage (design 21 §A2): the dataset pack ships no bond data, so
+    # every bond with zero ticks gets a GENERATED series (see
+    # history.generate_bond_series): daily backfill + minute bars on the
+    # equity live CSVs' own timestamps. Idempotent like the tick stage.
+    bond_ticks = 0
+    bonds_missing = [
+        instrument
+        for symbol, instrument in by_symbol.items()
+        if symbol in BOND_INSTRUMENTS and instrument.instrument_id not in have_ticks
+    ]
+    if bonds_missing:
+        minute_timestamps = await _reference_minute_timestamps(session, by_symbol)
+        if not minute_timestamps:
+            logger.warning(
+                "dataset loader: no equity minute bars found; "
+                "generating bond daily history only"
+            )
+        for instrument in bonds_missing:
+            rows = generate_bond_series(instrument, LIVE_START, minute_timestamps)
+            await _insert_chunked(session, rows)
+            bond_ticks += len(rows)
+    stats["bond_ticks"] = bond_ticks
 
     news_count = await session.scalar(select(func.count(NewsItem.news_id)))
     news_dir = data_dir / NEWS_DIR

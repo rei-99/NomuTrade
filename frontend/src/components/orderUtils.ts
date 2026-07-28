@@ -1,6 +1,14 @@
 import { api } from "../api/client";
 import type { OrderRequest } from "../api/types";
 
+/**
+ * Trade value convention: bonds are quoted as % of par, so
+ * value = qty × price / 100; equities are qty × price.
+ */
+export function tradeValue(assetClass: string | undefined, qty: number, price: number): number {
+  return assetClass === "BOND" ? (qty * price) / 100 : qty * price;
+}
+
 /** Normalize the 422 `details` payload into displayable rule-reason strings. */
 export function detailsToList(details: unknown): string[] {
   if (details === null || details === undefined) return [];

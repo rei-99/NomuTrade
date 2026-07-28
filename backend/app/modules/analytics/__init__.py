@@ -20,7 +20,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ from app.core.security import SessionData, get_current_user
 from app.core.timeutil import as_utc, utcnow
 
 from app.modules.analytics import indicators as ind
+from app.modules.analytics.news_providers import get_news_provider
 from app.modules.marketdata.registry import get_sim_now
 
 logger = logging.getLogger(__name__)
@@ -200,34 +201,26 @@ def _news_clock_filter() -> list:
 
 @router.get("/instruments/{symbol}/news")
 async def instrument_news(
+    request: Request,
     symbol: str,
     limit: int = Query(50, ge=1, le=200),
     session: SessionData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Latest news headlines mentioning the instrument, newest first."""
+    """Latest news headlines mentioning the instrument, newest first.
+
+    Data source is resolved via the news-provider seam (A6, design 21):
+    dataset headlines by default, live Alpha Vantage fetch-on-demand when
+    NEWS_PROVIDER=alphavantage.
+    """
     instrument = (
         await db.execute(select(Instrument).where(Instrument.symbol == symbol))
     ).scalar_one_or_none()
     if instrument is None:
         raise NotFound(f"unknown instrument symbol: {symbol}")
-    items = (
-        (
-            await db.execute(
-                select(NewsItem)
-                .join(NewsSentiment, NewsSentiment.news_id == NewsItem.news_id)
-                .where(NewsSentiment.ticker == instrument.symbol)
-                .where(*_news_clock_filter())
-                .options(selectinload(NewsItem.sentiments))
-                .order_by(NewsItem.ts.desc())
-                .limit(limit)
-            )
-        )
-        .scalars()
-        .unique()
-        .all()
-    )
-    return {"items": [_news_item_json(i) for i in items], "next_cursor": None}
+    provider = get_news_provider(request.app.state.settings)
+    items = await provider.for_ticker(db, instrument.symbol, limit)
+    return {"items": items, "next_cursor": None}
 
 
 @router.get("/news/latest")

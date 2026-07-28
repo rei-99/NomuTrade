@@ -55,6 +55,8 @@ class OrderSide(StrEnum):
 class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
+    STOP = "STOP"
+    STOP_LIMIT = "STOP_LIMIT"
 
 
 class OrderStatus(StrEnum):
@@ -320,6 +322,26 @@ class PriceTick(Base):
     volume: Mapped[Decimal] = mapped_column(Numeric(24, 8))
 
 
+class RestrictedInstrument(Base):
+    """Admin-managed restricted list (order-restriction rule, A4/design 21).
+
+    Orders on listed symbols are rejected in pre-trade validation with
+    RESTRICTED_INSTRUMENT. Entries are never hard-deleted by the app —
+    `active` flips instead of a DELETE for audit-friendliness.
+    """
+
+    __tablename__ = "restricted_instruments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    reason: Mapped[str] = mapped_column(String(500), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+
 class NewsItem(Base):
     """A simulated market-news headline (dataset pack 3, D-14).
 
@@ -388,6 +410,7 @@ class Order(Base):
     order_type: Mapped[str] = mapped_column(String(10))  # OrderType
     quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8))
     limit_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    stop_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.ACCEPTED)
     reject_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(100), unique=True)

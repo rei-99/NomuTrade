@@ -133,13 +133,18 @@ export function Orders() {
             { header: "Submitted", render: (o) => <span className="num">{fmtTs(o.created_at)}</span> },
             { header: "Symbol", render: (o) => o.instrument_symbol },
             { header: "Side", render: (o) => <Badge text={o.side} /> },
-            { header: "Type", render: (o) => o.order_type },
+            { header: "Type", render: (o) => o.order_type.replace("_", "-") },
             { header: "Qty", className: "num", render: (o) => fmtNum(o.quantity) },
             { header: "Filled", className: "num", render: (o) => fmtNum(filledQty(o)) },
             {
               header: "Limit",
               className: "num",
               render: (o) => (o.limit_price !== null ? fmtJpy(o.limit_price, true) : "—"),
+            },
+            {
+              header: "Stop",
+              className: "num",
+              render: (o) => (o.stop_price !== null ? fmtJpy(o.stop_price, true) : "—"),
             },
             {
               header: "Status",

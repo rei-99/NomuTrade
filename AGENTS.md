@@ -310,6 +310,8 @@ cd backend && ../backend/.venv/bin/python -m pytest    # or: make test
 Seeded automatically on first start (idempotent; re-seeding is a no-op) when
 the user table is empty: 8 demo users (`trader@`, `client@`, `ops@`, `risk@`,
 `approver@`, `sysadmin@`, `secadmin@`, `auditor@` `@demo.nomura` — see
-README.md for roles), the 7 dataset US equities (AAPL…WMT, USD), and two
+README.md for roles), 11 tradable instruments — the 7 dataset US equities
+(AAPL…WMT, USD) plus 4 bonds (UST10Y, UST2Y, AAPL29, MSFT31, generated
+prices, quoted % of par) — and two
 funded portfolios (USD 1M / 500k). Re-seed
 manually with `cd backend && ./.venv/bin/python -m app.seed`.
