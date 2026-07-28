@@ -227,3 +227,12 @@ async def test_load_dataset_with_foreign_ticks_present(tmp_path, session):
     assert tsla_ticks == 5
     assert foreign_ticks == 1
     assert stats["price_ticks"] == 5
+
+    # Off-dataset instruments are retired (hidden from watchlists, untradable).
+    await session.refresh(foreign)
+    assert foreign.tradable is False
+    dataset_symbols = {
+        i.symbol for i in (await session.execute(select(Instrument))).scalars().all()
+        if i.tradable
+    }
+    assert dataset_symbols == {"AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT"}

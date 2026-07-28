@@ -12,6 +12,7 @@ import type {
 } from "../api/types";
 import { TIMEFRAMES } from "../api/types";
 import { TickerTape } from "../components/TickerTape";
+import type { DayOhlc } from "../components/TickerTape";
 import { PriceChart } from "../components/PriceChart";
 import { OrderPanel } from "../components/OrderPanel";
 import { RiskPanel } from "../components/RiskPanel";
@@ -42,9 +43,13 @@ export function Trading() {
   const [tf, setTf] = useState<Timeframe>("3M");
   const [positions, setPositions] = useState<PositionsResponse | null>(null);
   const [valuation, setValuation] = useState<Valuation | null>(null);
-  const [dayOpen, setDayOpen] = useState<number | null>(null);
+  const [dayOhlc, setDayOhlc] = useState<DayOhlc | null>(null);
 
-  const symbol = urlSymbol ?? instruments[0]?.symbol;
+  // Only tradable instruments are offered in the workspace pickers; retired
+  // (off-dataset) ones stay display-only.
+  const tradableInstruments = useMemo(() => instruments.filter((i) => i.tradable), [instruments]);
+
+  const symbol = urlSymbol ?? tradableInstruments[0]?.symbol;
 
   const setSymbol = useCallback(
     (s: string) => {
@@ -72,10 +77,10 @@ export function Trading() {
 
   // Write the effective symbol into the URL once instruments are known.
   useEffect(() => {
-    if (!urlSymbol && instruments.length > 0) {
-      setSearchParams({ symbol: instruments[0].symbol }, { replace: true });
+    if (!urlSymbol && tradableInstruments.length > 0) {
+      setSearchParams({ symbol: tradableInstruments[0].symbol }, { replace: true });
     }
-  }, [urlSymbol, instruments, setSearchParams]);
+  }, [urlSymbol, tradableInstruments, setSearchParams]);
 
   // Live instrument prices for the tape (5 s).
   usePoll(
@@ -116,10 +121,10 @@ export function Trading() {
     [loadAccount],
   );
 
-  // Day open for the tape's day-change figure (symbol change only — the open
+  // Day O/H/L for the tape's hero block (symbol change only — the day's open
   // is fixed intraday; the live leg comes from the instruments poll).
   useEffect(() => {
-    setDayOpen(null);
+    setDayOhlc(null);
     if (!symbol) return;
     let cancelled = false;
     void (async () => {
@@ -128,9 +133,15 @@ export function Trading() {
           params: { timeframe: "1D" },
           skipErrorToast: true,
         });
-        if (!cancelled && res.candles.length > 0) setDayOpen(res.candles[0].open);
+        if (!cancelled && res.candles.length > 0) {
+          setDayOhlc({
+            open: res.candles[0].open,
+            high: Math.max(...res.candles.map((c) => c.high)),
+            low: Math.min(...res.candles.map((c) => c.low)),
+          });
+        }
       } catch {
-        // day change stays "—"
+        // day change / O/H-L stay "—"
       }
     })();
     return () => {
@@ -141,9 +152,12 @@ export function Trading() {
   const activeInstrument = instruments.find((i) => i.symbol === symbol);
   const dayChangePct = useMemo(() => {
     const last = activeInstrument?.latest_price;
-    if (last === null || last === undefined || dayOpen === null || dayOpen === 0) return null;
-    return ((last - dayOpen) / dayOpen) * 100;
-  }, [activeInstrument, dayOpen]);
+    const open = dayOhlc?.open;
+    if (last === null || last === undefined || open === null || open === undefined || open === 0) {
+      return null;
+    }
+    return ((last - open) / open) * 100;
+  }, [activeInstrument, dayOhlc]);
 
   return (
     <div className="page trading-page">
@@ -153,6 +167,7 @@ export function Trading() {
           symbol={symbol}
           onSymbolChange={setSymbol}
           dayChangePct={dayChangePct}
+          dayOhlc={dayOhlc}
         />
 
         <section className="panel chart-panel">
@@ -180,6 +195,7 @@ export function Trading() {
             portfolios={portfolios}
             portfolioId={portfolioId}
             onPortfolioChange={setPortfolioId}
+            cash={valuation?.cash ?? null}
             onOrderPlaced={() => void loadAccount()}
           />
           <RiskPanel valuation={valuation} />
@@ -220,7 +236,15 @@ export function Trading() {
             <h3>Positions</h3>
             {positions && <span className="muted num">live · 5 s</span>}
           </div>
-          <PositionsTable portfolioId={portfolioId} positions={positions} />
+          {positions === null ? (
+            <div className="skeleton-stack">
+              <div className="skeleton" style={{ height: 22 }} />
+              <div className="skeleton" style={{ height: 22 }} />
+              <div className="skeleton" style={{ height: 22 }} />
+            </div>
+          ) : (
+            <PositionsTable portfolioId={portfolioId} positions={positions} />
+          )}
         </section>
       </div>
     </div>

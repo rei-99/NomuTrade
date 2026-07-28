@@ -13,9 +13,11 @@ interface DataTableProps<T> {
   empty?: string;
   dense?: boolean;
   onRowClick?: (row: T) => void;
+  /** Optional pinned totals row — one cell per column. */
+  footer?: ReactNode[];
 }
 
-export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = true, onRowClick }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = true, onRowClick, footer }: DataTableProps<T>) {
   return (
     <div className="table-wrap">
       <table className={`table${dense ? " table-dense" : ""}`}>
@@ -51,6 +53,17 @@ export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = 
             ))
           )}
         </tbody>
+        {footer && rows.length > 0 && (
+          <tfoot>
+            <tr>
+              {footer.map((cell, i) => (
+                <td key={i} className={columns[i]?.className}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );

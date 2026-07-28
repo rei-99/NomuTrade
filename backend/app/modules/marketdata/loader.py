@@ -79,7 +79,12 @@ def _symbol_from_filename(path: Path, suffix: str) -> str:
 
 
 async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
-    """Upsert the 7 dataset instruments (matched by symbol)."""
+    """Upsert the 7 dataset instruments (matched by symbol).
+
+    Instruments from other eras (e.g. the pre-dataset JPY seed) are retired
+    (tradable=False) so they disappear from watchlists and cannot be traded —
+    their price history is kept for reference.
+    """
     existing = {
         i.symbol: i
         for i in (await session.execute(select(Instrument))).scalars().all()
@@ -99,6 +104,10 @@ async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
             )
             session.add(instrument)
         instruments.append(instrument)
+    for symbol, instrument in existing.items():
+        if symbol not in DATASET_INSTRUMENTS and instrument.tradable:
+            instrument.tradable = False
+            logger.info("dataset loader: retired off-dataset instrument %s", symbol)
     await session.flush()
     return instruments
 

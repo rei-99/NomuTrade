@@ -1,14 +1,14 @@
-// Shared dark-theme fragments for echarts options.
+// Shared dark-theme fragments for echarts options (TradingView-calibrated).
 
 export const CHART_COLORS = {
-  up: "#3fb950",
-  down: "#f85149",
-  text: "#8b949e",
-  axis: "#30363d",
-  grid: "#21262d",
-  panel: "#161b22",
-  fg: "#e6edf3",
-  accent: "#58a6ff",
+  up: "#089981",
+  down: "#f23645",
+  text: "#7b8496",
+  axis: "#2a2e39",
+  grid: "rgba(42, 46, 57, 0.55)",
+  panel: "#1e222d",
+  fg: "#d5dae3",
+  accent: "#2962ff",
 };
 
 export const tooltipBase = {

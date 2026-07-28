@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-28 — TradingView-calibrated terminal UI + instrument hygiene
+
+**Driver:** owner request — research modern trading front-ends and make ours
+fancier/more sophisticated (design: docs/design/20-trading-workspace-ui.md).
+
+- **Research → design:** synthesized TradingView / IBKR / Kite / Binance
+  conventions (dense dark workspace, restrained palette, hairline panel
+  separation, tabular numerals, chart & order-entry conventions) into a
+  design-language doc before implementing.
+- **Terminal UI refresh (frontend-only, zero new deps):** TradingView
+  palette (`#131722`/`#1e222d`/`#2962ff`, hairlines over shadows);
+  watchlist chips with inline-SVG **sparklines**; hero price + day O/H/L;
+  chart crosshair with axis tags, hover-following **OHLC legend**, and a
+  **last-price axis tag**; MARKET/LIMIT segmented order entry with qty
+  stepper, est. cost-vs-cash line and fill-feedback chip; P&L pill chips +
+  allocation bars + pinned totals in positions; **conic-gradient donut**
+  risk gauges; news sentiment meter strip; **global symbol search** +
+  market-status dot in the top bar; skeleton loaders; focus-visible rings.
+  All pages inherit via CSS variables; the 5 trader requirements unchanged.
+- **Instrument hygiene:** the loader now retires off-dataset instruments
+  (`tradable=false`), so legacy JPY symbols from pre-dataset dev DBs
+  disappear from watchlists and can't be traded; all pickers (tape, symbol
+  search, order ticket) filter to tradable.
+- Verified: 43/43 backend tests; frontend build zero type errors;
+  **headless-browser screenshots** of the live workspace confirming the new
+  look, the 7-symbol tape and the news summary (mean +0.20, 76 articles).
+
 ## 2026-07-27 — Bug fix: dataset symbols showed "No price data"; switch dev DB to PostgreSQL
 
 **Driver:** user report — switching to a dataset stock (AAPL, TSLA, …) showed
