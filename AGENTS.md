@@ -15,6 +15,54 @@ is documented but not yet exercised, that is called out explicitly.
   is fine, merging is by approval only.
 - All commits still follow the rule: no git mutations without being asked.
 
+## Working conventions & verification playbook
+
+How this project is actually driven (owner's preferences):
+
+- **Design before big changes**: any non-trivial feature starts with a short
+  design doc in `docs/design/` (numbered, e.g. `21-product-owner-feedback.md`)
+  — analyze, decide, then implement. The owner reviews the design before code
+  when they ask for it explicitly ("design first").
+- **Changelog**: every milestone gets a dated entry in `CHANGELOG.md`
+  (driver → what changed → verification) — it feeds the final presentation.
+- **SRS traceability**: keep `FR-*`/`NFR-*`/`AC-*`/`TBD-*`/`D-*` IDs in docs
+  and code comments; resolve TBDs in DESIGN.md when decisions land.
+- **Sub-agents**: large multi-module builds are delegated to parallel coder
+  sub-agents with strict file boundaries and pinned API contracts; the parent
+  verifies everything itself afterwards (never trust "it passed" unverified).
+
+How to verify (run before claiming done):
+
+1. `cd backend && ./.venv/bin/python -m pytest -q` — full suite must pass.
+2. `cd frontend && npm run build` — `tsc -b && vite build`, zero type errors.
+3. E2E smoke: boot the stack (`./dev.sh sqlite|postgre`) and walk the happy
+   path with curl (dev-login → instruments → order → fill → position →
+   settlement; check audit rows in the DB when relevant).
+4. **UI changes**: verify visually with a headless-browser screenshot —
+   drop a shim `frontend/__shot.html` containing
+   `<script>localStorage.setItem('stp_token','<token>');location.replace('/')</script>`
+   (token from `POST /api/v1/auth/dev-login`), then
+   `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --headless=new --disable-gpu --screenshot=/tmp/shot.png --window-size=1680,1000 --virtual-time-budget=15000 http://localhost:5173/__shot.html`,
+   view the PNG, delete the shim.
+
+Known pitfalls (hit and fixed before — don't rediscover):
+
+- **aiosqlite + cancellation**: cancelling a task mid-DB-call can wedge the
+  connection and hang app shutdown; workers wrap DB units in shield+drain and
+  the outbox relay never dies on a failed batch (`core/events.py`).
+- **naive vs aware datetimes**: SQLite returns naive datetimes; comparing
+  them to tz-aware ones fails *silently* (`==` is False). Normalize with
+  `as_utc()` at boundaries; the sim clock depends on this.
+- **dev.sh testing**: run `./dev.sh` as a plain foreground command — wrapping
+  it in `cd … && ./dev.sh … &` breaks signal-based cleanup (artifact of shell
+  job control, not a script bug).
+- **create_all ≠ migrations**: it never alters existing tables; additive
+  columns go through `_ADDITIVE_COLUMNS` in `core/db.py`.
+- **Seed is once-only**: new permissions/roles in `app/seed.py` do NOT reach
+  existing dev DBs (seed runs only on an empty user table) — prefer
+  leveraging existing permissions or provide an explicit data patch.
+
+
 ## Project overview
 
 **STP — Next-Generation Trading Platform with Straight-Through Processing.**

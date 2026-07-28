@@ -7,6 +7,16 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-28 — AGENTS.md: working conventions & verification playbook
+
+- Captured the owner's working preferences (design-first for big changes,
+  changelog-per-milestone, SRS-ID traceability, sub-agent delegation with
+  parent verification), the verification playbook (pytest, frontend build,
+  E2E curl walkthrough, headless-browser UI screenshots) and the known
+  pitfalls (aiosqlite cancellation, naive-vs-aware datetimes, dev.sh
+  invocation, create_all limits, once-only seeding) — so any fresh session,
+  on any machine, starts with full context.
+
 ## 2026-07-28 — Product-owner feedback round: two-click confirm, bonds, stops, order restrictions
 
 **Driver:** stakeholder interview with the Head of Product Development
