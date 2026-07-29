@@ -66,6 +66,13 @@ Known pitfalls (hit and fixed before — don't rediscover):
 - **Seed is once-only**: new permissions/roles in `app/seed.py` do NOT reach
   existing dev DBs (seed runs only on an empty user table) — prefer
   leveraging existing permissions or provide an explicit data patch.
+- **Windows dev machine**: venv layout differs — use
+  `backend/.venv/Scripts/python` (no `bin/`); the Makefile recipes and
+  commands above are macOS/Linux paths. Edge `--headless=new` silently writes
+  no screenshot on Windows — use Chrome (`C:/Program
+  Files/Google/Chrome/Application/chrome.exe`) for the UI screenshot playbook.
+  The first pytest run on a cold machine can take ~40 s; piping through
+  `tail` hides progress — write to a log file if a run looks stuck.
 
 
 ## Project overview
