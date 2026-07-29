@@ -7,6 +7,38 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-29 — Frontend feature completeness: alerts UI, notification center, restricted admin, trade blotter
+
+**Driver:** owner-directed frontend improvement program (stage 1 of 5) — four
+shipped backend feature sets had no UI consumer at all.
+
+- **Price alerts (`/alerts`)**: list/create/disable alert rules
+  (ABOVE/BELOW/CROSSES_*) over `GET/POST/DELETE /analytics/alerts`; status
+  badges incl. TRIGGERED; 10 s polling; open to every authenticated user
+  (endpoints are login-gated only). Triggered alerts arrive as notifications —
+  verified live: a TSLA rule fired off the replay tick stream within seconds.
+- **Notification center (`/notifications`)**: full cursor-paged inbox with
+  per-item mark-read; preferences panel (IN_APP/EMAIL channel toggles +
+  per-category toggles; BREAK_GLASS/GRANT/PAM locked on as non-suppressible,
+  FR-NTF-003 E1); bell dropdown gains a "View all" link.
+- **Restricted instruments (Admin → Restricted tab, ROLE_MANAGE)**: SecAdmin
+  add/remove UI over `GET/POST/DELETE /restricted-instruments`; Admin tabs are
+  now deep-linkable via `?tab=`.
+- **Trade blotter (`/trades`, TRADE_VIEW)**: dense execution table from
+  `GET /trades` — side badges, bond-aware notional via `tradeValue`, portfolio
+  filter, cursor paging, light poll of the newest page.
+- **Types**: `AlertRule`, `NotificationItem`, `RestrictedInstrument` added;
+  `NotificationPreferences` corrected to the real `{channels, categories}`
+  shape (ASSUMPTION comment resolved against the backend).
+- **Git workflow**: `develop` is now the integration branch (cut from `main`);
+  feature branches merge into `develop` with the owner's standing pre-approval;
+  `develop → main` stays approval-only (AGENTS.md updated).
+- Verified: `npm run build` zero type errors; backend **62/62** tests on the
+  new Windows dev machine (36.9 s); headless-browser screenshots (Chrome —
+  Edge headless silently fails on Windows) of all four UIs against the live
+  SQLite stack showing real data (TSLA fill $10,458.50, triggered alert +
+  notification, IBM restriction).
+
 ## 2026-07-28 — AGENTS.md: working conventions & verification playbook
 
 - Captured the owner's working preferences (design-first for big changes,

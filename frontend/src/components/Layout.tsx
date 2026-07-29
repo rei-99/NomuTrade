@@ -17,10 +17,13 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Trading" },
   { to: "/orders", label: "Orders" },
+  { to: "/trades", label: "Trades", perms: ["TRADE_VIEW"] },
+  { to: "/alerts", label: "Alerts" },
   { to: "/reports", label: "Reports" },
   { to: "/paper", label: "Paper Trading", perms: ["PAPER_TRADE"] },
   { to: "/assistant", label: "Assistant", perms: ["ASSISTANT_USE"] },
   { to: "/access", label: "Access Requests" },
+  { to: "/notifications", label: "Notifications" },
   { to: "/approvals", label: "Approvals", perms: ["APPROVE_ACCESS"] },
   { to: "/admin", label: "Admin", perms: ["ROLE_MANAGE", "ROLE_VIEW", "GRANT_VIEW", "GOVERNANCE_VIEW", "PAM_CHECKOUT", "BREAKGLASS_ELIGIBLE", "BREAKGLASS_REVIEW"] },
   { to: "/audit", label: "Audit", perms: ["AUDIT_VIEW"] },

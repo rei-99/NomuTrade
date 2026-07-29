@@ -18,8 +18,11 @@ const TONE_BY_STATUS: Record<string, string> = {
   READY: "green",
   COMPLETED: "green",
   FAILED: "red",
-  // grant / notification statuses
+  // grant / notification / alert statuses
   ACTIVE: "green",
+  TRIGGERED: "amber",
+  DISABLED: "gray",
+  INACTIVE: "gray",
   REVOKED: "red",
   READ: "gray",
   UNREAD: "blue",
