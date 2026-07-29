@@ -445,7 +445,7 @@ export interface AuditEvent {
 
 // ---------- notifications ----------
 
-export interface AppNotification {
+export interface NotificationItem {
   notification_id: string;
   category: string;
   channel: string;
@@ -454,8 +454,37 @@ export interface AppNotification {
   created_at: string;
 }
 
+/** Alias kept for the bell dropdown — same shape as NotificationItem. */
+export type AppNotification = NotificationItem;
+
 export interface NotificationPreferences {
+  channels: { IN_APP: boolean; EMAIL: boolean };
   categories: Record<string, boolean>;
+}
+
+// ---------- analytics / price alerts ----------
+
+export type AlertCondition = "ABOVE" | "BELOW" | "CROSSES_ABOVE" | "CROSSES_BELOW";
+export type AlertStatus = "ACTIVE" | "TRIGGERED" | "DISABLED";
+
+export interface AlertRule {
+  rule_id: string;
+  instrument: string; // symbol
+  instrument_id: string;
+  condition: AlertCondition;
+  threshold: number;
+  status: AlertStatus;
+  created_at: string;
+}
+
+// ---------- restricted instruments (admin) ----------
+
+export interface RestrictedInstrument {
+  symbol: string;
+  reason: string;
+  active: boolean;
+  created_by: string;
+  created_at: string;
 }
 
 // ---------- admin / governance ----------

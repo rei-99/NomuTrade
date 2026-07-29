@@ -6,14 +6,19 @@ is documented but not yet exercised, that is called out explicitly.
 
 ## Git workflow (standing rule from the project owner)
 
+- Integration branch: **`develop`** (cut from `main`). All feature work lands
+  on `develop`; `develop → main` happens only with the owner's explicit
+  approval, once a whole work program is finished.
 - **Major change** (new feature, redesign, multi-module work): cut a feature
-  branch from `main` first — e.g. `git checkout -b feature/<name> main`.
-- **Minor change** (fixes, tweaks, small additions): commit directly onto the
-  current branch.
-- When changes are done and verified, **push to the current branch**.
-- **Never merge into `main` without the owner's explicit approval** — pushing
-  is fine, merging is by approval only.
-- All commits still follow the rule: no git mutations without being asked.
+  branch from `develop` — e.g. `git checkout -b feature/<name> develop` — and
+  merge back into `develop` once done and verified. **Merging into `develop`
+  is pre-approved by the owner — no need to ask each time.**
+- **Minor change** (fixes, tweaks, small additions): commit directly onto
+  `develop`.
+- When changes are done and verified, **push** the affected branch(es).
+- **Never merge into `main` without the owner's explicit approval.**
+- Other git mutations still follow the rule: no mutations without being asked
+  (the standing develop-merge approval above excepted).
 
 ## Working conventions & verification playbook
 

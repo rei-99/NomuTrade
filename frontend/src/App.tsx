@@ -4,15 +4,18 @@ import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { Access } from "./pages/Access";
 import { Admin } from "./pages/Admin";
+import { Alerts } from "./pages/Alerts";
 import { Approvals } from "./pages/Approvals";
 import { Assistant } from "./pages/Assistant";
 import { Audit } from "./pages/Audit";
 import { Governance } from "./pages/Governance";
 import { Login } from "./pages/Login";
+import { Notifications } from "./pages/Notifications";
 import { Orders } from "./pages/Orders";
 import { Paper } from "./pages/Paper";
 import { PortfolioDetail } from "./pages/PortfolioDetail";
 import { Reports } from "./pages/Reports";
+import { Trades } from "./pages/Trades";
 import { Trading } from "./pages/Trading";
 
 function FullScreen({ children }: { children: ReactElement }) {
@@ -74,6 +77,16 @@ export default function App() {
         <Route path="charts" element={<ChartsRedirect />} />
         <Route path="charts/:symbol" element={<ChartsRedirect />} />
         <Route path="orders" element={<Orders />} />
+        <Route
+          path="trades"
+          element={
+            <Guard perms={["TRADE_VIEW"]}>
+              <Trades />
+            </Guard>
+          }
+        />
+        <Route path="alerts" element={<Alerts />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="reports" element={<Reports />} />
         <Route
           path="paper"

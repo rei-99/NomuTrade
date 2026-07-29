@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppNotification, ListResponse } from "../api/types";
 import { usePoll } from "../hooks";
@@ -78,6 +79,9 @@ export function NotificationBell() {
               </button>
             ))
           )}
+          <Link to="/notifications" className="bell-viewall" onClick={() => setOpen(false)}>
+            View all
+          </Link>
         </div>
       )}
     </div>

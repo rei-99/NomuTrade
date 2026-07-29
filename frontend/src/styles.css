@@ -760,6 +760,33 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .bell-item-body { color: var(--muted); margin-top: 2px; }
 .bell-item-ts { font-size: 10px; margin-top: 3px; }
 
+.bell-viewall {
+  display: block;
+  text-align: center;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+/* ---------- notifications page ---------- */
+
+.notif-list { display: flex; flex-direction: column; gap: 2px; }
+
+.notif-row { cursor: default; }
+
+.notif-row-side { display: flex; align-items: center; gap: 8px; }
+
+.pref-group { margin-top: 10px; }
+.pref-group:first-of-type { margin-top: 0; }
+
+.pref-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pref-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
 /* ---------- login ---------- */
 
 .login-page {

@@ -7,6 +7,7 @@ import type {
   ListResponse,
   PamCheckout,
   PermissionInfo,
+  RestrictedInstrument,
   Role,
 } from "../api/types";
 import { useAuth } from "../auth";
@@ -17,7 +18,7 @@ import { useToast } from "../components/Toast";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
 
-type TabId = "roles" | "grants" | "breakglass" | "pam";
+type TabId = "roles" | "grants" | "breakglass" | "pam" | "restricted";
 
 /** GET /permissions may return objects or plain strings depending on backend
  * implementation — normalize defensively. ASSUMPTION flagged for integrator. */
@@ -46,13 +47,22 @@ export function Admin() {
     if (hasPerm("BREAKGLASS_ELIGIBLE", "BREAKGLASS_REVIEW"))
       tabs.push({ id: "breakglass", label: "Break-glass" });
     if (hasPerm("PAM_CHECKOUT")) tabs.push({ id: "pam", label: "PAM" });
+    if (hasPerm("ROLE_MANAGE")) tabs.push({ id: "restricted", label: "Restricted" });
     return tabs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [tab, setTab] = useState<TabId | null>(null);
+  // Initial tab may be deep-linked via ?tab=<id>; invalid/unknown values fall
+  // back to the first visible tab.
+  const [tab, setTab] = useState<TabId | null>(
+    () => new URLSearchParams(window.location.search).get("tab") as TabId | null,
+  );
   useEffect(() => {
-    setTab((cur) => cur ?? visibleTabs[0]?.id ?? null);
+    setTab((cur) =>
+      cur && visibleTabs.some((t) => t.id === cur)
+        ? cur
+        : visibleTabs[0]?.id ?? null,
+    );
   }, [visibleTabs]);
 
   // ---------- shared data ----------
@@ -60,6 +70,7 @@ export function Admin() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [reviews, setReviews] = useState<BreakGlassReview[]>([]);
+  const [restricted, setRestricted] = useState<RestrictedInstrument[]>([]);
 
   // ---------- grants tab state ----------
   const [grantFilters, setGrantFilters] = useState({ user_email: "", role: "", status: "" });
@@ -92,14 +103,20 @@ export function Admin() {
     setReviews(res.items);
   }, []);
 
+  const loadRestricted = useCallback(async () => {
+    const res = await api<ListResponse<RestrictedInstrument>>("/restricted-instruments");
+    setRestricted(res.items);
+  }, []);
+
   usePoll(
     () => {
       if (tab === "roles") void loadRoles();
       else if (tab === "grants") void loadGrants(grantFilters);
       else if (tab === "breakglass") void loadReviews();
+      else if (tab === "restricted") void loadRestricted();
     },
     10_000,
-    [tab, loadRoles, loadGrants, loadReviews],
+    [tab, loadRoles, loadGrants, loadReviews, loadRestricted],
   );
 
   // ---------- roles tab state ----------
@@ -266,6 +283,39 @@ export function Admin() {
       await api(`/pam/checkouts/${checkout.checkout_id}/checkin`, { method: "POST" });
       toast("Credential checked in", "success");
       setCheckout(null);
+    } catch {
+      // toast raised by client
+    }
+  };
+
+  // ---------- restricted instruments tab state ----------
+  const [restSymbol, setRestSymbol] = useState("");
+  const [restReason, setRestReason] = useState("");
+
+  const addRestriction = async () => {
+    if (!restSymbol.trim()) {
+      toast("Symbol is required", "error");
+      return;
+    }
+    try {
+      await api<RestrictedInstrument>("/restricted-instruments", {
+        method: "POST",
+        body: { symbol: restSymbol.trim().toUpperCase(), reason: restReason.trim() },
+      });
+      toast(`${restSymbol.trim().toUpperCase()} restricted`, "success");
+      setRestSymbol("");
+      setRestReason("");
+      void loadRestricted();
+    } catch {
+      // toast raised by client
+    }
+  };
+
+  const removeRestriction = async (symbol: string) => {
+    try {
+      await api(`/restricted-instruments/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+      toast(`${symbol} removed from the restricted list`, "success");
+      void loadRestricted();
     } catch {
       // toast raised by client
     }
@@ -546,6 +596,71 @@ export function Admin() {
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {tab === "restricted" && (
+        <section className="panel">
+          <div className="panel-header">
+            <h3>Restricted instruments</h3>
+          </div>
+          <div className="filter-bar">
+            <label>
+              Symbol
+              <input
+                type="text"
+                value={restSymbol}
+                onChange={(e) => setRestSymbol(e.target.value.toUpperCase())}
+                placeholder="e.g. TSLA"
+              />
+            </label>
+            <label>
+              Reason
+              <input
+                type="text"
+                value={restReason}
+                onChange={(e) => setRestReason(e.target.value)}
+                placeholder="e.g. Compliance hold"
+              />
+            </label>
+            <button
+              className="btn btn-buy active btn-sm filter-submit"
+              onClick={() => void addRestriction()}
+            >
+              Restrict symbol
+            </button>
+          </div>
+          <DataTable<RestrictedInstrument>
+            rows={restricted}
+            keyFn={(r) => r.symbol}
+            empty="No restricted instruments"
+            columns={[
+              { header: "Symbol", render: (r) => r.symbol },
+              {
+                header: "Reason",
+                render: (r) => (
+                  <span className="cell-clip" title={r.reason}>
+                    {r.reason || "—"}
+                  </span>
+                ),
+              },
+              { header: "Status", render: (r) => <Badge text={r.active ? "ACTIVE" : "INACTIVE"} /> },
+              { header: "Created by", render: (r) => r.created_by },
+              { header: "Created", render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
+              {
+                header: "",
+                render: (r) =>
+                  r.active ? (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => void removeRestriction(r.symbol)}
+                    >
+                      Remove
+                    </button>
+                  ) : null,
+              },
+            ]}
+          />
         </section>
       )}
 
