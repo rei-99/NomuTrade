@@ -13,6 +13,11 @@ Design 21 additions:
   (ORDER_MAX_NOTIONAL, 0 disables — MAX_NOTIONAL_EXCEEDED);
 - bond cash math (§A2): `trade_value` values bond trades (quoted % of par,
   quantity = face value) at qty × price / 100; equities at qty × price.
+
+Design 24 additions:
+- TRAILING_STOP requires exactly one of trail_amount / trail_pct (> 0) and
+  forbids stop_price/limit_price; trail params on other types are rejected
+  (§D-24.2).
 """
 
 from __future__ import annotations
@@ -36,6 +41,10 @@ INSUFFICIENT_BUYING_POWER = "INSUFFICIENT_BUYING_POWER"
 INSUFFICIENT_HOLDINGS = "INSUFFICIENT_HOLDINGS"
 RESTRICTED_INSTRUMENT = "RESTRICTED_INSTRUMENT"
 MAX_NOTIONAL_EXCEEDED = "MAX_NOTIONAL_EXCEEDED"
+TRAIL_PARAM_REQUIRED = "TRAIL_PARAM_REQUIRED"
+TRAIL_PARAM_CONFLICT = "TRAIL_PARAM_CONFLICT"
+TRAIL_PARAM_FORBIDDEN = "TRAIL_PARAM_FORBIDDEN"
+PRICE_FIELD_FORBIDDEN = "PRICE_FIELD_FORBIDDEN"
 
 
 def trade_value(
@@ -71,6 +80,8 @@ async def validate_order(
     quantity: Decimal,
     limit_price: Decimal | None,
     stop_price: Decimal | None = None,
+    trail_amount: Decimal | None = None,
+    trail_pct: Decimal | None = None,
     settings: Settings | None = None,
 ) -> Rejection | None:
     """Run the rule chain; return the first Rejection, or None on PASS."""
@@ -112,6 +123,32 @@ async def validate_order(
         return Rejection(
             STOP_PRICE_REQUIRED,
             f"{order_type} orders require a positive stop_price",
+        )
+    # Trailing stop (design 24 §D-24.2): exactly one trail param (> 0), and
+    # no fixed stop/limit prices; trail params are exclusive to the type.
+    if order_type == "TRAILING_STOP":
+        if limit_price is not None or stop_price is not None:
+            return Rejection(
+                PRICE_FIELD_FORBIDDEN,
+                "TRAILING_STOP orders must not set limit_price/stop_price",
+            )
+        amount_ok = trail_amount is not None and trail_amount > 0
+        pct_ok = trail_pct is not None and trail_pct > 0
+        if amount_ok and pct_ok:
+            return Rejection(
+                TRAIL_PARAM_CONFLICT,
+                "provide exactly one of trail_amount / trail_pct, not both",
+            )
+        if not amount_ok and not pct_ok:
+            return Rejection(
+                TRAIL_PARAM_REQUIRED,
+                "TRAILING_STOP orders require exactly one of trail_amount / "
+                "trail_pct (> 0; trail_pct is percentage points)",
+            )
+    elif trail_amount is not None or trail_pct is not None:
+        return Rejection(
+            TRAIL_PARAM_FORBIDDEN,
+            f"trail_amount/trail_pct are only valid on TRAILING_STOP orders",
         )
     price: Decimal | None = None
     if side == "BUY":

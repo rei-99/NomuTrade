@@ -15,6 +15,7 @@ import { TickerTape } from "../components/TickerTape";
 import type { DayOhlc } from "../components/TickerTape";
 import { PriceChart } from "../components/PriceChart";
 import { OrderPanel } from "../components/OrderPanel";
+import { BondAnalyticsCard } from "../components/BondAnalyticsCard";
 import { RiskPanel } from "../components/RiskPanel";
 import { NewsPanel } from "../components/NewsPanel";
 import { PositionsTable } from "../components/PositionsTable";
@@ -206,6 +207,7 @@ export function Trading() {
             cash={valuation?.cash ?? null}
             onOrderPlaced={() => void loadAccount()}
           />
+          <BondAnalyticsCard instrument={activeInstrument} />
           <RiskPanel valuation={valuation} />
           <NewsPanel symbol={symbol} />
         </div>

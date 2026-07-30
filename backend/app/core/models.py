@@ -57,6 +57,16 @@ class OrderType(StrEnum):
     LIMIT = "LIMIT"
     STOP = "STOP"
     STOP_LIMIT = "STOP_LIMIT"
+    TRAILING_STOP = "TRAILING_STOP"
+
+
+class TimeInForce(StrEnum):
+    """Order time-in-force (design 24 §D-24.1). GTC preserves the pre-TIF
+    resting behavior and is the column default."""
+
+    DAY = "DAY"
+    GTC = "GTC"
+    IOC = "IOC"
 
 
 class OrderStatus(StrEnum):
@@ -306,6 +316,12 @@ class Instrument(Base):
     lot_size: Mapped[Decimal] = mapped_column(Numeric(24, 8))
     tick_size: Mapped[Decimal] = mapped_column(Numeric(24, 8))
     tradable: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Bond reference data (design 24 §D-24.3): annual coupon % of par and
+    # maturity (midnight UTC). Nullable — equities carry neither.
+    coupon_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    maturity_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class PriceTick(Base):
@@ -407,10 +423,23 @@ class Order(Base):
         String(36), ForeignKey("instruments.instrument_id")
     )
     side: Mapped[str] = mapped_column(String(4))  # OrderSide
-    order_type: Mapped[str] = mapped_column(String(10))  # OrderType
+    order_type: Mapped[str] = mapped_column(String(20))  # OrderType
     quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8))
     limit_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
     stop_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    # Time-in-force (design 24 §D-24.1): GTC default keeps pre-TIF behavior;
+    # DAY sets expire_after (sim end-of-day) at acceptance; IOC never rests.
+    time_in_force: Mapped[str] = mapped_column(String(10), default=TimeInForce.GTC)
+    expire_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Trailing stop (design 24 §D-24.2): exactly one of trail_amount /
+    # trail_pct; trail_reference is the persisted extreme water-mark.
+    trail_amount: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    trail_pct: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    trail_reference: Mapped[Decimal | None] = mapped_column(
+        Numeric(24, 8), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.ACCEPTED)
     reject_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(100), unique=True)

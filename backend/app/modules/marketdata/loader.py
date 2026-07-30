@@ -60,18 +60,26 @@ DATASET_INSTRUMENTS: dict[str, str] = {
     "WMT": "Walmart",
 }
 
-# (symbol, name) — generated bond universe (design 21 §A2): asset_class BOND,
-# USD, lot 1000 (face value), tick 0.01, quoted % of par. The dataset has no
-# bond feed; prices are generated (see history.generate_bond_series).
+# (symbol, name, coupon_rate, maturity) — generated bond universe (design 21
+# §A2): asset_class BOND, USD, lot 1000 (face value), tick 0.01, quoted % of
+# par. coupon_rate is the annual coupon % of par and maturity the
+# representative maturity date (design 24 §D-24.3; names carry only the
+# year). The dataset has no bond feed; prices are generated (see
+# history.generate_bond_series).
 # Kept in sync with seed.py's INSTRUMENTS.
-BOND_INSTRUMENTS: dict[str, str] = {
-    "UST10Y": "US Treasury 4.25% 2035",
-    "UST2Y": "US Treasury 3.75% 2027",
-    "AAPL29": "Apple Corp 3.40% 2029",
-    "MSFT31": "Microsoft Corp 3.10% 2031",
+BOND_INSTRUMENTS: dict[str, tuple[str, Decimal, date]] = {
+    "UST10Y": ("US Treasury 4.25% 2035", Decimal("4.25"), date(2035, 8, 15)),
+    "UST2Y": ("US Treasury 3.75% 2027", Decimal("3.75"), date(2027, 6, 15)),
+    "AAPL29": ("Apple Corp 3.40% 2029", Decimal("3.40"), date(2029, 3, 15)),
+    "MSFT31": ("Microsoft Corp 3.10% 2031", Decimal("3.10"), date(2031, 9, 15)),
 }
 
 _CHUNK = 5000
+
+
+def _maturity_utc(day: date) -> datetime:
+    """Bond maturities are stored as midnight UTC (design 24 §D-24.3)."""
+    return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
 
 
 def resolve_data_dir(configured: str) -> Path | None:
@@ -121,7 +129,7 @@ async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
             )
             session.add(instrument)
         instruments.append(instrument)
-    for symbol, name in BOND_INSTRUMENTS.items():
+    for symbol, (name, coupon, maturity) in BOND_INSTRUMENTS.items():
         instrument = existing.get(symbol)
         if instrument is None:
             instrument = Instrument(
@@ -132,8 +140,17 @@ async def ensure_dataset_instruments(session: AsyncSession) -> list[Instrument]:
                 lot_size=Decimal("1000"),  # face value per lot
                 tick_size=Decimal("0.01"),
                 tradable=True,
+                coupon_rate=coupon,
+                maturity_date=_maturity_utc(maturity),
             )
             session.add(instrument)
+        else:
+            # Backfill design-24 bond fields on rows from older DBs (the
+            # once-only seed cannot reach them); never overwrite set values.
+            if instrument.coupon_rate is None:
+                instrument.coupon_rate = coupon
+            if instrument.maturity_date is None:
+                instrument.maturity_date = _maturity_utc(maturity)
         instruments.append(instrument)
     for symbol, instrument in existing.items():
         if (

@@ -7,6 +7,48 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Advanced orders (design 24): time-in-force, TRAILING_STOP, bond analytics
+
+**Driver:** owner-directed feature program — building the deferred items of
+the product-owner feedback round (design 21 §Deferred): TIF/trailing stops
+and bond yield/duration analytics; extends the TBD-18 resolution.
+
+- **Design first**: `docs/design/24-advanced-orders.md` pins D-24.1 (TIF:
+  GTC default; DAY expiry at sim end-of-day via `orders.expire_after`,
+  ORDER_EXPIRED audit; IOC cancels unfilled with reason IOC_UNFILLED, never
+  rests), D-24.2 (TRAILING_STOP: exactly one of trail_amount/trail_pct,
+  persisted water-mark `trail_reference`, trigger rolls-then-checks, fills
+  as MARKET with STOP_TRIGGERED audit, amendable trail) and D-24.3
+  (`instruments.coupon_rate`/`maturity_date`, loader boot backfill;
+  `GET /instruments/{symbol}/bond-analytics` — YTM bisection, modified
+  duration, implied price at a supplied yield); indexed in
+  `docs/design/README.md`; DESIGN.md §7 extends TBD-18.
+- **Backend**: additive columns + per-dialect DDL in `_ADDITIVE_COLUMNS`
+  (orders: time_in_force/expire_after/trail_*; instruments:
+  coupon_rate/maturity_date) and a Postgres varchar widen for
+  `orders.order_type` ("TRAILING_STOP"); execution engine handles DAY
+  expiry, IOC and trailing triggers with audit/notify idioms unchanged;
+  order JSON exposes the new fields; validation adds TRAIL_PARAM_REQUIRED /
+  CONFLICT / FORBIDDEN and PRICE_FIELD_FORBIDDEN (422). Existing
+  MARKET/LIMIT/STOP/STOP_LIMIT semantics untouched.
+- **Frontend**: TIF selector (DAY/GTC/IOC) + TRAIL type with trail
+  amount/% inputs (exactly-one, client-validated) in the order panel and
+  ticket; TIF suffix + trail info in the Orders blotter; compact bond
+  analytics card in the trading rail with debounced yield → implied price.
+- Verified: 87/87 tests (16 new in `tests/test_advanced_orders.py`: TIF
+  matrix, engine-driven trailing reference/trigger with exact ticks,
+  hand-computed YTM/duration, loader backfill); frontend `npm run build`
+  clean; live E2E on the running stack — SELL TRAILING_STOP 25 TSLA
+  (trail_pct 0.05) FILLED as MARKET @ 222.35 against water-mark 222.61 and
+  its settlement instruction reached SETTLED ~11 s later (full STP path,
+  zero manual steps), IOC LIMIT far below market CANCELLED with
+  IOC_UNFILLED, UST10Y bond analytics live (coupon 4.25, YTM 4.27 @
+  99.85, mod. duration 7.35, implied price exactly 100 at yield=coupon,
+  404 on equities); headless-Chrome screenshot of the workspace showing
+  the TRAIL pill, TIF selector and bond analytics card.
+
+---
+
 ## 2026-07-30 — Scheduled reports (design 23): daily/weekly per-user report schedules, TBD-13 resolved
 
 **Driver:** owner-directed feature program — resolving SRS open item TBD-13
