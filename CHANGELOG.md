@@ -7,6 +7,18 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Tech-stakeholder interview, round 2 prep (INT-STP-2026-002)
+
+- `docs/tech-stakeholder-interview-round2.md`: 26 questions for the tech
+  stakeholder (Nora/developer persona) grounded in the running system —
+  current-state tour, architecture review, production-readiness gaps
+  (migrations TODO, in-memory state, untested deploy stack), performance
+  validation (TBD-07 unmeasured), security open items (DEV_AUTH, WS token
+  in URL, audit anchoring TBD-08), testing/operability, and phase-2
+  direction (live news seam, real-LLM guardrails, multi-instance) — plus a
+  playback list of proposals to attack and an outcome log mapped to open
+  TBDs.
+
 ## 2026-07-30 — Advanced orders (design 24): time-in-force, TRAILING_STOP, bond analytics
 
 **Driver:** owner-directed feature program — building the deferred items of
