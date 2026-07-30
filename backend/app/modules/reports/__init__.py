@@ -1,12 +1,18 @@
-"""Reports module: synchronous PDF/CSV report generation, MVP scope (FR-RPT-003).
+"""Reports module: synchronous PDF/CSV report generation, MVP scope (FR-RPT-003),
+plus per-user scheduled reports (docs/design/23-scheduled-reports.md — TBD-13).
 
 Reports are generated synchronously inside the request (DESIGN 04 queues long
 jobs on the bus — that is the post-MVP extension point; the completion `notify`
 event is already published so the UX is unchanged when generation moves).
 Files land in backend/var/reports/<report_id>.<ext>; metadata lives in Report.
 
-Latest prices are read from PriceTick directly (the marketdata package is built
-in parallel and must not be imported).
+Schedules (design 23): a ReportSchedule row fires on the simulation clock
+(wall-clock fallback); the `report_scheduler` worker sweeps due schedules
+every SCHEDULE_SWEEP_SECONDS and generates through the same `_generate_report`
+path as POST /reports — identical rows, audit and notify behavior.
+
+Latest prices are read from PriceTick directly (only the simulation clock is
+imported from the marketdata registry).
 """
 
 from __future__ import annotations
@@ -14,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -22,12 +28,18 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.db import get_db
-from app.core.errors import Forbidden, NotFound, StateConflict, ValidationError
+from app.core.errors import (
+    BusinessRuleViolation,
+    Forbidden,
+    NotFound,
+    StateConflict,
+    ValidationError,
+)
 from app.core.events import write_outbox
 from app.core.models import (
     Execution,
@@ -37,6 +49,7 @@ from app.core.models import (
     Position,
     PriceTick,
     Report,
+    ReportSchedule,
     ValuationSnapshot,
 )
 from app.core.security import (
@@ -45,6 +58,7 @@ from app.core.security import (
     require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
+from app.modules.marketdata.registry import get_sim_now
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +70,11 @@ REPORT_GENERATED = "REPORT_GENERATED"
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "var" / "reports"
 
 MEDIA_TYPES = {"PDF": "application/pdf", "CSV": "text/csv"}
+
+# Schedules (design 23): trailing period per frequency, sweep cadence, cap.
+FREQUENCY_DELTAS = {"DAILY": timedelta(days=1), "WEEKLY": timedelta(days=7)}
+MAX_ACTIVE_SCHEDULES = 10
+SCHEDULE_SWEEP_SECONDS = 10.0
 
 
 def _num(value: Decimal | None) -> str:
@@ -352,6 +371,91 @@ async def _can_view_all(db: AsyncSession, user_id: str) -> bool:
     return "PORTFOLIO_VIEW_ALL" in await get_effective_permissions(db, user_id)
 
 
+async def _generate_report(
+    db: AsyncSession,
+    *,
+    report_type: str,
+    portfolio: Portfolio,
+    start: datetime,
+    end: datetime,
+    report_format: str,
+    actor_id: str,
+    schedule: ReportSchedule | None = None,
+) -> Report:
+    """Create the Report row, render the file, audit + notify; caller commits.
+
+    Shared by POST /reports (schedule=None) and the report_scheduler worker
+    (design 23): both paths produce identical rows, audit and notify behavior;
+    scheduled runs additionally carry schedule_id in the audit payload and
+    mention the schedule in the notification body.
+    """
+    report = Report(
+        type=report_type,
+        portfolio_id=portfolio.portfolio_id,
+        period_start=start,
+        period_end=end,
+        format=report_format,
+        status="REQUESTED",
+        requested_by=actor_id,
+    )
+    db.add(report)
+    await db.flush()  # materialize report_id for the filename
+
+    title, headers, rows, summary = await _BUILDERS[report_type](
+        db, portfolio, start, end
+    )
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = "pdf" if report_format == "PDF" else "csv"
+    path = REPORTS_DIR / f"{report.report_id}.{ext}"
+    if report_format == "PDF":
+        # reportlab is sync CPU work; keep the event loop free.
+        await asyncio.to_thread(_write_pdf, path, title, headers, rows, summary)
+    else:
+        _write_csv(path, title, headers, rows, summary)
+
+    report.status = "DONE"
+    report.file_ref = str(path)
+    audit_payload = {
+        "type": report.type,
+        "format": report.format,
+        "portfolio_id": portfolio.portfolio_id,
+        "file_ref": str(path),
+    }
+    if schedule is not None:
+        audit_payload["schedule_id"] = schedule.schedule_id
+    await write_audit(
+        db,
+        actor_id=actor_id,
+        event_type=REPORT_GENERATED,
+        resource_type="report",
+        resource_id=report.report_id,
+        payload=audit_payload,
+        flush_only=True,
+    )
+    if schedule is not None:
+        body = (
+            f"Your scheduled {report.type.lower()} report "
+            f"({schedule.frequency.lower()}) for '{portfolio.name}' "
+            "is ready to download."
+        )
+    else:
+        body = (
+            f"Your {report.type.lower()} report for '{portfolio.name}' "
+            "is ready to download."
+        )
+    await write_outbox(
+        db,
+        "notify",
+        {
+            "user_id": actor_id,
+            "category": "REPORT",
+            "title": f"Report ready: {report.type} ({report.format})",
+            "body": body,
+        },
+    )
+    return report
+
+
 @router.post("/reports", status_code=201)
 async def create_report(
     body: ReportRequest,
@@ -369,55 +473,14 @@ async def create_report(
     if start >= end:
         raise ValidationError("period_start must be before period_end")
 
-    report = Report(
-        type=body.type,
-        portfolio_id=portfolio.portfolio_id,
-        period_start=start,
-        period_end=end,
-        format=body.format,
-        status="REQUESTED",
-        requested_by=session.user_id,
-    )
-    db.add(report)
-    await db.flush()  # materialize report_id for the filename
-
-    title, headers, rows, summary = await _BUILDERS[body.type](
-        db, portfolio, start, end
-    )
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    ext = "pdf" if body.format == "PDF" else "csv"
-    path = REPORTS_DIR / f"{report.report_id}.{ext}"
-    if body.format == "PDF":
-        # reportlab is sync CPU work; keep the event loop free.
-        await asyncio.to_thread(_write_pdf, path, title, headers, rows, summary)
-    else:
-        _write_csv(path, title, headers, rows, summary)
-
-    report.status = "DONE"
-    report.file_ref = str(path)
-    await write_audit(
+    report = await _generate_report(
         db,
+        report_type=body.type,
+        portfolio=portfolio,
+        start=start,
+        end=end,
+        report_format=body.format,
         actor_id=session.user_id,
-        event_type=REPORT_GENERATED,
-        resource_type="report",
-        resource_id=report.report_id,
-        payload={
-            "type": report.type,
-            "format": report.format,
-            "portfolio_id": portfolio.portfolio_id,
-            "file_ref": str(path),
-        },
-        flush_only=True,
-    )
-    await write_outbox(
-        db,
-        "notify",
-        {
-            "user_id": session.user_id,
-            "category": "REPORT",
-            "title": f"Report ready: {report.type} ({report.format})",
-            "body": f"Your {report.type.lower()} report for '{portfolio.name}' is ready to download.",
-        },
     )
     await db.commit()
     return {
@@ -509,3 +572,209 @@ async def download_report(
         media_type=MEDIA_TYPES[report.format],
         filename=f"{report.type.lower()}_{report.report_id}.{ext}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Schedules (design 23): CRUD + report_scheduler worker
+# ---------------------------------------------------------------------------
+
+
+class ReportScheduleRequest(BaseModel):
+    portfolio_id: str
+    type: Literal["HOLDINGS", "TRANSACTIONS", "PERFORMANCE"]
+    format: Literal["PDF", "CSV"]
+    frequency: Literal["DAILY", "WEEKLY"]
+
+
+def _schedule_json(schedule: ReportSchedule) -> dict:
+    return {
+        "schedule_id": schedule.schedule_id,
+        "portfolio_id": schedule.portfolio_id,
+        "type": schedule.type,
+        "format": schedule.format,
+        "frequency": schedule.frequency,
+        "active": schedule.active,
+        "next_run_at": as_utc(schedule.next_run_at).isoformat(),
+        "last_run_at": (
+            as_utc(schedule.last_run_at).isoformat() if schedule.last_run_at else None
+        ),
+        "created_at": as_utc(schedule.created_at).isoformat(),
+    }
+
+
+@router.get("/report-schedules")
+async def list_report_schedules(
+    session: SessionData = Depends(require_permission("REPORT_VIEW")),
+    db: AsyncSession = Depends(get_db),
+):
+    """My schedules, newest first (a user's schedules are few; no cursor)."""
+    rows = (
+        (
+            await db.execute(
+                select(ReportSchedule)
+                .where(ReportSchedule.user_id == session.user_id)
+                .order_by(
+                    ReportSchedule.created_at.desc(),
+                    ReportSchedule.schedule_id.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"items": [_schedule_json(s) for s in rows], "next_cursor": None}
+
+
+@router.post("/report-schedules", status_code=201)
+async def create_report_schedule(
+    body: ReportScheduleRequest,
+    session: SessionData = Depends(require_permission("REPORT_VIEW")),
+    db: AsyncSession = Depends(get_db),
+):
+    portfolio = await db.get(Portfolio, body.portfolio_id)
+    if portfolio is None:
+        raise NotFound("portfolio not found")
+    if portfolio.owner_id != session.user_id and not await _can_view_all(
+        db, session.user_id
+    ):
+        raise Forbidden("you do not have access to this portfolio")
+    active_count = await db.scalar(
+        select(func.count(ReportSchedule.schedule_id)).where(
+            ReportSchedule.user_id == session.user_id,
+            ReportSchedule.active.is_(True),
+        )
+    )
+    if active_count >= MAX_ACTIVE_SCHEDULES:
+        raise BusinessRuleViolation(
+            f"at most {MAX_ACTIVE_SCHEDULES} active schedules per user"
+        )
+    # No retroactive backfill: first run one frequency boundary from creation,
+    # measured on the simulation clock (wall clock when no replay runs).
+    now = get_sim_now() or utcnow()
+    schedule = ReportSchedule(
+        user_id=session.user_id,
+        portfolio_id=portfolio.portfolio_id,
+        type=body.type,
+        format=body.format,
+        frequency=body.frequency,
+        next_run_at=now + FREQUENCY_DELTAS[body.frequency],
+    )
+    db.add(schedule)
+    await db.commit()
+    return _schedule_json(schedule)
+
+
+@router.delete("/report-schedules/{schedule_id}")
+async def delete_report_schedule(
+    schedule_id: str,
+    session: SessionData = Depends(require_permission("REPORT_VIEW")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hard-delete (design 23); mine only — 404 hides other users' rows."""
+    schedule = await db.get(ReportSchedule, schedule_id)
+    if schedule is None or schedule.user_id != session.user_id:
+        raise NotFound("report schedule not found")
+    await db.delete(schedule)
+    await db.commit()
+    return {"schedule_id": schedule_id, "deleted": True}
+
+
+async def _run_schedule(db: AsyncSession, schedule: ReportSchedule) -> None:
+    """Generate one scheduled report and advance the schedule by one step.
+
+    The period is the trailing frequency window ending at the due timestamp
+    (e.g. a DAILY schedule due at t covers [t - 1 day, t]); next_run_at moves
+    forward by exactly one frequency step, so a lapsed schedule catches up
+    over successive sweeps instead of generating a backlog in one pass.
+    """
+    portfolio = await db.get(Portfolio, schedule.portfolio_id)
+    if portfolio is None:
+        # Portfolio gone: deactivate rather than fail the sweep forever.
+        schedule.active = False
+        await db.commit()
+        return
+    due_at = as_utc(schedule.next_run_at)
+    delta = FREQUENCY_DELTAS[schedule.frequency]
+    await _generate_report(
+        db,
+        report_type=schedule.type,
+        portfolio=portfolio,
+        start=due_at - delta,
+        end=due_at,
+        report_format=schedule.format,
+        actor_id=schedule.user_id,
+        schedule=schedule,
+    )
+    schedule.last_run_at = due_at
+    schedule.next_run_at = due_at + delta
+    await db.commit()
+
+
+async def process_due_schedules(sessionmaker) -> int:
+    """One generation per due schedule (active, next_run_at <= sim now).
+
+    Returns the number of reports generated. Each schedule is its own
+    transaction: a bad schedule is rolled back, logged and skipped.
+    """
+    async with sessionmaker() as session:
+        now = get_sim_now() or utcnow()
+        due = (
+            (
+                await session.execute(
+                    select(ReportSchedule)
+                    .where(
+                        ReportSchedule.active.is_(True),
+                        ReportSchedule.next_run_at <= now,
+                    )
+                    .order_by(ReportSchedule.next_run_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        generated = 0
+        for schedule in due:
+            try:
+                await _run_schedule(session, schedule)
+                generated += 1
+            except Exception:
+                await session.rollback()
+                logger.exception(
+                    "report scheduler: schedule %s failed", schedule.schedule_id
+                )
+        return generated
+
+
+async def _shielded(coro):
+    """Run one DB unit-of-work shielded from task cancellation (cancelling a
+    task mid-aiosqlite-call can wedge the connection and hang app shutdown)."""
+    task = asyncio.ensure_future(coro)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        except Exception:
+            pass
+        raise
+
+
+async def report_scheduler(bus, sessionmaker) -> None:
+    """Worker: sweep due report schedules every SCHEDULE_SWEEP_SECONDS.
+
+    Sleeps before the first sweep so app startup and short-lived processes
+    never see sweep DB traffic at t=0 (same idiom as the JIT expiry sweep).
+    """
+    while True:
+        await asyncio.sleep(SCHEDULE_SWEEP_SECONDS)
+        try:
+            await _shielded(process_due_schedules(sessionmaker))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("report scheduler sweep failed; retrying next interval")
+
+
+def get_workers(settings):
+    """Worker contract: callables fn(bus, sessionmaker) -> coroutine."""
+    return [report_scheduler]

@@ -9,8 +9,9 @@ team's modules are built in parallel — nothing here depends on their endpoints
 
 import asyncio
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -29,8 +30,10 @@ from app.core.models import (
     Portfolio,
     Position,
     PriceTick,
+    Report,
+    ReportSchedule,
 )
-from app.core.timeutil import utcnow
+from app.core.timeutil import as_utc, utcnow
 from app.main import create_app
 from app.modules import reports as reports_module
 from app.modules.analytics import handle_tick
@@ -273,6 +276,201 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
     assert response.json()["error"]["code"] == "FORBIDDEN"
     response = await client.post("/api/v1/reports", json=payload, headers=trader)
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 2b — Scheduled reports (design 23, TBD-13)
+# ---------------------------------------------------------------------------
+
+
+async def _create_schedule(client, headers, portfolio_id, **overrides):
+    payload = {
+        "portfolio_id": portfolio_id,
+        "type": "HOLDINGS",
+        "format": "CSV",
+        "frequency": "DAILY",
+        **overrides,
+    }
+    return await client.post(
+        "/api/v1/report-schedules", json=payload, headers=headers
+    )
+
+
+async def test_report_schedule_crud(client, app):
+    headers = await login(client, CLIENT)
+    portfolio_id = await _portfolio_id(app, "Client Portfolio A")
+
+    response = await _create_schedule(client, headers, portfolio_id)
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["type"] == "HOLDINGS"
+    assert created["format"] == "CSV"
+    assert created["frequency"] == "DAILY"
+    assert created["active"] is True
+    assert created["last_run_at"] is None
+    next_run = datetime.fromisoformat(created["next_run_at"])
+    created_at = datetime.fromisoformat(created["created_at"])
+    # First run one frequency boundary from creation (no backfill).
+    assert timedelta(hours=23) < next_run - created_at <= timedelta(days=1)
+
+    response = await client.get("/api/v1/report-schedules", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["next_cursor"] is None
+    ids = [item["schedule_id"] for item in response.json()["items"]]
+    assert ids == [created["schedule_id"]]
+
+    # Another user's schedule is invisible: empty list + 404 on delete.
+    trader = await login(client, TRADER)
+    response = await client.get("/api/v1/report-schedules", headers=trader)
+    assert response.json()["items"] == []
+    response = await client.delete(
+        f"/api/v1/report-schedules/{created['schedule_id']}", headers=trader
+    )
+    assert response.status_code == 404
+
+    # Trader (REPORT_VIEW but not owner, no PORTFOLIO_VIEW_ALL) may not
+    # schedule against the client's portfolio — same check as POST /reports.
+    response = await _create_schedule(client, trader, portfolio_id)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+    # Owner deletes; a second delete and the list confirm it is gone.
+    response = await client.delete(
+        f"/api/v1/report-schedules/{created['schedule_id']}", headers=headers
+    )
+    assert response.status_code == 200
+    response = await client.delete(
+        f"/api/v1/report-schedules/{created['schedule_id']}", headers=headers
+    )
+    assert response.status_code == 404
+    response = await client.get("/api/v1/report-schedules", headers=headers)
+    assert response.json()["items"] == []
+
+
+async def test_report_schedule_active_cap(client, app):
+    headers = await login(client, CLIENT)
+    portfolio_id = await _portfolio_id(app, "Client Portfolio A")
+    combos = [
+        {"type": t, "format": f, "frequency": freq}
+        for t in ("HOLDINGS", "TRANSACTIONS", "PERFORMANCE")
+        for f in ("CSV", "PDF")
+        for freq in ("DAILY", "WEEKLY")
+    ]
+    created_ids = []
+    for combo in combos[:10]:
+        response = await _create_schedule(client, headers, portfolio_id, **combo)
+        assert response.status_code == 201, response.text
+        created_ids.append(response.json()["schedule_id"])
+    response = await _create_schedule(client, headers, portfolio_id, **combos[10])
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "BUSINESS_RULE_VIOLATION"
+
+    # Deleting one frees the slot immediately (hard delete).
+    response = await client.delete(
+        f"/api/v1/report-schedules/{created_ids[0]}", headers=headers
+    )
+    assert response.status_code == 200
+    response = await _create_schedule(client, headers, portfolio_id, **combos[10])
+    assert response.status_code == 201, response.text
+
+
+async def test_report_scheduler_generates_due_reports(
+    client, app, tmp_path, monkeypatch
+):
+    """Due schedules generate reports on the sim clock (wall clock in tests).
+
+    Deterministic: the due-processing path is invoked function-level rather
+    than via the wall-clock worker loop.
+    """
+    monkeypatch.setattr(reports_module, "REPORTS_DIR", tmp_path)
+    headers = await login(client, CLIENT)
+    owner_id = await _user_id(client, headers)
+    portfolio_id = await _portfolio_id(app, "Client Portfolio A")
+
+    due_daily = utcnow() - timedelta(hours=1)
+    due_weekly = utcnow() - timedelta(hours=2)
+    async with app.state.sessionmaker() as session:
+        session.add_all(
+            [
+                ReportSchedule(
+                    user_id=owner_id,
+                    portfolio_id=portfolio_id,
+                    type="HOLDINGS",
+                    format="CSV",
+                    frequency="DAILY",
+                    next_run_at=due_daily,
+                ),
+                ReportSchedule(
+                    user_id=owner_id,
+                    portfolio_id=portfolio_id,
+                    type="PERFORMANCE",
+                    format="CSV",
+                    frequency="WEEKLY",
+                    next_run_at=due_weekly,
+                ),
+            ]
+        )
+        await session.commit()
+
+    generated = await reports_module.process_due_schedules(app.state.sessionmaker)
+    assert generated == 2
+
+    async with app.state.sessionmaker() as session:
+        reports = (
+            (await session.execute(select(Report).order_by(Report.type)))
+            .scalars()
+            .all()
+        )
+        assert [r.type for r in reports] == ["HOLDINGS", "PERFORMANCE"]
+        by_type = {r.type: r for r in reports}
+        daily = by_type["HOLDINGS"]
+        assert daily.status == "DONE"
+        assert daily.format == "CSV"
+        assert daily.requested_by == owner_id
+        assert as_utc(daily.period_end) == as_utc(due_daily)
+        assert as_utc(daily.period_start) == as_utc(due_daily) - timedelta(days=1)
+        assert Path(daily.file_ref).is_file()
+        weekly = by_type["PERFORMANCE"]
+        assert as_utc(weekly.period_end) == as_utc(due_weekly)
+        assert as_utc(weekly.period_start) == as_utc(due_weekly) - timedelta(days=7)
+
+        schedules = (
+            (await session.execute(select(ReportSchedule))).scalars().all()
+        )
+        by_freq = {s.frequency: s for s in schedules}
+        # Advanced by exactly one frequency step; last_run_at = processed due.
+        assert as_utc(by_freq["DAILY"].next_run_at) == as_utc(due_daily) + timedelta(
+            days=1
+        )
+        assert as_utc(by_freq["DAILY"].last_run_at) == as_utc(due_daily)
+        assert as_utc(by_freq["WEEKLY"].next_run_at) == as_utc(
+            due_weekly
+        ) + timedelta(days=7)
+
+        notifications = (
+            (
+                await session.execute(
+                    select(OutboxEvent).where(OutboxEvent.stream == "notify")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(notifications) == 2
+        assert all(e.payload["user_id"] == owner_id for e in notifications)
+        assert all(e.payload["category"] == "REPORT" for e in notifications)
+        assert all("scheduled" in e.payload["body"] for e in notifications)
+
+    # Generated reports appear in the ordinary report history.
+    response = await client.get("/api/v1/reports", headers=headers)
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 2
+
+    # Not due any more: a second immediate run generates nothing.
+    assert await reports_module.process_due_schedules(app.state.sessionmaker) == 0
+    async with app.state.sessionmaker() as session:
+        count = await session.scalar(select(func.count(Report.report_id)))
+        assert count == 2
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,8 @@ import type {
   Report,
   ReportCreated,
   ReportFormat,
+  ReportFrequency,
+  ReportSchedule,
   ReportType,
 } from "../api/types";
 import { DataTable } from "../components/DataTable";
@@ -16,6 +18,7 @@ import { usePoll } from "../hooks";
 
 const REPORT_TYPES: ReportType[] = ["HOLDINGS", "TRANSACTIONS", "PERFORMANCE"];
 const FORMATS: ReportFormat[] = ["PDF", "CSV"];
+const FREQUENCIES: ReportFrequency[] = ["DAILY", "WEEKLY"];
 // ASSUMPTION: backend report statuses aren't enumerated in the contract;
 // download is enabled for the "ready-like" statuses below.
 const DOWNLOADABLE = ["READY", "COMPLETED", "DONE", "SUCCESS"];
@@ -24,6 +27,7 @@ export function Reports() {
   const { toast } = useToast();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
 
   const [type, setType] = useState<ReportType>("HOLDINGS");
   const [portfolioId, setPortfolioId] = useState("");
@@ -33,6 +37,13 @@ export function Reports() {
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
 
+  const [schedType, setSchedType] = useState<ReportType>("HOLDINGS");
+  const [schedPortfolioId, setSchedPortfolioId] = useState("");
+  const [schedFormat, setSchedFormat] = useState<ReportFormat>("PDF");
+  const [schedFrequency, setSchedFrequency] = useState<ReportFrequency>("DAILY");
+  const [schedSubmitting, setSchedSubmitting] = useState(false);
+  const [deletingSchedule, setDeletingSchedule] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const [pfs, reps] = await Promise.all([
       api<ListResponse<Portfolio>>("/portfolios"),
@@ -41,6 +52,12 @@ export function Reports() {
     setPortfolios(pfs.items);
     setReports(reps.items);
     setPortfolioId((cur) => cur || pfs.items[0]?.portfolio_id || "");
+    setSchedPortfolioId((cur) => cur || pfs.items[0]?.portfolio_id || "");
+  }, []);
+
+  const loadSchedules = useCallback(async () => {
+    const res = await api<ListResponse<ReportSchedule>>("/report-schedules");
+    setSchedules(res.items);
   }, []);
 
   usePoll(
@@ -49,6 +66,14 @@ export function Reports() {
     },
     5_000,
     [load],
+  );
+
+  usePoll(
+    () => {
+      void loadSchedules();
+    },
+    15_000,
+    [loadSchedules],
   );
 
   const submit = async () => {
@@ -89,6 +114,44 @@ export function Reports() {
       // toast raised by client
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const createSchedule = async () => {
+    if (!schedPortfolioId) {
+      toast("Portfolio is required", "error");
+      return;
+    }
+    setSchedSubmitting(true);
+    try {
+      await api<ReportSchedule>("/report-schedules", {
+        method: "POST",
+        body: {
+          portfolio_id: schedPortfolioId,
+          type: schedType,
+          format: schedFormat,
+          frequency: schedFrequency,
+        },
+      });
+      toast("Schedule created", "success");
+      void loadSchedules();
+    } catch {
+      // toast raised by client
+    } finally {
+      setSchedSubmitting(false);
+    }
+  };
+
+  const deleteSchedule = async (s: ReportSchedule) => {
+    setDeletingSchedule(s.schedule_id);
+    try {
+      await api(`/report-schedules/${s.schedule_id}`, { method: "DELETE" });
+      toast("Schedule deleted", "success");
+      void loadSchedules();
+    } catch {
+      // toast raised by client
+    } finally {
+      setDeletingSchedule(null);
     }
   };
 
@@ -154,6 +217,113 @@ export function Reports() {
             {submitting ? "Requesting…" : "Request"}
           </button>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Report schedules</h3>
+        </div>
+        <p className="muted">
+          Schedules run on simulation time — a daily schedule fires once per simulated day.
+        </p>
+        <div className="filter-bar">
+          <label>
+            Portfolio
+            <select
+              value={schedPortfolioId}
+              onChange={(e) => setSchedPortfolioId(e.target.value)}
+            >
+              {portfolios.length === 0 && <option value="">No portfolios</option>}
+              {portfolios.map((p) => (
+                <option key={p.portfolio_id} value={p.portfolio_id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Type
+            <select
+              value={schedType}
+              onChange={(e) => setSchedType(e.target.value as ReportType)}
+            >
+              {REPORT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Format
+            <select
+              value={schedFormat}
+              onChange={(e) => setSchedFormat(e.target.value as ReportFormat)}
+            >
+              {FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Frequency
+            <select
+              value={schedFrequency}
+              onChange={(e) => setSchedFrequency(e.target.value as ReportFrequency)}
+            >
+              {FREQUENCIES.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn btn-buy active btn-sm filter-submit"
+            disabled={schedSubmitting || portfolios.length === 0}
+            onClick={() => void createSchedule()}
+          >
+            {schedSubmitting ? "Creating…" : "Create schedule"}
+          </button>
+        </div>
+        <DataTable<ReportSchedule>
+          rows={schedules}
+          keyFn={(s) => s.schedule_id}
+          empty="No schedules yet"
+          columns={[
+            { header: "Type", render: (s) => s.type },
+            {
+              header: "Portfolio",
+              render: (s) =>
+                portfolios.find((p) => p.portfolio_id === s.portfolio_id)?.name ??
+                s.portfolio_id,
+            },
+            { header: "Format", render: (s) => s.format },
+            { header: "Frequency", render: (s) => s.frequency },
+            {
+              header: "Next run",
+              render: (s) => <span className="num">{fmtTs(s.next_run_at)}</span>,
+            },
+            {
+              header: "Created",
+              render: (s) => <span className="num">{fmtTs(s.created_at)}</span>,
+            },
+            {
+              header: "",
+              render: (s) => (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={deletingSchedule === s.schedule_id}
+                  onClick={() => void deleteSchedule(s)}
+                >
+                  {deletingSchedule === s.schedule_id ? "Deleting…" : "Delete"}
+                </button>
+              ),
+            },
+          ]}
+        />
       </section>
 
       <section className="panel">

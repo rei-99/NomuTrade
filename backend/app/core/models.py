@@ -514,6 +514,29 @@ class Report(Base):
     )
 
 
+class ReportSchedule(Base):
+    __tablename__ = "report_schedules"
+
+    schedule_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=uuid_str
+    )
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"))
+    portfolio_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("portfolios.portfolio_id")
+    )
+    type: Mapped[str] = mapped_column(String(50))
+    format: Mapped[str] = mapped_column(String(10))
+    frequency: Mapped[str] = mapped_column(String(10))  # DAILY | WEEKLY
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+
 class AlertRule(Base):
     __tablename__ = "alert_rules"
 
