@@ -113,7 +113,7 @@ the docs and code comments for traceability — keep them intact when editing.
 │   │   │               audit.py (hash-chained audit), secrets.py, models.py (all
 │   │   │               SQLAlchemy entities), errors.py (error envelope + trace id),
 │   │   │               timeutil.py
-│   │   └── modules/    14 auto-discovered feature packages (see below)
+│   │   └── modules/    15 auto-discovered feature packages (see below)
 │   ├── tests/          pytest, asyncio_mode=auto (see pytest.ini)
 │   ├── requirements.txt  pinned deps; there is no pyproject.toml
 │   └── Dockerfile      python:3.13-slim → uvicorn app.main:app
@@ -139,7 +139,8 @@ news/sentiment), `assistant` (rule-based GenAI stub), `auditlog` (search/export)
 replay, simulation clock), `notifications`,
 `orders` (order API + execution/STP/settlement workers), `pam` (mock CyberArk),
 `paper` (paper trading = `PAPER` portfolio type), `portfolios` (positions/
-valuation/KPIs + valuation projector), `reports` (PDF/CSV via reportlab).
+valuation/KPIs + valuation projector), `push` (WebSocket push channel,
+design 22), `reports` (PDF/CSV via reportlab).
 
 ## Build and test commands
 
@@ -249,9 +250,12 @@ assistant interactions, `AuditEvent`, `OutboxEvent`. Enums (`OrderStatus`,
   parses the standard error envelope into `ApiError`, raises a global toast
   via `setApiErrorHandler`, and bounces to `/login` on 401. Use it — do not
   call `fetch` directly.
-- Live updates are **polling**: `usePoll(fn, intervalMs)` in `src/hooks.ts`.
-  There is no WebSocket code in the current build (`/ws` exists only in
-  `nginx.conf` and the design docs).
+- Live updates: a WebSocket push channel (design 22, `src/api/ws.ts`
+  singleton, auth-bound lifecycle) delivers `tick` (applied in place) and
+  `notification`/`execution` hints (refetch the affected REST resource);
+  **polling stays the structural fallback** — `usePoll(fn, intervalMs)` in
+  `src/hooks.ts`, relaxed to 30 s where ticks carry freshness. Subscribe via
+  `useWsMessage` / `useWsState` in `src/hooks.ts`.
 - Dark trading-terminal theme in hand-rolled `styles.css`; charts via Apache
   ECharts (`src/components/EChart.tsx`, `chartTheme.ts`). No UI component
   library — follow the existing component patterns.
@@ -275,6 +279,7 @@ git-ignored):
 | `DATA_DIR` | `data` | simulation dataset; resolved vs cwd/parent/repo root; missing → generated fallback feed |
 | `REPLAY_BARS_PER_SECOND` | `5.0` | dataset replay speed (≈78 s per market day) |
 | `REPLAY_MODE` | `loop` | `loop` \| `hold` at dataset end |
+| `WS_PUSH_ENABLED` | `true` | WS push channel kill-switch (design 22) |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
 | `SECRET_PROVIDER` | `env` | provider abstraction seam |
 | `ACCESS_TOKEN_TTL_IDLE_SECONDS` / `..._ABSOLUTE_SECONDS` | `1800` / `43200` | session TTLs |
@@ -360,8 +365,10 @@ cd backend && ../backend/.venv/bin/python -m pytest    # or: make test
 - Notification preferences are kept in memory; they reset on restart.
 - The GenAI assistant is rule-based grounding over platform data; no external
   LLM is called (an LLM-provider seam exists).
-- No WebSocket in the current build — UI polls; `/ws` is reserved in nginx
-  and the design docs only.
+- The WebSocket push channel (design 22, `WS /api/v1/ws`) is a hint +
+  market-data channel: REST stays the source of truth and the UI keeps a
+  30 s polling fallback, so behavior is unchanged when the socket is down.
+  The connection registry is process-local (single uvicorn worker).
 - Docker compose stack, Terraform, and CI/CD were statically validated only
   (no Docker/Terraform/cloud access on the dev machine).
 

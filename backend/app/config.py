@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     SESSION_STORE: Literal["memory", "redis"] = "memory"
     DEV_AUTH: bool = True
     RUN_WORKERS: bool = True
+    # Real-time WebSocket push (design 22): WS /api/v1/ws + fan-out workers.
+    # Kill-switch: false disables the workers and closes the endpoint (4403).
+    WS_PUSH_ENABLED: bool = True
     SETTLEMENT_DELAY_SECONDS: float = 5.0
     TICK_INTERVAL_MS: int = 500
     CORS_ORIGINS: str = "http://localhost:5173"

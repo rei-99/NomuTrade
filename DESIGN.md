@@ -225,6 +225,7 @@ Module-level design has been split into self-contained documents under [`docs/de
 - [13 — Audit logging](docs/design/13-audit-logging.md) — append-only hash-chained audit, search/export (former §5.6, §8.2 hash-chain parts)
 - [14 — Notifications](docs/design/14-notifications.md) — event-driven in-app + email, reminders, preferences (former §5.7)
 - [15 — Admin & governance](docs/design/15-admin-governance.md) — governance dashboard, health probes, export (former §5.9)
+- [22 — Real-time WebSocket push](docs/design/22-websocket-push.md) — authenticated `WS /api/v1/ws`: tick broadcast + per-user notification/execution hints (NFR-PER-004; implements former §9 `/ws`)
 
 ### Cross-cutting
 

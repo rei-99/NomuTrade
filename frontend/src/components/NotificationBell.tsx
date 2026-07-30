@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppNotification, ListResponse } from "../api/types";
-import { usePoll } from "../hooks";
+import { usePoll, useWsMessage } from "../hooks";
 import { fmtTs } from "../format";
 import { Badge } from "./Badge";
 
-const POLL_MS = 10_000;
+// Structural fallback; push `notification` messages (design 22) trigger an
+// immediate reload below.
+const POLL_MS = 30_000;
 
 export function NotificationBell() {
   const [items, setItems] = useState<AppNotification[]>([]);
@@ -25,6 +27,9 @@ export function NotificationBell() {
   }, []);
 
   usePoll(load, POLL_MS, [load]);
+
+  // Push hint: a notification for this user just landed — refresh now.
+  useWsMessage("notification", () => void load(), [load]);
 
   useEffect(() => {
     if (!open) return;

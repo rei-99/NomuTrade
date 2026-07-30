@@ -1,6 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Instrument } from "../api/types";
+import type { TickData } from "../api/ws";
 import { fmtJpy, fmtNum } from "../format";
+import { useWsMessage, useWsState } from "../hooks";
 import { Badge } from "./Badge";
 
 export interface DayOhlc {
@@ -73,6 +75,51 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
     }
   }, [instruments]);
 
+  // Live ticks (design 22): applied in place — hero price, day O/H/L and
+  // sparklines. Buffered per symbol and flushed at ~2 Hz so a fast tape does
+  // not re-render per tick; the polled props stay the structural fallback.
+  const wsState = useWsState();
+  const overlayRef = useRef<Map<string, TickData>>(new Map());
+  const tickDirtyRef = useRef(false);
+  const [, setTickFlush] = useState(0);
+
+  useWsMessage(
+    "tick",
+    (msg) => {
+      const tick = msg.data as TickData;
+      overlayRef.current.set(tick.symbol, tick);
+      tickDirtyRef.current = true;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (!tickDirtyRef.current) return;
+      tickDirtyRef.current = false;
+      for (const tick of overlayRef.current.values()) {
+        const arr = historyRef.current.get(tick.symbol) ?? [];
+        if (arr.length === 0 || arr[arr.length - 1] !== tick.price) {
+          const next = [...arr, tick.price];
+          if (next.length > SPARK_WINDOW) next.shift();
+          historyRef.current.set(tick.symbol, next);
+        }
+      }
+      setTickFlush((v) => v + 1);
+    }, 500);
+    return () => window.clearInterval(t);
+  }, []);
+
+  // The overlay is only trustworthy while the socket is open; otherwise the
+  // polled props win so a dead channel cannot freeze prices.
+  const live = wsState === "open" && symbol ? overlayRef.current.get(symbol) : undefined;
+  const heroPrice = live?.price ?? active?.latest_price;
+  const effOhlc: DayOhlc | null = live
+    ? { open: live.open, high: live.high, low: live.low }
+    : dayOhlc;
+  const effChangePct =
+    live && live.open !== 0 ? ((live.price - live.open) / live.open) * 100 : dayChangePct;
+
   return (
     <div className="tape panel">
       <div className="tape-left">
@@ -89,19 +136,19 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
             </option>
           ))}
         </select>
-        <span className="tape-price num">{fmtJpy(active?.latest_price, true)}</span>
+        <span className="tape-price num">{fmtJpy(heroPrice, true)}</span>
         <span
-          className={`tape-change num ${dayChangePct === null ? "" : dayChangePct >= 0 ? "pos" : "neg"}`}
+          className={`tape-change num ${effChangePct === null ? "" : effChangePct >= 0 ? "pos" : "neg"}`}
         >
-          {dayChangePct === null
+          {effChangePct === null
             ? "—"
-            : `${dayChangePct >= 0 ? "+" : ""}${fmtNum(dayChangePct, 2)}% today`}
+            : `${effChangePct >= 0 ? "+" : ""}${fmtNum(effChangePct, 2)}% today`}
         </span>
-        {dayOhlc && (
+        {effOhlc && (
           <span className="tape-ohlc num">
-            <span>O {fmtNum(dayOhlc.open, 2)}</span>
-            <span>H {fmtNum(dayOhlc.high, 2)}</span>
-            <span>L {fmtNum(dayOhlc.low, 2)}</span>
+            <span>O {fmtNum(effOhlc.open, 2)}</span>
+            <span>H {fmtNum(effOhlc.high, 2)}</span>
+            <span>L {fmtNum(effOhlc.low, 2)}</span>
           </span>
         )}
       </div>

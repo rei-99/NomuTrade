@@ -8,6 +8,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Push channel (design 22): WS upgrade must go to the backend too.
+      "/api/v1/ws": {
+        target: "ws://localhost:8000",
+        ws: true,
+      },
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,

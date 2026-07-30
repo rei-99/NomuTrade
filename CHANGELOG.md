@@ -7,6 +7,42 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Real-time WebSocket push channel (design 22): tick broadcast + per-user hints
+
+**Driver:** owner-directed feature program — implementing the authenticated
+`/ws` channel reserved in nginx.conf / former DESIGN.md §9, delivering
+NFR-PER-004 (dashboard refresh within 5 s of a tick).
+
+- **Design first**: `docs/design/22-websocket-push.md` pins the route
+  `WS /api/v1/ws` (parity mapping for the reserved `/ws`), `?token=` auth via
+  the server-side session store (close 4401 on a bad token, 4403 when
+  disabled), the push-as-hint model (**REST stays the source of truth**), one
+  fan-out worker per stream, and the `WS_PUSH_ENABLED` kill-switch; indexed
+  in `docs/design/README.md` and DESIGN.md §5.
+- **Backend `push` module**: `WS /api/v1/ws` endpoint + ConnectionManager
+  singleton (per-user registry, drop-on-send-failure) + three fan-out workers
+  — `market.ticks` → broadcast `{"type":"tick"}`, `notify` → per-user
+  `notification`, `trading.executions` → `execution` to the portfolio owner
+  (resolved via `Portfolio.owner_id`, shielded DB lookup).
+- **Frontend**: `src/api/ws.ts` singleton (auto-reconnect, backoff capped at
+  ~15 s, subscribe-by-type, connection state; lifecycle bound to auth) +
+  `useWsMessage`/`useWsState` hooks. Ticks are applied in place (TickerTape
+  hero/O-H-L + sparklines, PriceChart last candle + last-price tag, SIM
+  clock); execution/notification hints trigger immediate REST refetches
+  (positions + valuation, notification list); polls relaxed to 30 s
+  structural fallback; WS indicator in the top bar; vite dev proxy for
+  `/api/v1/ws` (ws upgrade).
+- Verified: backend **68/68** (6 new tests in `tests/test_realtime.py` —
+  live-socket uvicorn + `websockets` client: 4401-reject path, tick
+  broadcast, per-user notification filtering, execution-to-owner delivery);
+  `npm run build` zero type errors; real-socket E2E against the live stack
+  (bad token rejected 403, live replay ticks received direct :8000 and via
+  the vite WS proxy :5174); headless-Chrome screenshots show the WS indicator
+  and the workspace advancing on push ($247.05 → $248.48, sim clock
+  07-02 13:44 → 07-04 10:41, news 18 → 51 articles in 30 s).
+
+---
+
 ## 2026-07-30 — Trading workspace polish: live chart, sim clock, portfolios page, position close, table sorting
 
 **Driver:** owner-directed frontend improvement program (stage 2 of 5).

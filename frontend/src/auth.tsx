@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import { api, getToken, setToken } from "./api/client";
 import type { DevLoginResponse, MeResponse } from "./api/types";
+import { wsClient } from "./api/ws";
 
 interface AuthContextValue {
   me: MeResponse | null;
@@ -67,6 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [me],
   );
+
+  // Push channel (design 22): connect once a session exists, close on
+  // logout. A hard 401 bounces to /login (full navigation), which also
+  // tears the socket down.
+  useEffect(() => {
+    if (me) wsClient.start();
+    else wsClient.stop();
+  }, [me]);
 
   const value = useMemo(
     () => ({ me, loading, login, logout, hasPerm }),

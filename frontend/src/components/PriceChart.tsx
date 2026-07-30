@@ -8,8 +8,9 @@ import type {
   Timeframe,
 } from "../api/types";
 import { INDICATOR_NAMES } from "../api/types";
+import type { TickData } from "../api/ws";
 import { fmtNum } from "../format";
-import { usePoll } from "../hooks";
+import { usePoll, useWsMessage, useWsState } from "../hooks";
 import { EChart } from "./EChart";
 import { categoryAxis, CHART_COLORS, tooltipBase, valueAxis } from "./chartTheme";
 
@@ -281,6 +282,57 @@ function buildPriceOption(
   };
 }
 
+/**
+ * Merge one live tick into the candle series in place (design 22): the last
+ * candle's close/high/low (and volume on daily frames) tracks the tick, a new
+ * candle starts when the tick crosses a bar boundary, and the last-price tag
+ * follows via `buildPriceOption`. Older ticks (replay loop restart) are
+ * ignored; a day boundary on 1D defers to the poll, which stays the
+ * structural source of truth. No refetch happens per tick.
+ */
+function applyTickToCandles(candles: Candle[], tick: TickData | null, tf: Timeframe): Candle[] {
+  if (!tick || candles.length === 0) return candles;
+  const last = candles[candles.length - 1];
+  const price = tick.price;
+  if (tf === "1D") {
+    if (tick.ts.slice(0, 10) !== last.ts.slice(0, 10)) return candles; // new day: let the poll restructure
+    const tickMin = tick.ts.slice(0, 16);
+    const lastMin = last.ts.slice(0, 16);
+    if (tickMin < lastMin) return candles; // stale tick (loop restart)
+    if (tickMin === lastMin) {
+      return [
+        ...candles.slice(0, -1),
+        { ...last, close: price, high: Math.max(last.high, price), low: Math.min(last.low, price) },
+      ];
+    }
+    // New minute bar. Tick volume is day-cumulative, and the 1D series covers
+    // exactly the reference day, so the new bar's volume is the remainder.
+    const dayVolume = candles.reduce((a, c) => a + c.volume, 0);
+    return [
+      ...candles,
+      { ts: tick.ts, open: price, high: price, low: price, close: price, volume: Math.max(0, tick.volume - dayVolume) },
+    ];
+  }
+  // Daily-aggregated frames: the last candle is the reference day and tick
+  // volume is day-cumulative, so it can be tracked monotonically.
+  const tickDay = tick.ts.slice(0, 10);
+  const lastDay = last.ts.slice(0, 10);
+  if (tickDay < lastDay) return candles; // stale tick (loop restart)
+  if (tickDay === lastDay) {
+    return [
+      ...candles.slice(0, -1),
+      {
+        ...last,
+        close: price,
+        high: Math.max(last.high, price),
+        low: Math.min(last.low, price),
+        volume: Math.max(last.volume, tick.volume),
+      },
+    ];
+  }
+  return [...candles, { ts: tickDay, open: price, high: price, low: price, close: price, volume: tick.volume }];
+}
+
 interface PriceChartProps {
   symbol: string | undefined;
   timeframe: Timeframe;
@@ -306,9 +358,38 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
   // The user's dataZoom window, tracked so live refreshes don't reset it.
   const zoomRef = useRef<ZoomWindow | null>(null);
 
+  // Live ticks (design 22): merged into the last candle in place — no
+  // refetch per tick. Buffered and flushed at ~2 Hz; only trusted while the
+  // socket is open, so a dead channel cannot freeze the chart.
+  const wsState = useWsState();
+  const [liveTick, setLiveTick] = useState<TickData | null>(null);
+  const pendingTickRef = useRef<TickData | null>(null);
+  const tickDirtyRef = useRef(false);
+
+  useWsMessage(
+    "tick",
+    (msg) => {
+      const tick = msg.data as TickData;
+      if (tick.symbol !== symbol) return;
+      pendingTickRef.current = tick;
+      tickDirtyRef.current = true;
+    },
+    [symbol],
+  );
+
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (!tickDirtyRef.current || pendingTickRef.current === null) return;
+      tickDirtyRef.current = false;
+      setLiveTick(pendingTickRef.current);
+    }, 500);
+    return () => window.clearInterval(t);
+  }, []);
+
   useEffect(() => {
     hasDataRef.current = false;
     zoomRef.current = null;
+    setLiveTick(null);
   }, [symbol, timeframe]);
 
   const activeIndicators = useMemo(
@@ -341,16 +422,19 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
   }, [symbol, timeframe, activeIndicators]);
 
   // Refetch immediately on symbol/timeframe/indicator change, then keep the
-  // series live on the tape's cadence (5 s).
+  // series structurally fresh at 30 s — live ticks carry the candle in place.
   usePoll(
     () => {
       void load();
     },
-    5_000,
+    30_000,
     [load],
   );
 
-  const candles: Candle[] = useMemo(() => prices?.candles ?? [], [prices]);
+  const candles: Candle[] = useMemo(
+    () => applyTickToCandles(prices?.candles ?? [], wsState === "open" ? liveTick : null, timeframe),
+    [prices, liveTick, timeframe, wsState],
+  );
   const option = useMemo(
     () => buildPriceOption(candles, indicators, toggles, timeframe, zoomRef.current),
     [candles, indicators, toggles, timeframe],
