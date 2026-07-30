@@ -269,6 +269,7 @@ Design proposals awaiting week-1 confirmation (SRS §9); defaults adopted in the
 - **TBD-06** dataset schema — **RESOLVED**: three packs under `data/` (daily OHLC 2026-01-02→2026-07-10; 1-minute bars 2026-06-30→2026-08-29; news with per-ticker sentiment, Jul–Aug) — loaded by the dataset loader (see [01 — Market-Data Service](docs/design/01-market-data.md); D-10…D-14).
 - **TBD-07** performance targets — NFR proposals adopted as test thresholds.
 - **TBD-11** cloud provider — Terraform written provider-portable until confirmed.
+- **TBD-13** report scheduling — **RESOLVED** ([design 23](docs/design/23-scheduled-reports.md)): daily/weekly per portfolio+type+format, sim-clock driven, ≤10 active per user.
 - **TBD-16** currency — **RESOLVED**: USD (D-16).
 - **TBD-17** instrument scope — **RESOLVED**: dataset's 7 US equities **plus 4 bonds** (generated prices; product-owner interview, docs/design/21) — equities-only rejected by the business.
 - **TBD-18** order types — **RESOLVED**: MARKET, LIMIT, STOP, STOP_LIMIT (product-owner interview; iceberg/TIF/trailing stay roadmap, docs/design/21).

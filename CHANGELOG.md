@@ -7,6 +7,41 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Scheduled reports (design 23): daily/weekly per-user report schedules, TBD-13 resolved
+
+**Driver:** owner-directed feature program — resolving SRS open item TBD-13
+(report scheduling scope): scheduled reports are in MVP as in-app generation
+on per-user schedules; email delivery stays out.
+
+- **Design first**: `docs/design/23-scheduled-reports.md` pins the scope
+  (per-user schedules over {portfolio, type, format, DAILY|WEEKLY}, sim-clock
+  driven with wall-clock fallback, ≤10 active per user, hard delete, no
+  backfill on create, catch-up capped at one run per sweep); indexed in
+  `docs/design/README.md`; DESIGN.md §7 marks TBD-13 RESOLVED.
+- **Backend**: new `ReportSchedule` entity; `POST/GET/DELETE
+  /report-schedules` (REPORT_VIEW; same portfolio access check as
+  `POST /reports`; 422 on the 11th active schedule); `report_scheduler`
+  worker (10 s sweep, shielded DB units, per-schedule failure isolation)
+  reusing the on-demand generation path — `create_report`'s core refactored
+  into the shared `_generate_report` helper (endpoint behavior unchanged;
+  scheduled runs add `schedule_id` to the audit payload and name the
+  schedule in the notify body). Scheduled reports land in the ordinary
+  `GET /reports` history with a REPORT notification.
+- **Frontend**: "Report schedules" panel on the Reports page — create form
+  (portfolio/type/format/frequency), list with next run + delete, 15 s
+  polling, simulation-time hint; `ReportSchedule`/`ReportFrequency` types.
+- Verified: backend **71/71** (3 new tests in `tests/test_experience.py` —
+  CRUD round-trip + ownership isolation + 403 portfolio check, the
+  active-schedule cap, and deterministic due-processing: DONE report with
+  exact trailing period, file on disk, one-step advance, notify outbox,
+  second run a no-op); `npm run build` zero type errors; live E2E on the sim
+  clock — a DAILY schedule created via the API fired with no manual action
+  (4 consecutive DONE holdings reports 6/30→7/4, REPORT notifications
+  naming the schedule, one-step `next_run_at` advance), DELETE → 200;
+  headless-Chrome screenshot of the Reports page schedules panel + history.
+
+---
+
 ## 2026-07-30 — Real-time WebSocket push channel (design 22): tick broadcast + per-user hints
 
 **Driver:** owner-directed feature program — implementing the authenticated

@@ -270,6 +270,22 @@ export interface ReportCreated {
   download_url: string | null;
 }
 
+// ---------- report schedules (design 23) ----------
+
+export type ReportFrequency = "DAILY" | "WEEKLY";
+
+export interface ReportSchedule {
+  schedule_id: string;
+  portfolio_id: string;
+  type: ReportType;
+  format: ReportFormat;
+  frequency: ReportFrequency;
+  active: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+}
+
 // ---------- paper trading ----------
 
 export interface PaperAccountCreated {
