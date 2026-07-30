@@ -14,6 +14,7 @@ import { Notifications } from "./pages/Notifications";
 import { Orders } from "./pages/Orders";
 import { Paper } from "./pages/Paper";
 import { PortfolioDetail } from "./pages/PortfolioDetail";
+import { Portfolios } from "./pages/Portfolios";
 import { Reports } from "./pages/Reports";
 import { Trades } from "./pages/Trades";
 import { Trading } from "./pages/Trading";
@@ -73,6 +74,14 @@ export default function App() {
         }
       >
         <Route index element={<Trading />} />
+        <Route
+          path="portfolios"
+          element={
+            <Guard perms={["PORTFOLIO_VIEW"]}>
+              <Portfolios />
+            </Guard>
+          }
+        />
         <Route path="portfolios/:id" element={<PortfolioDetail />} />
         <Route path="charts" element={<ChartsRedirect />} />
         <Route path="charts/:symbol" element={<ChartsRedirect />} />

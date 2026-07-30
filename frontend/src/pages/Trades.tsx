@@ -112,12 +112,45 @@ export function Trades() {
           keyFn={(t) => t.execution_id}
           empty="No trades"
           columns={[
-            { header: "Time", render: (t) => <span className="num">{fmtTs(t.executed_at)}</span> },
-            { header: "Symbol", render: (t) => t.instrument_symbol },
-            { header: "Side", render: (t) => <Badge text={t.side} /> },
-            { header: "Qty", className: "num", render: (t) => fmtNum(t.quantity) },
-            { header: "Price", className: "num", render: (t) => fmtJpy(t.price, true) },
-            { header: "Notional", className: "num", render: (t) => fmtJpy(notional(t), true) },
+            {
+              header: "Time",
+              sortable: true,
+              sortValue: (t) => t.executed_at,
+              render: (t) => <span className="num">{fmtTs(t.executed_at)}</span>,
+            },
+            {
+              header: "Symbol",
+              sortable: true,
+              sortValue: (t) => t.instrument_symbol,
+              render: (t) => t.instrument_symbol,
+            },
+            {
+              header: "Side",
+              sortable: true,
+              sortValue: (t) => t.side,
+              render: (t) => <Badge text={t.side} />,
+            },
+            {
+              header: "Qty",
+              className: "num",
+              sortable: true,
+              sortValue: (t) => t.quantity,
+              render: (t) => fmtNum(t.quantity),
+            },
+            {
+              header: "Price",
+              className: "num",
+              sortable: true,
+              sortValue: (t) => t.price,
+              render: (t) => fmtJpy(t.price, true),
+            },
+            {
+              header: "Notional",
+              className: "num",
+              sortable: true,
+              sortValue: (t) => notional(t),
+              render: (t) => fmtJpy(notional(t), true),
+            },
             {
               header: "Portfolio",
               render: (t) => <span title={t.portfolio_id}>{portfolioLabel(t.portfolio_id)}</span>,

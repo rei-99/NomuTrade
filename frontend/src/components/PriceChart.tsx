@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { api } from "../api/client";
 import type {
@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { INDICATOR_NAMES } from "../api/types";
 import { fmtNum } from "../format";
+import { usePoll } from "../hooks";
 import { EChart } from "./EChart";
 import { categoryAxis, CHART_COLORS, tooltipBase, valueAxis } from "./chartTheme";
 
@@ -27,6 +28,12 @@ interface ToggleState {
 
 type IndicatorData = IndicatorsResponse["indicators"];
 
+/** Percent-based zoom window, tracked so live refreshes keep the user's view. */
+interface ZoomWindow {
+  start: number;
+  end: number;
+}
+
 /**
  * Build the composed candlestick option: main grid (OHLC + SMA/EMA/BB
  * overlays), volume grid, optional RSI / MACD companion grids, linked axis
@@ -37,6 +44,7 @@ function buildPriceOption(
   indicators: IndicatorData,
   toggles: ToggleState,
   tf: Timeframe,
+  zoom: ZoomWindow | null,
 ): echarts.EChartsOption {
   const times = candles.map((c) => axisLabel(c.ts, tf));
   const byTs = new Map(candles.map((c, i) => [c.ts, i]));
@@ -249,12 +257,19 @@ function buildPriceOption(
     xAxis: xAxes,
     yAxis: yAxes,
     dataZoom: [
-      { type: "inside", xAxisIndex: gridDefs.map((_, i) => i), start: 0, end: 100 },
+      {
+        type: "inside",
+        xAxisIndex: gridDefs.map((_, i) => i),
+        start: zoom?.start ?? 0,
+        end: zoom?.end ?? 100,
+      },
       {
         type: "slider",
         xAxisIndex: gridDefs.map((_, i) => i),
         bottom: 0,
         height: 18,
+        start: zoom?.start ?? 0,
+        end: zoom?.end ?? 100,
         borderColor: CHART_COLORS.axis,
         backgroundColor: "transparent",
         fillerColor: "rgba(88,166,255,0.12)",
@@ -285,6 +300,16 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
   const [prices, setPrices] = useState<PriceSeries | null>(null);
   const [indicators, setIndicators] = useState<IndicatorData>({});
   const [loading, setLoading] = useState(false);
+  // Background refreshes must not flash the spinner/skeleton — only the very
+  // first load (per symbol/timeframe) shows them.
+  const hasDataRef = useRef(false);
+  // The user's dataZoom window, tracked so live refreshes don't reset it.
+  const zoomRef = useRef<ZoomWindow | null>(null);
+
+  useEffect(() => {
+    hasDataRef.current = false;
+    zoomRef.current = null;
+  }, [symbol, timeframe]);
 
   const activeIndicators = useMemo(
     () => (showIndicators ? INDICATOR_NAMES.filter((n) => toggles[n]) : []),
@@ -293,11 +318,12 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
 
   const load = useCallback(async () => {
     if (!symbol) return;
-    setLoading(true);
+    if (!hasDataRef.current) setLoading(true);
     try {
       const ps = await api<PriceSeries>(`/instruments/${symbol}/prices`, {
         params: { timeframe },
       });
+      hasDataRef.current = true;
       setPrices(ps);
       if (activeIndicators.length > 0) {
         const ind = await api<IndicatorsResponse>(`/instruments/${symbol}/indicators`, {
@@ -314,13 +340,19 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
     }
   }, [symbol, timeframe, activeIndicators]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Refetch immediately on symbol/timeframe/indicator change, then keep the
+  // series live on the tape's cadence (5 s).
+  usePoll(
+    () => {
+      void load();
+    },
+    5_000,
+    [load],
+  );
 
   const candles: Candle[] = useMemo(() => prices?.candles ?? [], [prices]);
   const option = useMemo(
-    () => buildPriceOption(candles, indicators, toggles, timeframe),
+    () => buildPriceOption(candles, indicators, toggles, timeframe, zoomRef.current),
     [candles, indicators, toggles, timeframe],
   );
 
@@ -340,9 +372,27 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
 
   const handleGlobalOut = useCallback(() => setHoverIdx(null), []);
 
+  // Both the inside zoom and the slider emit `datazoom`; params carry the
+  // window either directly or in a batch entry.
+  const handleDataZoom = useCallback((params: unknown) => {
+    const p = params as {
+      start?: unknown;
+      end?: unknown;
+      batch?: { start?: unknown; end?: unknown }[];
+    };
+    const z = p.batch?.[0] ?? p;
+    if (typeof z.start === "number" && typeof z.end === "number") {
+      zoomRef.current = { start: z.start, end: z.end };
+    }
+  }, []);
+
   const chartEvents = useMemo(
-    () => ({ updateAxisPointer: handleAxisPointer, globalout: handleGlobalOut }),
-    [handleAxisPointer, handleGlobalOut],
+    () => ({
+      updateAxisPointer: handleAxisPointer,
+      globalout: handleGlobalOut,
+      datazoom: handleDataZoom,
+    }),
+    [handleAxisPointer, handleGlobalOut, handleDataZoom],
   );
 
   const legendCandle =
