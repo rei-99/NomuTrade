@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Instrument, ListResponse, PriceSeries } from "../api/types";
+import type { TickData } from "../api/ws";
 import { useAuth } from "../auth";
 import { fmtJpy } from "../format";
-import { usePoll } from "../hooks";
+import { usePoll, useWsMessage, useWsState } from "../hooks";
 import { Badge } from "./Badge";
 import { NotificationBell } from "./NotificationBell";
 
@@ -129,7 +130,8 @@ export function Layout() {
   // Trading page is active; otherwise fall back to a liquid reference symbol.
   const clockSymbol = searchParams.get("symbol") ?? "AAPL";
 
-  // Instruments: fetch once for the search box, then poll 5 s — the market
+  // Instruments: fetch once for the search box, then poll 30 s as a
+  // structural fallback — ticks carry the freshness (design 22). The market
   // dot is green when any latest_price moved since the previous poll.
   usePoll(
     () => {
@@ -156,7 +158,7 @@ export function Layout() {
         }
       })();
     },
-    5_000,
+    30_000,
     [],
   );
 
@@ -165,7 +167,17 @@ export function Layout() {
     [marketLive],
   );
 
-  // Sim clock: latest 1D candle timestamp of the reference symbol (5 s poll).
+  // Sim clock: driven by the tick stream (tick.ts is dataset time); the 30 s
+  // poll of the reference symbol's 1D candles is the structural fallback.
+  const wsState = useWsState();
+  useWsMessage(
+    "tick",
+    (msg) => {
+      const tick = msg.data as TickData;
+      if (tick.symbol === clockSymbol) setSimTs(tick.ts);
+    },
+    [clockSymbol],
+  );
   usePoll(
     () => {
       void (async () => {
@@ -181,7 +193,7 @@ export function Layout() {
         }
       })();
     },
-    5_000,
+    30_000,
     [clockSymbol],
   );
 
@@ -218,6 +230,17 @@ export function Layout() {
               title="Simulation clock — timestamp of the latest market-data tick"
             >
               SIM {simTs ? `${simTs.slice(5, 10)} ${simTs.slice(11, 16)}` : "—"}
+            </span>
+            <span
+              className="market-status"
+              title={
+                wsState === "open"
+                  ? "Push channel connected (real-time ticks)"
+                  : "Push channel disconnected — polling fallback"
+              }
+            >
+              <span className={`market-dot${wsState === "open" ? " live" : ""}`} />
+              {wsState === "open" ? "WS" : "WS OFF"}
             </span>
             <SymbolSearch instruments={instruments} />
           </div>

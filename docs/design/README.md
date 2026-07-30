@@ -33,6 +33,7 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 | [13 — Audit Logging](13-audit-logging.md) | §5.6, §8.2 (hash-chain parts), §4.2 (audit path) | Append-only hash-chained `AuditEvent`, sync/async paths, search/export |
 | [14 — Notifications](14-notifications.md) | §5.7 | Event-driven in-app + email delivery, reminders, non-suppressible security categories |
 | [15 — Admin & Governance](15-admin-governance.md) | §5.9 | Governance dashboard, dependency health probes, who-has-what export (Could) |
+| [22 — Real-time WebSocket Push](22-websocket-push.md) | — (implements former §9 `/ws`) | Authenticated `WS /api/v1/ws`: tick broadcast + per-user notification/execution hints (NFR-PER-004); REST stays source of truth |
 
 ## Cross-cutting
 

@@ -19,9 +19,12 @@ import { RiskPanel } from "../components/RiskPanel";
 import { NewsPanel } from "../components/NewsPanel";
 import { PositionsTable } from "../components/PositionsTable";
 import { fmtJpy, fmtSignedJpy, pnlClass } from "../format";
-import { usePoll } from "../hooks";
+import { usePoll, useWsMessage } from "../hooks";
 
-const POLL_MS = 5_000;
+// Structural fallback cadence — live freshness comes from the push channel
+// (design 22): ticks update tape/chart in place, executions trigger an
+// immediate account refetch below.
+const POLL_MS = 30_000;
 
 /** Default portfolio: first HOUSE, else first PAPER, else first. */
 function pickDefaultPortfolio(pfs: Portfolio[]): string {
@@ -82,7 +85,8 @@ export function Trading() {
     }
   }, [urlSymbol, tradableInstruments, setSearchParams]);
 
-  // Live instrument prices for the tape (5 s).
+  // Live instrument prices for the tape (structural fallback; ticks applied
+  // in place by the tape itself carry the freshness).
   usePoll(
     () => {
       void (async () => {
@@ -98,7 +102,7 @@ export function Trading() {
     [],
   );
 
-  // Positions + valuation for the selected portfolio (5 s).
+  // Positions + valuation for the selected portfolio (structural fallback).
   const loadAccount = useCallback(async () => {
     if (!portfolioId) {
       setPositions(null);
@@ -120,6 +124,10 @@ export function Trading() {
     POLL_MS,
     [loadAccount],
   );
+
+  // Execution hint (design 22): the server already filtered it to this
+  // signed-in user — refetch positions/valuation immediately.
+  useWsMessage("execution", () => void loadAccount(), [loadAccount]);
 
   // Day O/H/L for the tape's hero block (symbol change only — the day's open
   // is fixed intraday; the live leg comes from the instruments poll).
@@ -234,7 +242,7 @@ export function Trading() {
         <section className="panel positions-panel">
           <div className="panel-header">
             <h3>Positions</h3>
-            {positions && <span className="muted num">live · 5 s</span>}
+            {positions && <span className="muted num">live · 30 s</span>}
           </div>
           {positions === null ? (
             <div className="skeleton-stack">
