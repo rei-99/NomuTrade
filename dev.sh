@@ -18,7 +18,12 @@ case "$DB_MODE" in
     ;;
 esac
 
-if [ ! -x backend/.venv/bin/uvicorn ]; then
+# venv layout: bin/ on POSIX, Scripts/ on Windows
+if [ -x backend/.venv/bin/uvicorn ]; then
+  UVICORN=backend/.venv/bin/uvicorn
+elif [ -x backend/.venv/Scripts/uvicorn.exe ]; then
+  UVICORN=backend/.venv/Scripts/uvicorn.exe
+else
   echo "backend/.venv not found — run: make setup" >&2
   exit 1
 fi
@@ -56,7 +61,7 @@ echo "  database  $DATABASE_URL"
 echo "Ctrl+C to stop both."
 echo
 
-(cd backend && exec ../backend/.venv/bin/uvicorn app.main:app --reload --port 8000) &
+(cd backend && exec "../$UVICORN" app.main:app --reload --port 8000) &
 BACK_PID=$!
 (cd frontend && exec npm run dev) &
 FRONT_PID=$!
@@ -74,6 +79,15 @@ cleanup() {
     done
     kill "$pid" 2>/dev/null
   done
+  # Git Bash on Windows has no pgrep: fall back to killing whatever still
+  # holds our two dev ports so Ctrl+C never leaves orphan servers behind.
+  if ! command -v pgrep >/dev/null 2>&1 && command -v netstat >/dev/null 2>&1; then
+    for port in 8000 5173; do
+      for p in $(netstat -ano 2>/dev/null | grep "LISTENING" | grep ":$port " | awk '{print $5}' | sort -u); do
+        taskkill //PID "$p" //T //F >/dev/null 2>&1
+      done
+    done
+  fi
   wait 2>/dev/null
 }
 trap cleanup INT TERM EXIT
