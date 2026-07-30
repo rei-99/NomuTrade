@@ -130,24 +130,62 @@ export function Orders() {
           keyFn={(o) => o.order_id}
           empty="No orders"
           columns={[
-            { header: "Submitted", render: (o) => <span className="num">{fmtTs(o.created_at)}</span> },
-            { header: "Symbol", render: (o) => o.instrument_symbol },
-            { header: "Side", render: (o) => <Badge text={o.side} /> },
-            { header: "Type", render: (o) => o.order_type.replace("_", "-") },
-            { header: "Qty", className: "num", render: (o) => fmtNum(o.quantity) },
-            { header: "Filled", className: "num", render: (o) => fmtNum(filledQty(o)) },
+            {
+              header: "Submitted",
+              sortable: true,
+              sortValue: (o) => o.created_at,
+              render: (o) => <span className="num">{fmtTs(o.created_at)}</span>,
+            },
+            {
+              header: "Symbol",
+              sortable: true,
+              sortValue: (o) => o.instrument_symbol,
+              render: (o) => o.instrument_symbol,
+            },
+            {
+              header: "Side",
+              sortable: true,
+              sortValue: (o) => o.side,
+              render: (o) => <Badge text={o.side} />,
+            },
+            {
+              header: "Type",
+              sortable: true,
+              sortValue: (o) => o.order_type,
+              render: (o) => o.order_type.replace("_", "-"),
+            },
+            {
+              header: "Qty",
+              className: "num",
+              sortable: true,
+              sortValue: (o) => o.quantity,
+              render: (o) => fmtNum(o.quantity),
+            },
+            {
+              header: "Filled",
+              className: "num",
+              sortable: true,
+              sortValue: (o) => filledQty(o),
+              render: (o) => fmtNum(filledQty(o)),
+            },
             {
               header: "Limit",
               className: "num",
+              sortable: true,
+              sortValue: (o) => o.limit_price ?? -1,
               render: (o) => (o.limit_price !== null ? fmtJpy(o.limit_price, true) : "—"),
             },
             {
               header: "Stop",
               className: "num",
+              sortable: true,
+              sortValue: (o) => o.stop_price ?? -1,
               render: (o) => (o.stop_price !== null ? fmtJpy(o.stop_price, true) : "—"),
             },
             {
               header: "Status",
+              sortable: true,
+              sortValue: (o) => o.status,
               render: (o) => (
                 <span title={o.reject_reason ?? undefined}>
                   <Badge text={o.status} />

@@ -579,10 +579,14 @@ async def test_assistant_grounding_and_guardrail(client, app):
 async def _insert_news(app, ticker="TSLA"):
     from app.core.models import NewsItem, NewsSentiment
 
+    # Anchor at noon UTC of the current day: both items then always share one
+    # UTC day regardless of run time — relative-to-now offsets made the
+    # sentiment-series assertions fail when run between 00:00-02:00 UTC.
+    base = utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
     async with app.state.sessionmaker() as session:
         items = [
             NewsItem(
-                ts=utcnow() - timedelta(hours=2),
+                ts=base - timedelta(hours=2),
                 title=f"{ticker} rallies on strong guidance",
                 topics=["Technology"],
                 sentiments=[
@@ -595,7 +599,7 @@ async def _insert_news(app, ticker="TSLA"):
                 ],
             ),
             NewsItem(
-                ts=utcnow() - timedelta(hours=1),
+                ts=base - timedelta(hours=1),
                 title=f"{ticker} slips in quiet trade",
                 topics=[],
                 sentiments=[

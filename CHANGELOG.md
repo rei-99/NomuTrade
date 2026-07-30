@@ -7,6 +7,41 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Trading workspace polish: live chart, sim clock, portfolios page, position close, table sorting
+
+**Driver:** owner-directed frontend improvement program (stage 2 of 5).
+
+- **Live price chart**: `PriceChart` polls its series every 5 s (previously
+  only on symbol/timeframe/indicator change — the chart went stale while the
+  tape ticked); the user's dataZoom window is tracked and re-applied across
+  polls, and background refreshes no longer flash the skeleton loader.
+- **Simulation clock in the top bar**: dataset time (e.g. `SIM 07-01 11:20`)
+  next to the SIM LIVE/IDLE dot, derived from the latest candle ts of the
+  workspace symbol (URL `?symbol=`, AAPL fallback) — pure frontend, an honest
+  reflection of the D-10 sim clock without a new endpoint.
+- **Portfolios index** (`/portfolios`, PORTFOLIO_VIEW): name / type badge /
+  cash / total value in one list request; row → PortfolioDetail, which is now
+  reachable from the nav for the first time.
+- **Position Close action** (ORDER_SUBMIT-gated): per-row ghost button opens
+  `OrderTicket` prefilled SELL / MARKET / full quantity via the Assistant
+  prefill mechanism; row-click navigation preserved.
+- **DataTable sorting**: opt-in `sortable` + `sortValue` column props,
+  tri-state asc→desc→none cycle, numeric-aware stable sort, subtle arrow
+  indicators; enabled on Trades and Orders; tables that don't opt in render
+  byte-identical DOM.
+- **Test hygiene (test-only)**: `_insert_news` in test_experience.py anchored
+  to noon UTC — the relative-to-now fixture made
+  `test_news_and_sentiment_endpoints` fail between 00:00–02:00 UTC (the two
+  items straddled the day boundary, `assert 2 == 1` on the daily series); the
+  suite is now deterministic across the UTC day boundary.
+- Verified: `npm run build` zero type errors; backend **62/62** (31.6 s,
+  incl. the fixed news test at 01:2x UTC — inside the former failure window);
+  headless-Chrome screenshots: chart and tape advancing across three captures
+  ($209.99 → $228.19 → $249.77) with the sim clock ticking, portfolios index,
+  Close button on the TSLA position row, sort affordances on the blotter
+  headers. (Active sort clicks and the Close-ticket submit flow are
+  build-verified but not exercised headlessly.)
+
 ## 2026-07-29 — Frontend feature completeness: alerts UI, notification center, restricted admin, trade blotter
 
 **Driver:** owner-directed frontend improvement program (stage 1 of 5) — four

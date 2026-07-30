@@ -243,7 +243,7 @@ export function Trading() {
               <div className="skeleton" style={{ height: 22 }} />
             </div>
           ) : (
-            <PositionsTable portfolioId={portfolioId} positions={positions} />
+            <PositionsTable portfolioId={portfolioId} portfolios={portfolios} positions={positions} />
           )}
         </section>
       </div>

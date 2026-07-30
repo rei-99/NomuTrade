@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { PositionsResponse } from "../api/types";
+import type { Portfolio, Position, PositionsResponse } from "../api/types";
+import { useAuth } from "../auth";
 import { DataTable } from "./DataTable";
+import { OrderTicket } from "./OrderTicket";
 import { fmtJpy, fmtNum, fmtPct, fmtSignedJpy, pnlClass } from "../format";
 
 interface PositionsTableProps {
   portfolioId: string;
+  portfolios: Portfolio[];
   positions: PositionsResponse;
 }
 
@@ -13,12 +16,16 @@ interface PositionsTableProps {
  * Live positions blotter. MARK cell flashes green/red for 300 ms on price
  * changes between polls; uP&L renders as colored chips; a subtle allocation
  * bar sits under each market value; totals pinned in a footer row. Row click
- * navigates to the portfolio.
+ * navigates to the portfolio. Users with ORDER_SUBMIT get a per-row Close
+ * action that opens a prefilled SELL ticket for the full position.
  */
-export function PositionsTable({ portfolioId, positions }: PositionsTableProps) {
+export function PositionsTable({ portfolioId, portfolios, positions }: PositionsTableProps) {
   const navigate = useNavigate();
+  const { hasPerm } = useAuth();
   const prevMarks = useRef<Map<string, number>>(new Map());
   const [flash, setFlash] = useState<Map<string, "up" | "down">>(new Map());
+  const [closing, setClosing] = useState<Position | null>(null);
+  const canClose = hasPerm("ORDER_SUBMIT");
 
   // Reset the mark memory when the portfolio changes to avoid false flashes.
   useEffect(() => {
@@ -53,6 +60,7 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
     dayChanges.length > 0 ? dayChanges.reduce((a, v) => a + v, 0) : null;
 
   return (
+    <>
     <DataTable
       rows={positions.items}
       keyFn={(p) => p.instrument_symbol}
@@ -130,6 +138,26 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
             );
           },
         },
+        ...(canClose
+          ? [
+              {
+                header: "",
+                className: "num",
+                render: (p: Position) => (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    title={`Sell the full ${p.instrument_symbol} position at market`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClosing(p);
+                    }}
+                  >
+                    Close
+                  </button>
+                ),
+              },
+            ]
+          : []),
       ]}
       footer={[
         <span key="t" className="muted">
@@ -157,7 +185,21 @@ export function PositionsTable({ portfolioId, positions }: PositionsTableProps) 
         <span key="upp" className={`pnl-chip num ${pnlClass(totalUpnlPct)}`}>
           {totalUpnlPct === null ? "—" : `${totalUpnlPct >= 0 ? "+" : ""}${fmtNum(totalUpnlPct, 1)}%`}
         </span>,
+        ...(canClose ? [""] : []),
       ]}
     />
+    {closing && (
+      <OrderTicket
+        prefill={{
+          instrument: closing.instrument_symbol,
+          side: "SELL",
+          quantity: closing.quantity,
+          portfolioId,
+        }}
+        portfolios={portfolios}
+        onClose={() => setClosing(null)}
+      />
+    )}
+  </>
   );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Instrument, ListResponse } from "../api/types";
+import type { Instrument, ListResponse, PriceSeries } from "../api/types";
 import { useAuth } from "../auth";
 import { fmtJpy } from "../format";
 import { usePoll } from "../hooks";
@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "Trading" },
   { to: "/orders", label: "Orders" },
   { to: "/trades", label: "Trades", perms: ["TRADE_VIEW"] },
+  { to: "/portfolios", label: "Portfolios", perms: ["PORTFOLIO_VIEW"] },
   { to: "/alerts", label: "Alerts" },
   { to: "/reports", label: "Reports" },
   { to: "/paper", label: "Paper Trading", perms: ["PAPER_TRADE"] },
@@ -121,6 +122,12 @@ export function Layout() {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [marketLive, setMarketLive] = useState(false);
   const prevPrices = useRef<Map<string, number>>(new Map());
+  const [searchParams] = useSearchParams();
+  const [simTs, setSimTs] = useState<string | null>(null);
+
+  // Simulation clock: the workspace symbol is in the URL (?symbol=) when the
+  // Trading page is active; otherwise fall back to a liquid reference symbol.
+  const clockSymbol = searchParams.get("symbol") ?? "AAPL";
 
   // Instruments: fetch once for the search box, then poll 5 s — the market
   // dot is green when any latest_price moved since the previous poll.
@@ -158,6 +165,26 @@ export function Layout() {
     [marketLive],
   );
 
+  // Sim clock: latest 1D candle timestamp of the reference symbol (5 s poll).
+  usePoll(
+    () => {
+      void (async () => {
+        try {
+          const res = await api<PriceSeries>(`/instruments/${clockSymbol}/prices`, {
+            params: { timeframe: "1D" },
+            skipErrorToast: true,
+          });
+          const last = res.candles[res.candles.length - 1];
+          if (last) setSimTs(last.ts);
+        } catch {
+          // keep the last known sim time
+        }
+      })();
+    },
+    5_000,
+    [clockSymbol],
+  );
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -185,6 +212,12 @@ export function Layout() {
             <span className="market-status" title={dotTitle()}>
               <span className={`market-dot${marketLive ? " live" : ""}`} />
               {marketLive ? "SIM LIVE" : "SIM IDLE"}
+            </span>
+            <span
+              className="sim-clock muted num"
+              title="Simulation clock — timestamp of the latest market-data tick"
+            >
+              SIM {simTs ? `${simTs.slice(5, 10)} ${simTs.slice(11, 16)}` : "—"}
             </span>
             <SymbolSearch instruments={instruments} />
           </div>
