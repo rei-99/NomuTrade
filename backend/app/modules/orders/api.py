@@ -1,13 +1,19 @@
 """Order ticket + trade blotter endpoints.
 
 Audit event types emitted here: ORDER_SUBMITTED, ORDER_REJECTED,
-ORDER_CANCELLED, ORDER_AMENDED (ORDER_FILLED and STOP_TRIGGERED are emitted
-by the execution engine worker). Notifications are published to the shared
-`notify` stream; a parallel module persists them.
+ORDER_CANCELLED, ORDER_AMENDED (ORDER_FILLED, STOP_TRIGGERED and
+ORDER_EXPIRED are emitted by the execution engine worker). Notifications
+are published to the shared `notify` stream; a parallel module persists
+them.
+
+Design 24: tickets carry a time-in-force (DAY/GTC/IOC, default GTC) and
+TRAILING_STOP tickets trail params; DAY orders get `expire_after` from the
+simulation clock at acceptance.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -33,6 +39,7 @@ from app.core.models import (
     Order,
     OrderStatus,
     Portfolio,
+    TimeInForce,
 )
 from app.core.security import (
     SessionData,
@@ -41,6 +48,7 @@ from app.core.security import (
     require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
+from app.modules.marketdata.registry import get_sim_now
 from app.modules.orders.validation import Rejection, validate_order
 
 router = APIRouter(tags=["orders"])
@@ -62,16 +70,21 @@ class OrderTicket(BaseModel):
     portfolio_id: str
     instrument: str  # symbol
     side: Literal["BUY", "SELL"]
-    order_type: Literal["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]
+    order_type: Literal["MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"]
     quantity: Decimal
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None  # required for STOP / STOP_LIMIT (§A3)
+    time_in_force: Literal["DAY", "GTC", "IOC"] = "GTC"  # design 24 §D-24.1
+    trail_amount: Decimal | None = None  # TRAILING_STOP: exactly one of…
+    trail_pct: Decimal | None = None    # …amount/pct (> 0), §D-24.2
 
 
 class OrderAmendment(BaseModel):
     quantity: Decimal | None = None
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None
+    trail_amount: Decimal | None = None
+    trail_pct: Decimal | None = None
 
 
 def _iso(dt) -> str:
@@ -91,6 +104,21 @@ def order_json(order: Order, symbol: str) -> dict:
         ),
         "stop_price": (
             float(order.stop_price) if order.stop_price is not None else None
+        ),
+        "time_in_force": order.time_in_force,
+        "expire_after": (
+            _iso(order.expire_after) if order.expire_after is not None else None
+        ),
+        "trail_amount": (
+            float(order.trail_amount) if order.trail_amount is not None else None
+        ),
+        "trail_pct": (
+            float(order.trail_pct) if order.trail_pct is not None else None
+        ),
+        "trail_reference": (
+            float(order.trail_reference)
+            if order.trail_reference is not None
+            else None
         ),
         "status": order.status,
         "reject_reason": order.reject_reason,
@@ -144,6 +172,16 @@ async def _notify(db: AsyncSession, user_id: str, title: str, body: str) -> None
         "notify",
         {"user_id": user_id, "category": "ORDER", "title": title, "body": body},
     )
+
+
+def _day_expire_after() -> datetime:
+    """End of the current *simulation* day (design 24 §D-24.1, D-10).
+
+    DAY orders expire when a tick beyond this instant reaches the engine.
+    Falls back to the wall clock when no replay has started (no sim clock).
+    """
+    clock = as_utc(get_sim_now() or utcnow())
+    return clock.replace(hour=23, minute=59, second=59, microsecond=999999)
 
 
 async def _visible_or_403(
@@ -215,6 +253,8 @@ async def submit_order(
         quantity=body.quantity,
         limit_price=body.limit_price,
         stop_price=body.stop_price,
+        trail_amount=body.trail_amount,
+        trail_pct=body.trail_pct,
         settings=request.app.state.settings,
     )
     if rejection is not None:
@@ -226,6 +266,9 @@ async def submit_order(
             quantity=body.quantity,
             limit_price=body.limit_price,
             stop_price=body.stop_price,
+            time_in_force=body.time_in_force,
+            trail_amount=body.trail_amount,
+            trail_pct=body.trail_pct,
             status=OrderStatus.REJECTED,
             reject_reason=rejection.code,
             idempotency_key=idempotency_key,
@@ -267,6 +310,15 @@ async def submit_order(
         quantity=body.quantity,
         limit_price=body.limit_price,
         stop_price=body.stop_price,
+        time_in_force=body.time_in_force,
+        # DAY expires at the end of the simulation day (design 24 §D-24.1).
+        expire_after=(
+            _day_expire_after()
+            if body.time_in_force == TimeInForce.DAY
+            else None
+        ),
+        trail_amount=body.trail_amount,
+        trail_pct=body.trail_pct,
         status=OrderStatus.ACCEPTED,
         idempotency_key=idempotency_key,
         created_by=user.user_id,
@@ -288,6 +340,13 @@ async def submit_order(
             "quantity": str(body.quantity),
             "limit_price": str(body.limit_price) if body.limit_price else None,
             "stop_price": str(body.stop_price) if body.stop_price else None,
+            "time_in_force": body.time_in_force,
+            "trail_amount": (
+                str(body.trail_amount) if body.trail_amount is not None else None
+            ),
+            "trail_pct": (
+                str(body.trail_pct) if body.trail_pct is not None else None
+            ),
         },
     )
     try:
@@ -426,9 +485,12 @@ async def amend_order(
         body.quantity is None
         and body.limit_price is None
         and body.stop_price is None
+        and body.trail_amount is None
+        and body.trail_pct is None
     ):
         raise ValidationError(
-            "nothing to amend: provide quantity, limit_price and/or stop_price"
+            "nothing to amend: provide quantity, limit_price, stop_price "
+            "and/or trail_amount/trail_pct"
         )
     order, portfolio = await _load_owned_order(db, user, order_id)
     if order.status != OrderStatus.OPEN:
@@ -441,6 +503,15 @@ async def amend_order(
         body.limit_price if body.limit_price is not None else order.limit_price
     )
     new_stop = body.stop_price if body.stop_price is not None else order.stop_price
+    # Trailing stop (design 24 §D-24.2): amending one trail param replaces
+    # the trail and clears the other (exactly-one invariant); the water-mark
+    # trail_reference is kept across amendments.
+    new_trail_amount = order.trail_amount
+    new_trail_pct = order.trail_pct
+    if body.trail_amount is not None:
+        new_trail_amount, new_trail_pct = body.trail_amount, None
+    elif body.trail_pct is not None:
+        new_trail_amount, new_trail_pct = None, body.trail_pct
     instrument = await db.get(Instrument, order.instrument_id)
     rejection = await validate_order(
         db,
@@ -451,6 +522,8 @@ async def amend_order(
         quantity=new_quantity,
         limit_price=new_limit,
         stop_price=new_stop,
+        trail_amount=new_trail_amount,
+        trail_pct=new_trail_pct,
         settings=request.app.state.settings,
     )
     if rejection is not None:
@@ -481,6 +554,8 @@ async def amend_order(
     order.quantity = new_quantity
     order.limit_price = new_limit
     order.stop_price = new_stop
+    order.trail_amount = new_trail_amount
+    order.trail_pct = new_trail_pct
     order.updated_at = utcnow()
     await write_audit(
         db,
@@ -492,6 +567,10 @@ async def amend_order(
             "quantity": str(new_quantity),
             "limit_price": str(new_limit) if new_limit else None,
             "stop_price": str(new_stop) if new_stop else None,
+            "trail_amount": (
+                str(new_trail_amount) if new_trail_amount is not None else None
+            ),
+            "trail_pct": str(new_trail_pct) if new_trail_pct is not None else None,
         },
     )
     await db.commit()

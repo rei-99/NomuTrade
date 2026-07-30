@@ -3,6 +3,8 @@
 Indicators (DESIGN 05) are computed on demand from PriceTick closes via the
 pure functions in indicators.py — no separate persistence. Price alerts are
 evaluated by the alert_evaluator worker against the `market.ticks` stream.
+Bond analytics (design 24 §D-24.3) — YTM, modified duration, implied price
+— are computed on demand via the pure functions in bonds.py.
 
 The evaluator keeps ACTIVE rules in an in-memory cache (refreshed every 60 s,
 invalidated synchronously by the create/disable endpoints) and touches the DB
@@ -40,9 +42,14 @@ from app.core.models import (
 from app.core.security import SessionData, get_current_user
 from app.core.timeutil import as_utc, utcnow
 
+from app.modules.analytics import bonds as bond_math
 from app.modules.analytics import indicators as ind
 from app.modules.analytics.news_providers import get_news_provider
-from app.modules.marketdata.registry import get_sim_now
+from app.modules.marketdata.registry import (
+    get_latest_price,
+    get_sim_now,
+    warm_from_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +173,72 @@ async def get_indicators(
         ]
     # Insufficient data yields an empty series for that indicator, not an error.
     return {"symbol": symbol, "timeframe": tf, "indicators": result}
+
+
+# ---------------------------------------------------------------------------
+# Bond analytics (design 24 §D-24.3): YTM + modified duration
+# ---------------------------------------------------------------------------
+
+
+@router.get("/instruments/{symbol}/bond-analytics")
+async def bond_analytics(
+    symbol: str,
+    yield_: float | None = Query(None, alias="yield"),
+    session: SessionData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Coupon/maturity, years-to-maturity (sim clock, ACT/365.25), latest
+    price, YTM and modified duration for a bond; `yield` (percent) adds the
+    implied clean price. 404 for non-bonds. Conventions: analytics/bonds.py.
+    """
+    instrument = (
+        await db.execute(select(Instrument).where(Instrument.symbol == symbol))
+    ).scalar_one_or_none()
+    if (
+        instrument is None
+        or instrument.asset_class != "BOND"
+        or instrument.coupon_rate is None
+        or instrument.maturity_date is None
+    ):
+        raise NotFound(f"no bond analytics for instrument: {symbol}")
+
+    coupon = float(instrument.coupon_rate)
+    # Sim-clock reference (D-10): years-to-maturity is measured in dataset
+    # time while a replay runs, never against the wall clock.
+    now = get_sim_now() or utcnow()
+    seconds = (as_utc(instrument.maturity_date) - as_utc(now)).total_seconds()
+    years = max(0.0, seconds / (365.25 * 86_400))
+    n = bond_math.payment_count(years)
+
+    price = get_latest_price(instrument.instrument_id)
+    if price is None:
+        await warm_from_db(
+            db,
+            [instrument.instrument_id],
+            {instrument.instrument_id: instrument.symbol},
+        )
+        price = get_latest_price(instrument.instrument_id)
+
+    ytm = duration = None
+    if price is not None:
+        ytm = bond_math.solve_ytm(float(price), coupon, n)
+        duration = bond_math.modified_duration(coupon, n, ytm)
+
+    body = {
+        "symbol": instrument.symbol,
+        "coupon_rate": coupon,
+        "maturity_date": as_utc(instrument.maturity_date).date().isoformat(),
+        "years_to_maturity": round(years, 4),
+        "payments_remaining": n,
+        "latest_price": float(price) if price is not None else None,
+        "ytm": round(ytm, 4) if ytm is not None else None,
+        "modified_duration": round(duration, 4) if duration is not None else None,
+    }
+    if yield_ is not None:
+        body["implied_price"] = round(
+            bond_math.price_from_yield(coupon, n, yield_), 4
+        )
+    return body
 
 
 # ---------------------------------------------------------------------------

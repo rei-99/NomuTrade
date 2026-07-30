@@ -7,6 +7,7 @@ import type {
   OrderSide,
   OrderType,
   Portfolio,
+  TimeInForce,
 } from "../api/types";
 import { fmtJpy, fmtNum } from "../format";
 import { Badge } from "./Badge";
@@ -19,7 +20,9 @@ const ORDER_TYPES: { id: OrderType; label: string }[] = [
   { id: "LIMIT", label: "LIMIT" },
   { id: "STOP", label: "STOP" },
   { id: "STOP_LIMIT", label: "STOP-LIMIT" },
+  { id: "TRAILING_STOP", label: "TRAIL" },
 ];
+const TIFS: TimeInForce[] = ["DAY", "GTC", "IOC"];
 
 interface Feedback {
   tone: "ok" | "err" | "info";
@@ -39,15 +42,25 @@ interface OrderPanelProps {
 }
 
 function typeLabel(t: OrderType): string {
-  return t === "STOP_LIMIT" ? "STOP-LIMIT" : t;
+  if (t === "STOP_LIMIT") return "STOP-LIMIT";
+  if (t === "TRAILING_STOP") return "TRAIL-STOP";
+  return t;
+}
+
+/** Trail param summary for the confirm card / feedback line. */
+function trailLabel(amount: number, pct: number, amountSet: boolean): string {
+  return amountSet ? `trail ${fmtJpy(amount, true)}` : `trail ${pct}%`;
 }
 
 /**
- * Order panel: 4 order-type pills, size chips + custom input with −/+
- * stepper, est. cost vs cash (bond-aware). BUY/SELL opens an in-panel
- * confirmation card (§A1); Confirm submits with a freshly minted idempotency
- * key, Enter confirms, Esc cancels. MARKET accepts are polled briefly for the
- * fill price; resting types (LIMIT/STOP/STOP-LIMIT) report "working".
+ * Order panel: 5 order-type pills (incl. TRAIL, design 24), time-in-force
+ * selector (DAY/GTC/IOC, default GTC), size chips + custom input with −/+
+ * stepper, est. cost vs cash (bond-aware). TRAIL replaces the stop/limit
+ * inputs with trail amount / trail % (exactly one, mirroring the server).
+ * BUY/SELL opens an in-panel confirmation card (§A1); Confirm submits with
+ * a freshly minted idempotency key, Enter confirms, Esc cancels. MARKET
+ * accepts are polled briefly for the fill price; resting types report
+ * "working".
  */
 export function OrderPanel({
   symbol,
@@ -60,8 +73,11 @@ export function OrderPanel({
 }: OrderPanelProps) {
   const { toast } = useToast();
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
+  const [timeInForce, setTimeInForce] = useState<TimeInForce>("GTC");
   const [limitInput, setLimitInput] = useState("");
   const [stopInput, setStopInput] = useState("");
+  const [trailAmountInput, setTrailAmountInput] = useState("");
+  const [trailPctInput, setTrailPctInput] = useState("");
   const [sizeInput, setSizeInput] = useState("50");
   const [confirming, setConfirming] = useState<OrderSide | null>(null);
   const [inFlight, setInFlight] = useState(false);
@@ -78,6 +94,7 @@ export function OrderPanel({
 
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
+  const needsTrail = orderType === "TRAILING_STOP";
 
   const size = Number(sizeInput);
   const sizeValid = sizeInput !== "" && Number.isInteger(size) && size > 0;
@@ -86,6 +103,12 @@ export function OrderPanel({
   const limitValid = !needsLimit || (limitInput !== "" && !Number.isNaN(limitPrice) && limitPrice > 0);
   const stopPrice = Number(stopInput);
   const stopValid = !needsStop || (stopInput !== "" && !Number.isNaN(stopPrice) && stopPrice > 0);
+  // Trailing stop (design 24): exactly one of trail amount / trail %, > 0.
+  const trailAmount = Number(trailAmountInput);
+  const trailPct = Number(trailPctInput);
+  const trailAmountSet = trailAmountInput !== "" && !Number.isNaN(trailAmount) && trailAmount > 0;
+  const trailPctSet = trailPctInput !== "" && !Number.isNaN(trailPct) && trailPct > 0;
+  const trailValid = !needsTrail || (trailAmountSet !== trailPctSet);
 
   /** Reference price for the estimate: limit > stop > last, per order type. */
   const refPrice =
@@ -120,6 +143,7 @@ export function OrderPanel({
     if (!sizeValid) issues.push("Quantity must be a positive whole number.");
     if (!limitValid) issues.push("Limit price is required for LIMIT / STOP-LIMIT orders.");
     if (!stopValid) issues.push("Stop price is required for STOP / STOP-LIMIT orders.");
+    if (!trailValid) issues.push("Exactly one of trail amount / trail % is required for TRAIL orders.");
     if (side === "BUY" && overCash) issues.push("Insufficient cash — est. cost exceeds cash.");
     return issues;
   };
@@ -161,7 +185,7 @@ export function OrderPanel({
   const submit = async (side: OrderSide) => {
     setViolations([]);
     if (!symbol || !portfolioId) return;
-    if (!sizeValid || !limitValid || !stopValid) return;
+    if (!sizeValid || !limitValid || !stopValid || !trailValid) return;
 
     setInFlight(true);
     try {
@@ -172,8 +196,11 @@ export function OrderPanel({
           side,
           order_type: orderType,
           quantity: size,
+          time_in_force: timeInForce,
           ...(needsLimit ? { limit_price: limitPrice } : {}),
           ...(needsStop ? { stop_price: stopPrice } : {}),
+          ...(needsTrail && trailAmountSet ? { trail_amount: trailAmount } : {}),
+          ...(needsTrail && trailPctSet ? { trail_pct: trailPct } : {}),
         },
         crypto.randomUUID(), // minted at Confirm, per §A1
       );
@@ -194,8 +221,11 @@ export function OrderPanel({
             ? ` @ ${fmtJpy(limitPrice, true)}`
             : orderType === "STOP"
               ? ` stop ${fmtJpy(stopPrice, true)}`
-              : ` stop ${fmtJpy(stopPrice, true)} / limit ${fmtJpy(limitPrice, true)}`;
-        const text = `${side} ${fmtNum(size)} ${symbol}${priceDetail} working`;
+              : orderType === "STOP_LIMIT"
+                ? ` stop ${fmtJpy(stopPrice, true)} / limit ${fmtJpy(limitPrice, true)}`
+                : ` ${trailLabel(trailAmount, trailPct, trailAmountSet)}`;
+        const tifDetail = timeInForce !== "GTC" ? ` · ${timeInForce}` : "";
+        const text = `${side} ${fmtNum(size)} ${symbol}${priceDetail}${tifDetail} working`;
         toast(text, "success");
         setFeedback({ tone: "ok", text });
         onOrderPlaced?.();
@@ -285,7 +315,7 @@ export function OrderPanel({
 
       <div className="form-field">
         <span>Order type</span>
-        <div className="seg seg-4">
+        <div className="seg seg-5">
           {ORDER_TYPES.map((t) => (
             <button
               key={t.id}
@@ -298,6 +328,53 @@ export function OrderPanel({
           ))}
         </div>
       </div>
+
+      <div className="form-field">
+        <span>Time in force</span>
+        <div className="seg seg-3">
+          {TIFS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`seg-btn${timeInForce === t ? " active" : ""}`}
+              onClick={() => setTimeInForce(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {needsTrail && (
+        <>
+          <label className="form-field">
+            <span>Trail amount</span>
+            <input
+              type="number"
+              min="0"
+              step={instrument ? instrument.tick_size : "any"}
+              value={trailAmountInput}
+              onChange={(e) => setTrailAmountInput(e.target.value)}
+              placeholder="0.00"
+              className="num"
+              disabled={trailPctSet}
+            />
+          </label>
+          <label className="form-field">
+            <span>Trail %</span>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={trailPctInput}
+              onChange={(e) => setTrailPctInput(e.target.value)}
+              placeholder="0.0"
+              className="num"
+              disabled={trailAmountSet}
+            />
+          </label>
+        </>
+      )}
 
       {needsStop && (
         <label className="form-field">
@@ -420,7 +497,10 @@ export function OrderPanel({
               {typeLabel(orderType)}
               {needsStop && stopValid && ` · stop ${fmtJpy(stopPrice, true)}`}
               {needsLimit && limitValid && ` · limit ${fmtJpy(limitPrice, true)}`}
+              {needsTrail && trailValid && ` · ${trailLabel(trailAmount, trailPct, trailAmountSet)}`}
             </span>
+            <span className="muted">TIF</span>
+            <span className="num">{timeInForce}</span>
             <span className="muted">Quantity</span>
             <span className="num">{sizeValid ? fmtNum(size) : "—"}</span>
             <span className="muted">Est. cost</span>

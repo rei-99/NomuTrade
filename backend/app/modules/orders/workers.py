@@ -5,7 +5,13 @@
   STOP_LIMIT rest OPEN until a tick crosses the stop price (BUY >= stop,
   SELL <= stop, design 21 §A3): STOP then fills as MARKET at the tick,
   STOP_LIMIT converts in place to a resting LIMIT (STOP_TRIGGERED audited).
-  Full fills only — partial fills are a documented MVP non-goal (design A1).
+  Design 24: TRAILING_STOP rests OPEN, rolls its persisted trail_reference
+  water-mark toward each new extreme and fills as MARKET when the trail is
+  crossed (STOP_TRIGGERED audited); DAY orders are cancelled with an
+  ORDER_EXPIRED audit when a tick beyond `expire_after` arrives; IOC orders
+  that cannot execute immediately are CANCELLED (reason IOC_UNFILLED)
+  instead of resting. Full fills only — partial fills are a documented MVP
+  non-goal (design A1).
 - stp_worker: consumes `trading.executions`; in ONE transaction upserts the
   Position, adjusts cash (bond-aware via `trade_value`, §A2), inserts the
   SettlementInstruction and writes the `stp.lifecycle` outbox event.
@@ -42,6 +48,7 @@ from app.core.models import (
     Portfolio,
     Position,
     SettlementInstruction,
+    TimeInForce,
 )
 from app.core.timeutil import as_utc, utcnow
 from app.modules.marketdata.registry import get_snapshot
@@ -50,8 +57,11 @@ from app.modules.orders.validation import trade_value
 logger = logging.getLogger(__name__)
 
 ORDER_FILLED = "ORDER_FILLED"
+ORDER_CANCELLED = "ORDER_CANCELLED"
+ORDER_EXPIRED = "ORDER_EXPIRED"
 STOP_TRIGGERED = "STOP_TRIGGERED"
 STP_EXCEPTION = "STP_EXCEPTION"
+IOC_UNFILLED = "IOC_UNFILLED"
 
 _CLOSED_STATUSES = (
     OrderStatus.FILLED,
@@ -60,7 +70,12 @@ _CLOSED_STATUSES = (
 )
 
 # Order types that rest in the working book as OPEN until crossed/triggered.
-_RESTING_TYPES = (OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT)
+_RESTING_TYPES = (
+    OrderType.LIMIT,
+    OrderType.STOP,
+    OrderType.STOP_LIMIT,
+    OrderType.TRAILING_STOP,
+)
 
 
 async def _shielded(coro):
@@ -98,6 +113,182 @@ def _stop_triggered(order: Order, price: Decimal) -> bool:
     return price <= order.stop_price
 
 
+# ---------------------------------------------------------------------------
+# Trailing stop (design 24 §D-24.2)
+# ---------------------------------------------------------------------------
+
+
+def _update_trail_reference(order: Order, price: Decimal) -> bool:
+    """Roll the trailing water-mark toward the new extreme; True if it moved.
+
+    SELL trails the highest price seen since acceptance, BUY the lowest.
+    The reference is initialized from the first tick seen after acceptance.
+    """
+    reference = order.trail_reference
+    if reference is None:
+        order.trail_reference = price
+        return True
+    if order.side == "SELL" and price > reference:
+        order.trail_reference = price
+        return True
+    if order.side == "BUY" and price < reference:
+        order.trail_reference = price
+        return True
+    return False
+
+
+def _trail_trigger_price(order: Order) -> Decimal | None:
+    """Trigger price implied by the current water-mark and trail params.
+
+    SELL: reference − trail_amount, or reference × (1 − trail_pct/100).
+    BUY mirror: reference + amount, or reference × (1 + pct/100).
+    (trail_pct is percentage points — 5 means 5 %.)
+    """
+    reference = order.trail_reference
+    if reference is None:
+        return None
+    if order.trail_amount is not None:
+        if order.side == "SELL":
+            return reference - order.trail_amount
+        return reference + order.trail_amount
+    if order.trail_pct is not None:
+        hundred = Decimal("100")
+        if order.side == "SELL":
+            return reference * (hundred - order.trail_pct) / hundred
+        return reference * (hundred + order.trail_pct) / hundred
+    return None
+
+
+def _trail_triggered(order: Order, price: Decimal) -> bool:
+    """TRAILING_STOP trigger check: SELL fires at/below the trail trigger,
+    BUY at/above it. Called after the reference roll, so a tick that sets a
+    new extreme cannot trigger on itself."""
+    trigger = _trail_trigger_price(order)
+    if trigger is None:
+        return False
+    if order.side == "SELL":
+        return price <= trigger
+    return price >= trigger
+
+
+async def _notify_owner(session, order: Order, title: str, body: str) -> None:
+    portfolio = await session.get(Portfolio, order.portfolio_id)
+    await write_outbox(
+        session,
+        "notify",
+        {
+            "user_id": portfolio.owner_id,
+            "category": "ORDER",
+            "title": title,
+            "body": body,
+        },
+    )
+
+
+async def _audit_trailing_trigger(
+    session, order: Order, tick_price: Decimal
+) -> None:
+    """Triggered TRAILING_STOP (§D-24.2): STOP_TRIGGERED audit carrying the
+    trail params + water-mark, plus an owner notify. The order then fills as
+    MARKET at the tick (order_type stays TRAILING_STOP)."""
+    instrument = await session.get(Instrument, order.instrument_id)
+    await write_audit(
+        session,
+        actor_id=None,  # system actor: the matching engine
+        event_type=STOP_TRIGGERED,
+        resource_type="ORDER",
+        resource_id=order.order_id,
+        payload={
+            "symbol": instrument.symbol,
+            "side": order.side,
+            "trail_amount": (
+                str(order.trail_amount) if order.trail_amount is not None else None
+            ),
+            "trail_pct": (
+                str(order.trail_pct) if order.trail_pct is not None else None
+            ),
+            "trail_reference": str(order.trail_reference),
+            "tick_price": str(tick_price),
+        },
+    )
+    trail = (
+        f"amount {order.trail_amount}"
+        if order.trail_amount is not None
+        else f"{order.trail_pct}%"
+    )
+    await _notify_owner(
+        session,
+        order,
+        "Trailing stop triggered",
+        f"{order.side} {order.quantity} {instrument.symbol}: trailing stop "
+        f"({trail}, reference {order.trail_reference}) triggered at "
+        f"{tick_price}; filling as MARKET.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Time-in-force (design 24 §D-24.1)
+# ---------------------------------------------------------------------------
+
+
+async def _cancel_ioc(session, order: Order, tick_price: Decimal) -> None:
+    """IOC order that cannot execute immediately: CANCELLED with reason
+    IOC_UNFILLED + audit + notify — it never rests in the book."""
+    instrument = await session.get(Instrument, order.instrument_id)
+    order.status = OrderStatus.CANCELLED
+    order.reject_reason = IOC_UNFILLED
+    order.updated_at = utcnow()
+    await write_audit(
+        session,
+        actor_id=None,  # system actor: the matching engine
+        event_type=ORDER_CANCELLED,
+        resource_type="ORDER",
+        resource_id=order.order_id,
+        payload={
+            "reason": IOC_UNFILLED,
+            "symbol": instrument.symbol,
+            "side": order.side,
+            "order_type": order.order_type,
+            "tick_price": str(tick_price),
+        },
+    )
+    await _notify_owner(
+        session,
+        order,
+        "Order cancelled (IOC)",
+        f"{order.side} {order.quantity} {instrument.symbol}: immediate-or-"
+        f"cancel order could not execute at {tick_price}; cancelled.",
+    )
+
+
+async def _expire_day_order(session, order: Order, tick_ts) -> None:
+    """DAY order whose simulation day has ended (§D-24.1): CANCELLED with an
+    ORDER_EXPIRED audit + notify when a tick beyond expire_after arrives."""
+    instrument = await session.get(Instrument, order.instrument_id)
+    order.status = OrderStatus.CANCELLED
+    order.updated_at = utcnow()
+    await write_audit(
+        session,
+        actor_id=None,  # system actor: the matching engine
+        event_type=ORDER_EXPIRED,
+        resource_type="ORDER",
+        resource_id=order.order_id,
+        payload={
+            "symbol": instrument.symbol,
+            "side": order.side,
+            "expire_after": as_utc(order.expire_after).isoformat(),
+            "tick_ts": as_utc(tick_ts).isoformat(),
+        },
+    )
+    await _notify_owner(
+        session,
+        order,
+        "Order expired",
+        f"DAY {order.side} {order.quantity} {instrument.symbol} expired at "
+        f"the end of its simulation day.",
+    )
+
+
 async def _convert_stop_limit(session, order: Order, tick_price: Decimal) -> None:
     """Triggered STOP_LIMIT (§A3): convert in place to a LIMIT order at
     limit_price (stop_price stays on the record); audit + notify the owner."""
@@ -133,6 +324,16 @@ async def _convert_stop_limit(session, order: Order, tick_price: Decimal) -> Non
     )
 
 
+async def _rest_or_ioc(session, order: Order, tick_price: Decimal) -> str:
+    """An order that cannot execute now rests ("working") — unless its TIF is
+    IOC, which cancels instead of resting (design 24 §D-24.1)."""
+    if order.time_in_force == TimeInForce.IOC:
+        await _cancel_ioc(session, order, tick_price)
+        await session.commit()
+        return "closed"
+    return "working"
+
+
 async def _fill_order(sessionmaker, order_id: str) -> str:
     """Attempt to fill one order in a single transaction.
 
@@ -148,10 +349,19 @@ async def _fill_order(sessionmaker, order_id: str) -> str:
         if snapshot is None:
             return "working"  # feed stale: leave the order working
         if order.status == OrderStatus.OPEN or order.status == OrderStatus.ACCEPTED:
+            # DAY expiry (design 24 §D-24.1): a tick beyond expire_after
+            # cancels the order instead of working it (sim time, D-10).
+            if (
+                order.expire_after is not None
+                and snapshot.ts > as_utc(order.expire_after)
+            ):
+                await _expire_day_order(session, order, snapshot.ts)
+                await session.commit()
+                return "closed"
             if order.order_type in (OrderType.STOP, OrderType.STOP_LIMIT):
                 # Resting stop: works until a tick crosses the stop price.
                 if not _stop_triggered(order, snapshot.price):
-                    return "working"
+                    return await _rest_or_ioc(session, order, snapshot.price)
                 if order.order_type == OrderType.STOP_LIMIT:
                     await _convert_stop_limit(session, order, snapshot.price)
                     await session.commit()
@@ -159,8 +369,19 @@ async def _fill_order(sessionmaker, order_id: str) -> str:
                     # immediately when the limit is crossed, else rests OPEN.
                     return await _fill_order(sessionmaker, order_id)
                 # STOP: triggered -> fill as MARKET at the tick price below.
+            elif order.order_type == OrderType.TRAILING_STOP:
+                # §D-24.2: roll the water-mark first (a tick setting a new
+                # extreme cannot trigger on itself), persist it even while
+                # resting, then fill as MARKET once the trail is crossed.
+                moved = _update_trail_reference(order, snapshot.price)
+                if not _trail_triggered(order, snapshot.price):
+                    if moved and order.time_in_force != TimeInForce.IOC:
+                        # Keep the water-mark across engine restarts.
+                        await session.commit()
+                    return await _rest_or_ioc(session, order, snapshot.price)
+                await _audit_trailing_trigger(session, order, snapshot.price)
             elif not _marketable(order, snapshot.price):
-                return "working"
+                return await _rest_or_ioc(session, order, snapshot.price)
             now = utcnow()
             execution = Execution(
                 order_id=order.order_id,
@@ -276,8 +497,10 @@ async def _rebuild_book(sessionmaker, book: dict[str, set[str]]) -> None:
 
 
 async def _park_open(sessionmaker, order_id: str) -> tuple[str | None, bool]:
-    """Mark a still-working accepted LIMIT/STOP/STOP_LIMIT order OPEN; return
-    (instrument_id, working?) so the caller can track it in the book."""
+    """Mark a still-working accepted resting-type order (LIMIT/STOP/
+    STOP_LIMIT/TRAILING_STOP) OPEN; return (instrument_id, working?) so the
+    caller can track it in the book. IOC orders never arrive here —
+    `_fill_order` cancels them when they cannot execute immediately."""
     async with sessionmaker() as session:
         order = await session.get(Order, order_id)
         if order is None or order.status in _CLOSED_STATUSES:

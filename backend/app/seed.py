@@ -6,7 +6,7 @@ Usage:
 """
 
 import asyncio
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -93,24 +93,32 @@ DEMO_USERS: list[tuple[str, str, str]] = [
     ("auditor@demo.nomura", "Demo Auditor", "Auditor"),
 ]
 
-# (symbol, name, asset_class, lot_size, tick_size) — fallback instrument
-# universe when the simulation dataset (data/, INT-04) is absent: 7 US
-# equities (lot 1) + 4 bonds quoted % of par (lot 1000 face value, design 21
-# §A2), USD, tick 0.01. When the dataset is present the marketdata loader
-# upserts these same symbols from it. Kept in sync with
+# (symbol, name, asset_class, lot_size, tick_size, coupon_rate, maturity_date)
+# — fallback instrument universe when the simulation dataset (data/, INT-04)
+# is absent: 7 US equities (lot 1) + 4 bonds quoted % of par (lot 1000 face
+# value, design 21 §A2), USD, tick 0.01. Bond rows carry the structured
+# coupon (% of par, annual) / maturity of design 24 §D-24.3 (None on
+# equities). When the dataset is present the marketdata loader upserts these
+# same symbols from it. Kept in sync with
 # app.modules.marketdata.loader.DATASET_INSTRUMENTS / BOND_INSTRUMENTS.
-INSTRUMENTS: list[tuple[str, str, str, Decimal, Decimal]] = [
-    ("AAPL", "Apple", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("GOOG", "Alphabet", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("IBM", "IBM", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("MSFT", "Microsoft", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("TSLA", "Tesla", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("UL", "Unilever", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("WMT", "Walmart", "EQUITY", Decimal("1"), Decimal("0.01")),
-    ("UST10Y", "US Treasury 4.25% 2035", "BOND", Decimal("1000"), Decimal("0.01")),
-    ("UST2Y", "US Treasury 3.75% 2027", "BOND", Decimal("1000"), Decimal("0.01")),
-    ("AAPL29", "Apple Corp 3.40% 2029", "BOND", Decimal("1000"), Decimal("0.01")),
-    ("MSFT31", "Microsoft Corp 3.10% 2031", "BOND", Decimal("1000"), Decimal("0.01")),
+INSTRUMENTS: list[
+    tuple[str, str, str, Decimal, Decimal, Decimal | None, date | None]
+] = [
+    ("AAPL", "Apple", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("GOOG", "Alphabet", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("IBM", "IBM", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("MSFT", "Microsoft", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("TSLA", "Tesla", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("UL", "Unilever", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("WMT", "Walmart", "EQUITY", Decimal("1"), Decimal("0.01"), None, None),
+    ("UST10Y", "US Treasury 4.25% 2035", "BOND", Decimal("1000"), Decimal("0.01"),
+     Decimal("4.25"), date(2035, 8, 15)),
+    ("UST2Y", "US Treasury 3.75% 2027", "BOND", Decimal("1000"), Decimal("0.01"),
+     Decimal("3.75"), date(2027, 6, 15)),
+    ("AAPL29", "Apple Corp 3.40% 2029", "BOND", Decimal("1000"), Decimal("0.01"),
+     Decimal("3.40"), date(2029, 3, 15)),
+    ("MSFT31", "Microsoft Corp 3.10% 2031", "BOND", Decimal("1000"), Decimal("0.01"),
+     Decimal("3.10"), date(2031, 9, 15)),
 ]
 
 
@@ -185,8 +193,8 @@ async def seed(session: AsyncSession) -> None:
         )
 
     # Instruments (7 US equities + 4 generated-price bonds, USD — dataset
-    # universe, D-12 + design 21 §A2).
-    for symbol, name, asset_class, lot_size, tick_size in INSTRUMENTS:
+    # universe, D-12 + design 21 §A2; bonds carry coupon/maturity, design 24).
+    for symbol, name, asset_class, lot_size, tick_size, coupon, maturity in INSTRUMENTS:
         session.add(
             Instrument(
                 symbol=symbol,
@@ -196,6 +204,15 @@ async def seed(session: AsyncSession) -> None:
                 lot_size=lot_size,
                 tick_size=tick_size,
                 tradable=True,
+                coupon_rate=coupon,
+                maturity_date=(
+                    datetime(
+                        maturity.year, maturity.month, maturity.day,
+                        tzinfo=timezone.utc,
+                    )
+                    if maturity is not None
+                    else None
+                ),
             )
         )
 

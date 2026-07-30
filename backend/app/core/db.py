@@ -51,16 +51,46 @@ async def create_all(engine: AsyncEngine) -> None:
 
 
 # table -> {column: DDL type} — additive patches only, never drops/changes.
-_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
-    "orders": {"stop_price": "NUMERIC(24, 8)"},
+# A value may be a plain DDL string (used on every dialect) or a per-dialect
+# dict {"sqlite": ..., "postgres": ...} for types with no common spelling.
+_ADDITIVE_COLUMNS: dict[str, dict[str, str | dict[str, str]]] = {
+    "orders": {
+        "stop_price": "NUMERIC(24, 8)",
+        # Design 24: time-in-force (existing rows backfill 'GTC'), DAY expiry
+        # instant and trailing-stop state.
+        "time_in_force": "VARCHAR(10) DEFAULT 'GTC'",
+        "expire_after": {
+            "sqlite": "DATETIME",
+            "postgres": "TIMESTAMP WITH TIME ZONE",
+        },
+        "trail_amount": "NUMERIC(24, 8)",
+        "trail_pct": "NUMERIC(24, 8)",
+        "trail_reference": "NUMERIC(24, 8)",
+    },
+    "instruments": {
+        # Design 24 §D-24.3: structured bond coupon/maturity.
+        "coupon_rate": "NUMERIC(24, 8)",
+        "maturity_date": {
+            "sqlite": "DATETIME",
+            "postgres": "TIMESTAMP WITH TIME ZONE",
+        },
+    },
+}
+
+# table -> {column: wider DDL type} — varchar widens for values added after a
+# dev DB was created (design 24: "TRAILING_STOP" is longer than VARCHAR(10)).
+# Postgres only: SQLite does not enforce varchar length, so there is no-op.
+_COLUMN_WIDENS: dict[str, dict[str, str]] = {
+    "orders": {"order_type": "VARCHAR(20)"},
 }
 
 
 async def _ensure_additive_columns(conn) -> None:
     from sqlalchemy import text
 
+    dialect = conn.dialect.name
     for table, columns in _ADDITIVE_COLUMNS.items():
-        if conn.dialect.name == "sqlite":
+        if dialect == "sqlite":
             rows = await conn.execute(text(f"PRAGMA table_info({table})"))
             existing = {r[1] for r in rows}
         else:  # postgres
@@ -73,9 +103,19 @@ async def _ensure_additive_columns(conn) -> None:
             )
             existing = {r[0] for r in rows}
         for column, ddl in columns.items():
+            if isinstance(ddl, dict):
+                ddl = ddl[dialect]
             if column not in existing:
                 await conn.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                )
+    if dialect == "postgres":
+        for table, columns in _COLUMN_WIDENS.items():
+            for column, ddl in columns.items():
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ALTER COLUMN {column} TYPE {ddl}"
+                    )
                 )
 
 

@@ -8,6 +8,7 @@ import type {
   OrderSide,
   OrderType,
   Portfolio,
+  TimeInForce,
 } from "../api/types";
 import { fmtJpy, fmtNum } from "../format";
 import { useToast } from "./Toast";
@@ -34,9 +35,12 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
   const [symbol, setSymbol] = useState(prefill.instrument ?? "");
   const [side, setSide] = useState<OrderSide>(prefill.side ?? "BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
+  const [timeInForce, setTimeInForce] = useState<TimeInForce>("GTC");
   const [qty, setQty] = useState(prefill.quantity ? String(prefill.quantity) : "");
   const [limitPrice, setLimitPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
+  const [trailAmount, setTrailAmount] = useState("");
+  const [trailPct, setTrailPct] = useState("");
   const [portfolioId, setPortfolioId] = useState(
     prefill.portfolioId ?? portfolios[0]?.portfolio_id ?? "",
   );
@@ -74,6 +78,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
+  const needsTrail = orderType === "TRAILING_STOP";
 
   const pickType = (t: OrderType) => {
     setOrderType(t);
@@ -89,6 +94,10 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
   const qtyNum = Number(qty);
   const limitNum = Number(limitPrice);
   const stopNum = Number(stopPrice);
+  const trailAmountNum = Number(trailAmount);
+  const trailPctNum = Number(trailPct);
+  const trailAmountSet = trailAmount !== "" && !Number.isNaN(trailAmountNum) && trailAmountNum > 0;
+  const trailPctSet = trailPct !== "" && !Number.isNaN(trailPctNum) && trailPctNum > 0;
   const refPrice =
     needsLimit && limitPrice !== "" && !Number.isNaN(limitNum) && limitNum > 0
       ? limitNum
@@ -131,6 +140,10 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       setViolations(["Stop price is required for STOP / STOP-LIMIT orders."]);
       return;
     }
+    if (needsTrail && trailAmountSet === trailPctSet) {
+      setViolations(["Exactly one of trail amount / trail % is required for TRAIL orders."]);
+      return;
+    }
 
     const body: OrderRequest = {
       portfolio_id: portfolioId,
@@ -138,8 +151,11 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       side,
       order_type: orderType,
       quantity: qtyNum,
+      time_in_force: timeInForce,
       ...(needsLimit ? { limit_price: limitNum } : {}),
       ...(needsStop ? { stop_price: stopNum } : {}),
+      ...(needsTrail && trailAmountSet ? { trail_amount: trailAmountNum } : {}),
+      ...(needsTrail && trailPctSet ? { trail_pct: trailPctNum } : {}),
     };
 
     setSubmitting(true);
@@ -240,19 +256,66 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
         <div className="form-field form-field-full">
           <span>Order type</span>
-          <div className="seg seg-4">
-            {(["MARKET", "LIMIT", "STOP", "STOP_LIMIT"] as OrderType[]).map((t) => (
+          <div className="seg seg-5">
+            {(["MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"] as OrderType[]).map((t) => (
               <button
                 key={t}
                 className={`seg-btn${orderType === t ? " active" : ""}`}
                 onClick={() => pickType(t)}
                 type="button"
               >
-                {t === "STOP_LIMIT" ? "STOP-LIMIT" : t}
+                {t === "STOP_LIMIT" ? "STOP-LIMIT" : t === "TRAILING_STOP" ? "TRAIL" : t}
               </button>
             ))}
           </div>
         </div>
+
+        <div className="form-field form-field-full">
+          <span>Time in force</span>
+          <div className="seg seg-3">
+            {(["DAY", "GTC", "IOC"] as TimeInForce[]).map((t) => (
+              <button
+                key={t}
+                className={`seg-btn${timeInForce === t ? " active" : ""}`}
+                onClick={() => setTimeInForce(t)}
+                type="button"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {needsTrail && (
+          <>
+            <label className="form-field">
+              <span>Trail amount</span>
+              <input
+                type="number"
+                min="0"
+                step={instrument ? instrument.tick_size : "any"}
+                value={trailAmount}
+                onChange={(e) => setTrailAmount(e.target.value)}
+                placeholder="0.00"
+                className="num"
+                disabled={trailPctSet}
+              />
+            </label>
+            <label className="form-field">
+              <span>Trail %</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={trailPct}
+                onChange={(e) => setTrailPct(e.target.value)}
+                placeholder="0.0"
+                className="num"
+                disabled={trailAmountSet}
+              />
+            </label>
+          </>
+        )}
 
         {needsStop && (
           <label className="form-field">

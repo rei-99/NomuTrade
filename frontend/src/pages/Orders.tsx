@@ -152,7 +152,12 @@ export function Orders() {
               header: "Type",
               sortable: true,
               sortValue: (o) => o.order_type,
-              render: (o) => o.order_type.replace("_", "-"),
+              render: (o) => (
+                <span>
+                  {o.order_type.replace("_", "-")}
+                  {o.time_in_force !== "GTC" && <span className="muted"> · {o.time_in_force}</span>}
+                </span>
+              ),
             },
             {
               header: "Qty",
@@ -179,8 +184,17 @@ export function Orders() {
               header: "Stop",
               className: "num",
               sortable: true,
-              sortValue: (o) => o.stop_price ?? -1,
-              render: (o) => (o.stop_price !== null ? fmtJpy(o.stop_price, true) : "—"),
+              sortValue: (o) => o.stop_price ?? o.trail_amount ?? o.trail_pct ?? -1,
+              render: (o) => {
+                if (o.order_type === "TRAILING_STOP") {
+                  const label =
+                    o.trail_amount !== null ? `trail ${fmtJpy(o.trail_amount, true)}` : `trail ${o.trail_pct}%`;
+                  const ref =
+                    o.trail_reference !== null ? `reference ${fmtJpy(o.trail_reference, true)}` : "reference pending";
+                  return <span title={ref}>{label}</span>;
+                }
+                return o.stop_price !== null ? fmtJpy(o.stop_price, true) : "—";
+              },
             },
             {
               header: "Status",

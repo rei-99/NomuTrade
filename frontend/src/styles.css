@@ -1304,6 +1304,10 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .seg-4 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.03em; }
 
+.seg-5 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.02em; }
+
+.seg-3 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.03em; }
+
 .stepper {
   display: inline-flex;
   align-items: stretch;

@@ -71,6 +71,19 @@ export interface PriceSeries {
   candles: Candle[];
 }
 
+/** GET /instruments/{symbol}/bond-analytics (design 24 §D-24.3). */
+export interface BondAnalytics {
+  symbol: string;
+  coupon_rate: number;
+  maturity_date: string;
+  years_to_maturity: number;
+  payments_remaining: number;
+  latest_price: number | null;
+  ytm: number | null;
+  modified_duration: number | null;
+  implied_price?: number;
+}
+
 export type IndicatorName = "SMA" | "EMA" | "RSI" | "MACD" | "BB";
 export const INDICATOR_NAMES: IndicatorName[] = ["SMA", "EMA", "RSI", "MACD", "BB"];
 
@@ -106,7 +119,8 @@ export interface IndicatorsResponse {
 // ---------- orders / trades ----------
 
 export type OrderSide = "BUY" | "SELL";
-export type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT";
+export type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP";
+export type TimeInForce = "DAY" | "GTC" | "IOC";
 export type OrderStatus =
   | "ACCEPTED"
   | "REJECTED"
@@ -131,6 +145,11 @@ export interface Order {
   quantity: number;
   limit_price: number | null;
   stop_price: number | null;
+  time_in_force: TimeInForce;
+  expire_after: string | null;
+  trail_amount: number | null;
+  trail_pct: number | null;
+  trail_reference: number | null;
   status: OrderStatus;
   reject_reason: string | null;
   created_at: string;
@@ -145,6 +164,9 @@ export interface OrderRequest {
   quantity: number;
   limit_price?: number;
   stop_price?: number;
+  time_in_force?: TimeInForce;
+  trail_amount?: number;
+  trail_pct?: number;
 }
 
 export interface OrderCreated {

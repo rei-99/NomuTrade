@@ -272,7 +272,7 @@ Design proposals awaiting week-1 confirmation (SRS §9); defaults adopted in the
 - **TBD-13** report scheduling — **RESOLVED** ([design 23](docs/design/23-scheduled-reports.md)): daily/weekly per portfolio+type+format, sim-clock driven, ≤10 active per user.
 - **TBD-16** currency — **RESOLVED**: USD (D-16).
 - **TBD-17** instrument scope — **RESOLVED**: dataset's 7 US equities **plus 4 bonds** (generated prices; product-owner interview, docs/design/21) — equities-only rejected by the business.
-- **TBD-18** order types — **RESOLVED**: MARKET, LIMIT, STOP, STOP_LIMIT (product-owner interview; iceberg/TIF/trailing stay roadmap, docs/design/21).
+- **TBD-18** order types — **RESOLVED**: MARKET, LIMIT, STOP, STOP_LIMIT (product-owner interview, docs/design/21) + time-in-force (DAY/GTC/IOC) and trailing stop (design 24); iceberg stays roadmap.
 
 ---
 
