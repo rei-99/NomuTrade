@@ -194,7 +194,7 @@ export function Trading() {
               ))}
             </div>
           </div>
-          <PriceChart symbol={symbol} timeframe={tf} showIndicators height={460} />
+          <PriceChart symbol={symbol} timeframe={tf} showIndicators height="100%" />
         </section>
 
         <div className="rail">
@@ -246,15 +246,17 @@ export function Trading() {
             <h3>Positions</h3>
             {positions && <span className="muted num">live · 30 s</span>}
           </div>
-          {positions === null ? (
-            <div className="skeleton-stack">
-              <div className="skeleton" style={{ height: 22 }} />
-              <div className="skeleton" style={{ height: 22 }} />
-              <div className="skeleton" style={{ height: 22 }} />
-            </div>
-          ) : (
-            <PositionsTable portfolioId={portfolioId} portfolios={portfolios} positions={positions} />
-          )}
+          <div className="positions-scroll">
+            {positions === null ? (
+              <div className="skeleton-stack">
+                <div className="skeleton" style={{ height: 22 }} />
+                <div className="skeleton" style={{ height: 22 }} />
+                <div className="skeleton" style={{ height: 22 }} />
+              </div>
+            ) : (
+              <PositionsTable portfolioId={portfolioId} portfolios={portfolios} positions={positions} />
+            )}
+          </div>
         </section>
       </div>
     </div>

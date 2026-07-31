@@ -997,17 +997,30 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 /* ---------- trading workspace ---------- */
 
-.trading-page { max-width: 1440px; }
+/* One-screen workspace: the page fills the content area exactly (46 px topbar
+   + 2×16 px content padding, same calc as .page-chat) and the grid distributes
+   it across fixed tracks — tape (auto) / chart (1fr) / account bar (auto) /
+   positions (1fr) in the left column, with a full-height rail on the right.
+   Only panel internals scroll; the page itself never does. */
+.trading-page { max-width: 1440px; height: calc(100vh - 78px); }
 
 .trading-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 1100px) {
-  .trading-grid { grid-template-columns: 1fr; }
+  .trading-page { height: auto; }
+  .trading-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+  /* Rail drops below the chart in the single-column fallback. */
+  .rail { grid-column: auto; grid-row: auto; overflow: visible; }
+  /* EChart gets height="100%" from the Trading page; give the canvas a
+     definite size when the one-screen grid is collapsed. */
+  .price-chart-canvas { flex: none; height: 360px; }
 }
 
 .tape {
@@ -1054,9 +1067,36 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   background: rgba(41, 98, 255, 0.12);
 }
 
-.chart-panel { min-height: 420px; }
+.chart-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chart-panel .price-chart { flex: 1; min-height: 0; }
 
-.rail { display: flex; flex-direction: column; gap: 12px; }
+/* Full-height rail: spans every row under the tape on the right, so its bottom
+   edge aligns with the positions panel's. The order ticket never scrolls;
+   RiskPanel is fully visible on tall screens and is the first panel to
+   shrink/scroll internally when height gets tight (OrderPanel last);
+   BondAnalyticsCard absorbs the extra deficit when a bond is selected; News
+   takes whatever remains, but never vanishes. The rail's own scroll is only a
+   last-resort safety net (extreme content, e.g. an open confirm card on a
+   short screen) so the page itself stays at one screen. */
+.rail {
+  grid-column: 2;
+  grid-row: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.rail > .panel { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.rail > .order-panel { flex-shrink: 0; overflow: visible; }
+.rail > .news-panel { flex: 1 1 0; min-height: 96px; overflow: hidden; }
+@media (min-height: 950px) {
+  .rail > .risk-panel { flex-shrink: 0; overflow: visible; }
+}
 
 .price-chart-toggles { margin-bottom: 8px; }
 .price-chart-loading { margin-left: 8px; font-size: 11px; }
@@ -1108,7 +1148,7 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 /* account bar */
 
 .account-bar {
-  grid-column: 1 / -1;
+  grid-column: 1;
   display: flex;
   gap: 28px;
   flex-wrap: wrap;
@@ -1118,7 +1158,13 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .account-item { display: flex; flex-direction: column; gap: 1px; }
 .account-item .num { font-size: 15px; font-weight: 600; }
 
-.positions-panel { grid-column: 1 / -1; }
+.positions-panel {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.positions-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 
 .row-clickable { cursor: pointer; }
 
@@ -1216,7 +1262,26 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .news-divider { border-top: 1px solid var(--border-soft); margin: 10px 0 6px; }
 
-.news-list-compact { max-height: 260px; }
+/* Bounded panel (Trading one-screen grid): header + AI summary stay at the
+   top; the compact headline list takes the remaining height and scrolls in
+   its own region. When the rail squeezes the panel hard, the summary block
+   scrolls internally before the headline list is crushed below usability. */
+.news-panel { display: flex; flex-direction: column; min-height: 0; }
+.news-panel > * { flex: 0 0 auto; }
+.news-panel > .news-summary { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.news-panel > .news-list { flex: 1 1 0; min-height: 48px; max-height: none; }
+
+/* headline detail modal */
+.news-detail-meta { font-size: 11px; margin-bottom: 8px; }
+.news-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+.news-detail-row:last-child { border-bottom: none; }
 
 /* ---------- v2: sparklines / tape hero ---------- */
 
@@ -1247,26 +1312,23 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 /* ---------- v2: chart legend / last-price tag ---------- */
 
-.price-chart { position: relative; }
+/* The price chart is a flex column: toggle chips, then the OHLC legend as a
+   slim in-flow strip (never overlaid on the canvas), then the canvas, which
+   flexes to fill the rest. */
+.price-chart { display: flex; flex-direction: column; }
+.price-chart-canvas { flex: 1; min-height: 0; }
 
 .chart-legend {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  z-index: 5;
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
   gap: 8px;
   white-space: nowrap;
+  overflow: hidden;
   font-family: var(--mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-  background: rgba(30, 34, 45, 0.85);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 3px 8px;
-  pointer-events: none;
+  margin-bottom: 6px;
 }
 
 .chart-legend b {

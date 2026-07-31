@@ -9,6 +9,7 @@ import type {
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
 import { Badge } from "./Badge";
+import { Modal } from "./Modal";
 
 /** Map a mean sentiment score (-1..+1) to a display label (Alpha-Vantage-ish bands). */
 function meanToLabel(mean: number): SentimentLabel {
@@ -26,13 +27,16 @@ interface NewsPanelProps {
 /**
  * Mock-GenAI news summary (/assistant/news-summary) + compact headline list
  * (/instruments/{symbol}/news?limit=8). Summary refetches on symbol change and
- * refresh click only.
+ * refresh click only. The panel is height-bounded (Trading one-screen grid):
+ * the summary block stays fixed at the top and the headline list scrolls in
+ * its own region; clicking a headline opens its full detail in a modal.
  */
 export function NewsPanel({ symbol }: NewsPanelProps) {
   const [summary, setSummary] = useState<NewsSummary | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "loading" | "forbidden">("idle");
   const [headlines, setHeadlines] = useState<NewsItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [selected, setSelected] = useState<NewsItem | null>(null);
 
   const load = useCallback(async () => {
     if (!symbol) return;
@@ -71,7 +75,7 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
   const mean = summary?.sentiment_mean_7d ?? null;
 
   return (
-    <section className="panel">
+    <section className="panel news-panel">
       <div className="panel-header">
         <h3>News</h3>
         <span className="news-header-right">
@@ -162,7 +166,12 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
       ) : (
         <div className="news-list news-list-compact">
           {headlines.map((n) => (
-            <div key={n.news_id} className="news-item">
+            <div
+              key={n.news_id}
+              className="news-item row-clickable"
+              title="Open headline detail"
+              onClick={() => setSelected(n)}
+            >
               <span className="news-ts muted num">{fmtTs(n.ts)}</span>
               <span className="news-title">{n.title}</span>
               <span className="news-badges">
@@ -178,6 +187,39 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
             </div>
           ))}
         </div>
+      )}
+
+      {selected && (
+        <Modal title={selected.title} onClose={() => setSelected(null)}>
+          <div className="news-detail-meta muted num">{fmtTs(selected.ts)}</div>
+          {selected.topics.length > 0 && (
+            <div className="news-topics">
+              {selected.topics.map((t) => (
+                <span key={t} className="chip chip-static">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+          {selected.sentiments.length === 0 ? (
+            <div className="muted">No per-ticker sentiment annotations.</div>
+          ) : (
+            <div className="news-detail-sentiments">
+              {selected.sentiments.map((s) => (
+                <div key={s.ticker} className="news-detail-row">
+                  <span className="mono">{s.ticker}</span>
+                  {s.label && <Badge text={s.label} />}
+                  <span className="num muted">
+                    sentiment {s.sentiment_score !== null ? fmtNum(s.sentiment_score, 2) : "—"}
+                  </span>
+                  <span className="num muted">
+                    relevance {s.relevance_score !== null ? fmtNum(s.relevance_score, 2) : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
       )}
     </section>
   );

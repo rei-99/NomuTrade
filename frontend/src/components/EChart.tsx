@@ -3,7 +3,8 @@ import * as echarts from "echarts";
 
 interface EChartProps {
   option: echarts.EChartsOption;
-  height?: number;
+  /** px number, or a CSS length (e.g. "100%") to fill a sized flex parent. */
+  height?: number | string;
   /** Chart event subscriptions, e.g. { updateAxisPointer: (p) => ... }. */
   onEvents?: Record<string, (params: unknown) => void>;
 }

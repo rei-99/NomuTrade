@@ -7,7 +7,40 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-07-30 — Tech-stakeholder interview, round 2 prep (INT-STP-2026-002)
+## 2026-07-30 — Trading workspace: one-screen layout, OHLC legend out of the canvas, bounded news
+
+**Driver:** owner UX review of the Trading page — OHLC overlay collided with
+chart controls; a news-heavy symbol pushed the account bar off screen;
+everything must fit one screen with no dead space.
+
+- **OHLC legend relocated**: the hover-following O/H/L/C readout moved from
+  an absolutely-positioned canvas overlay (it overlapped chart controls) to
+  a slim in-flow strip under the indicator chips — same follow-hover /
+  fall-back-to-last-candle behavior, zero overlaying.
+- **News panel bounded** (option 2 of the owner's two proposals — fixed
+  panels with internal scrolling chosen over a slide-in banner: a trading
+  terminal's value is spatial stability; transient banners compete with
+  fill toasts and are easy to miss): summary + sentiment strip fixed at the
+  top, headlines scroll internally; **headlines are clickable** (the good
+  half of option 1) and open a Modal with the item's full payload (title,
+  timestamp, topics, per-ticker sentiment scores + relevance) — the dataset
+  carries no body/source fields, so nothing is invented.
+- **True one-screen grid** (100vh, no page scrollbar at 1680×1000 and
+  1366×768): full-height right rail (order ticket → bond analytics → risk →
+  news) with shrink priorities — the order ticket never scrolls, risk
+  shrinks first below 950px viewport height; left column = chart (flexes to
+  fill, fixed 460px height removed) → account bar → positions (table
+  scrolls internally). No dead gaps: rail bottom aligns with positions
+  bottom; ≤1100px single-column fallback intact. Known trade-off: with a
+  bond selected, the analytics card squeezes to an internally-scrolled
+  strip at 1680×1000 (four panels, one rail).
+- Verified: `npm run build` zero type errors; headless-Chrome screenshots
+  at 1680×1000 (TSLA news-heavy and UST10Y bond) and 1366×768 — BUY/SELL
+  fully visible at all sizes, account bar + positions on screen, no page
+  scrollbar. (Headline-modal interaction is build-verified, not exercised
+  headlessly.)
+
+
 
 - `docs/tech-stakeholder-interview-round2.md`: 26 questions for the tech
   stakeholder (Nora/developer persona) grounded in the running system —
