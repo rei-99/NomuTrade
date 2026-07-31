@@ -7,6 +7,28 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Final presentation pack: script + 21-slide deck
+
+**Driver:** `final-presentation-prompts.md` — two-prompt flow (script, then
+slides) for the program's final team presentation.
+
+- `presentation/script.md` — 15-min + 5-min Q&A script grounded in the repo:
+  four-stakeholder-voices arc (45% platform / 55% journey), minute-by-minute
+  flow with 5 presenters and scripted handovers, 3 real war stories (dataset
+  load bug, midnight-flaky test, real-time pitfalls), 10-question Q&A prep
+  incl. hostile ones, demo checklist + video fallback, and a module honesty
+  map (mocked/partial called out: GenAI rule-based, CyberArk/SMTP adapters,
+  unexecuted CI/CD/Terraform).
+- `presentation/STP-final-presentation.pptx` — 21 slides (18 + A1–A3
+  appendix), python-pptx, native editable shapes only, conservative
+  financial palette + one accent, speaker notes on every slide from the
+  script; `build_deck.py` is the re-runnable source (python-pptx installed
+  in the project venv only, not in requirements.txt).
+- Verified: deck re-opens (21 slides, 21 notes sections, no empty content
+  frames, no off-canvas shapes); content spot-checked against the script.
+  No Office/LibreOffice on this machine — a visual once-over in PowerPoint
+  before presenting is still recommended.
+
 ## 2026-07-30 — Trading workspace: fluid at any resolution
 
 **Driver:** owner request — the one-screen layout must fit and align at
