@@ -40,7 +40,7 @@ everything must fit one screen with no dead space.
   scrollbar. (Headline-modal interaction is build-verified, not exercised
   headlessly.)
 
-
+## 2026-07-30 — Tech-stakeholder interview, round 2 prep (INT-STP-2026-002)
 
 - `docs/tech-stakeholder-interview-round2.md`: 26 questions for the tech
   stakeholder (Nora/developer persona) grounded in the running system —
