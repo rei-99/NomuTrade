@@ -1001,12 +1001,14 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
    + 2×16 px content padding, same calc as .page-chat) and the grid distributes
    it across fixed tracks — tape (auto) / chart (1fr) / account bar (auto) /
    positions (1fr) in the left column, with a full-height rail on the right.
-   Only panel internals scroll; the page itself never does. */
-.trading-page { max-width: 1440px; height: calc(100vh - 78px); }
+   The page is fluid full-width (no max-width cap): the chart/positions column
+   absorbs any extra width on wide screens while the rail holds its clamped
+   width. Only panel internals scroll; the page itself never does. */
+.trading-page { max-width: none; height: calc(100vh - 78px); }
 
 .trading-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr clamp(320px, 26vw, 420px);
   grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
   flex: 1;
@@ -1014,13 +1016,22 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 }
 
 @media (max-width: 1100px) {
+  /* Single-column fallback: back to natural document flow — no fixed page
+     height, no fr tracks, no flex/overflow constraints; every panel renders
+     at natural height and the page scrolls normally. Only the chart canvas
+     keeps a pinned size (EChart gets height="100%" from the Trading page).
+     NB: selectors are scoped with .trading-grid so they out-specify the
+     base rail/panel rules, which appear later in this file. */
   .trading-page { height: auto; }
-  .trading-grid { grid-template-columns: 1fr; grid-template-rows: none; }
-  /* Rail drops below the chart in the single-column fallback. */
-  .rail { grid-column: auto; grid-row: auto; overflow: visible; }
-  /* EChart gets height="100%" from the Trading page; give the canvas a
-     definite size when the one-screen grid is collapsed. */
-  .price-chart-canvas { flex: none; height: 360px; }
+  .trading-grid { grid-template-columns: 1fr; grid-template-rows: auto; flex: none; }
+  .trading-grid .rail { grid-column: auto; grid-row: auto; overflow: visible; }
+  .trading-grid .rail > .panel { flex: none; overflow: visible; }
+  .trading-grid .rail > .news-panel { min-height: 0; overflow: visible; }
+  .trading-grid .news-panel > .news-summary { overflow: visible; }
+  .trading-grid .news-panel > .news-list { flex: none; min-height: 0; }
+  .trading-grid .chart-panel .price-chart { flex: none; }
+  .trading-grid .positions-scroll { flex: none; overflow: visible; }
+  .trading-grid .price-chart-canvas { flex: none; height: 360px; }
 }
 
 .tape {
@@ -1345,6 +1356,9 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   border-radius: 8px;
   padding: 2px;
   gap: 2px;
+  /* Narrow rails: buttons keep whole labels and the row scrolls horizontally
+     instead of wrapping a label mid-word. */
+  overflow-x: auto;
 }
 
 .seg-btn {
@@ -1360,6 +1374,7 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   color: var(--muted);
   cursor: pointer;
   transition: all 150ms ease;
+  white-space: nowrap;
 }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--accent); color: #fff; }
@@ -1367,6 +1382,13 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .seg-4 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.03em; }
 
 .seg-5 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.02em; }
+
+/* Narrow rails: the 5-button order-type seg wraps whole buttons 3+2 instead
+   of clipping the last label (TRAIL) — single row resumes from ~1400px up. */
+@media (max-width: 1400px) {
+  .seg-5 { flex-wrap: wrap; }
+  .seg-5 .seg-btn { flex: 1 1 30%; }
+}
 
 .seg-3 .seg-btn { font-size: 10px; padding: 5px 0; letter-spacing: 0.03em; }
 

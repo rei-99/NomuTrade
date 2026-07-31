@@ -7,6 +7,29 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-07-30 — Trading workspace: fluid at any resolution
+
+**Driver:** owner request — the one-screen layout must fit and align at
+every resolution, not just the two it was tuned for.
+
+- **Wide screens**: removed the `.trading-page` `max-width: 1440px` cap —
+  at 2560×1440 the chart/positions now absorb the full width (rail pinned
+  at its clamp max) instead of leaving a dead gutter.
+- **Fluid rail**: fixed ~380px → `clamp(320px, 26vw, 420px)`, so narrower
+  screens give proportionally more width to the chart.
+- **Single-column mode (≤1100px) fixed**: the base `.rail` grid placement
+  was out-cascading the media-query reset, forcing an implicit second
+  column and rendering an empty frame at e.g. 1024×700 — the reset is now
+  properly scoped; collapsed mode renders everything in natural document
+  flow (tape → chart 360px → order → risk → news → account → positions).
+- **Order-type seg**: buttons no longer wrap mid-label; below 1400px the
+  5-button seg wraps whole buttons 3+2 (STOP-LIMIT/TRAIL readable at every
+  width), horizontal scroll as last resort.
+- Verified: `npm run build` clean; headless-Chrome screenshots at
+  2560×1440, 1920×1080, 1680×1000, 1366×768, 1280×800 and 1024×700 — no
+  dead space, no clipped labels, no broken frames; one-screen rule holds
+  ≥1100px, natural scroll below.
+
 ## 2026-07-30 — Trading workspace: one-screen layout, OHLC legend out of the canvas, bounded news
 
 **Driver:** owner UX review of the Trading page — OHLC overlay collided with
