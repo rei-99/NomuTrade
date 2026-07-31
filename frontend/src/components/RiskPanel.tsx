@@ -39,7 +39,7 @@ interface RiskPanelProps {
 export function RiskPanel({ valuation }: RiskPanelProps) {
   if (!valuation) {
     return (
-      <section className="panel">
+      <section className="panel risk-panel">
         <div className="panel-header">
           <h3>Risk exposure</h3>
         </div>
@@ -56,7 +56,7 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
   const top3 = kpis.top_holdings.slice(0, 3);
 
   return (
-    <section className="panel">
+    <section className="panel risk-panel">
       <div className="panel-header">
         <h3>Risk exposure</h3>
       </div>

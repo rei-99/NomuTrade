@@ -338,7 +338,8 @@ interface PriceChartProps {
   timeframe: Timeframe;
   /** Render the SMA/EMA/BB/RSI/MACD toggle chips and fetch indicator data. */
   showIndicators: boolean;
-  height?: number;
+  /** px number, or a CSS length (e.g. "100%") to fill a sized flex parent. */
+  height?: number | string;
 }
 
 export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: PriceChartProps) {
@@ -507,41 +508,41 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
           {loading && <span className="muted price-chart-loading">Loading…</span>}
         </div>
       )}
-      {candles.length === 0 ? (
-        loading ? (
-          <div className="skeleton" style={{ height }} />
-        ) : (
-          <div className="panel-empty muted">
-            No price data for {symbol ?? "—"} / {timeframe}.
-          </div>
-        )
-      ) : (
-        <>
-          {legendCandle && (
-            <div className="chart-legend num">
-              <span>
-                O <b>{fmtNum(legendCandle.open, 2)}</b>
-              </span>
-              <span>
-                H <b>{fmtNum(legendCandle.high, 2)}</b>
-              </span>
-              <span>
-                L <b>{fmtNum(legendCandle.low, 2)}</b>
-              </span>
-              <span>
-                C <b>{fmtNum(legendCandle.close, 2)}</b>
-              </span>
-              {legendChg !== null && (
-                <span className={legendChg >= 0 ? "pos" : "neg"}>
-                  {legendChg >= 0 ? "+" : ""}
-                  {fmtNum(legendChg, 2)}%
-                </span>
-              )}
-            </div>
+      {candles.length > 0 && legendCandle && (
+        <div className="chart-legend num">
+          <span>
+            O <b>{fmtNum(legendCandle.open, 2)}</b>
+          </span>
+          <span>
+            H <b>{fmtNum(legendCandle.high, 2)}</b>
+          </span>
+          <span>
+            L <b>{fmtNum(legendCandle.low, 2)}</b>
+          </span>
+          <span>
+            C <b>{fmtNum(legendCandle.close, 2)}</b>
+          </span>
+          {legendChg !== null && (
+            <span className={legendChg >= 0 ? "pos" : "neg"}>
+              {legendChg >= 0 ? "+" : ""}
+              {fmtNum(legendChg, 2)}%
+            </span>
           )}
-          <EChart option={option} height={height} onEvents={chartEvents} />
-        </>
+        </div>
       )}
+      <div className="price-chart-canvas">
+        {candles.length === 0 ? (
+          loading ? (
+            <div className="skeleton" style={{ height }} />
+          ) : (
+            <div className="panel-empty muted">
+              No price data for {symbol ?? "—"} / {timeframe}.
+            </div>
+          )
+        ) : (
+          <EChart option={option} height={height} onEvents={chartEvents} />
+        )}
+      </div>
     </div>
   );
 }
