@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useAuth } from "./auth";
 import { useT } from "./i18n";
-import { PERSONA_HOME, PERSONA_TABS } from "./personas";
+import { PERSONA_TABS, personaHome } from "./personas";
 import type { TabId } from "./personas";
 import { Layout } from "./components/Layout";
 import { Access } from "./pages/Access";
@@ -101,7 +101,7 @@ function HomeRoute() {
   const { me, loading, persona } = useAuth();
   if (loading) return <Loading />;
   if (!me) return <Navigate to="/login" replace />;
-  const home = PERSONA_HOME[persona];
+  const home = personaHome(persona, me.permissions);
   if (home !== "/") return <Navigate to={home} replace />;
   return (
     <Guard tab="trading">
@@ -119,7 +119,7 @@ export default function App() {
       <Route
         path="/login"
         element={
-          loading ? <Loading /> : me ? <Navigate to={PERSONA_HOME[persona]} replace /> : <Login />
+          loading ? <Loading /> : me ? <Navigate to={personaHome(persona, me.permissions)} replace /> : <Login />
         }
       />
       <Route
@@ -138,7 +138,16 @@ export default function App() {
             </Guard>
           }
         />
-        <Route path="portfolios/:id" element={<PortfolioDetail />} />
+        {/* Perms-only (no tab gate): the Trading workspace's PositionsTable
+            links here too, and "portfolios" is not in the TRADER tab list. */}
+        <Route
+          path="portfolios/:id"
+          element={
+            <Guard perms={["PORTFOLIO_VIEW", "PORTFOLIO_VIEW_ALL"]}>
+              <PortfolioDetail />
+            </Guard>
+          }
+        />
         <Route path="charts" element={<ChartsRedirect />} />
         <Route path="charts/:symbol" element={<ChartsRedirect />} />
         <Route

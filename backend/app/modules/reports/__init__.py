@@ -50,6 +50,7 @@ from app.core.models import (
     PriceTick,
     Report,
     ReportSchedule,
+    ReportStatus,
     ValuationSnapshot,
 )
 from app.core.security import (
@@ -59,12 +60,14 @@ from app.core.security import (
 )
 from app.core.timeutil import as_utc, utcnow
 from app.modules.marketdata.registry import get_sim_now
+from app.modules.orders.validation import trade_value
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reports"])
 
 REPORT_GENERATED = "REPORT_GENERATED"
+REPORT_FAILED = "REPORT_FAILED"
 
 # Generated files: backend/var/reports/<report_id>.<ext> (created on demand).
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "var" / "reports"
@@ -125,8 +128,12 @@ async def _holdings_rows(db: AsyncSession, portfolio: Portfolio) -> tuple[list, 
     positions_value = Decimal("0")
     for position, instrument in positions:
         last = prices.get(position.instrument_id)
+        # Bond-aware via trade_value (§A2: bonds quote % of par, qty = face),
+        # matching the portfolios module's valuation exactly.
         market_value = (
-            position.quantity * last if last is not None else None
+            trade_value(instrument, position.quantity, last)
+            if last is not None
+            else None
         )
         if market_value is not None:
             positions_value += market_value
@@ -190,7 +197,9 @@ async def _build_transactions(db: AsyncSession, portfolio: Portfolio, start, end
     rows = []
     total_value = Decimal("0")
     for execution, order, instrument in executions:
-        value = execution.quantity * execution.price
+        # Same bond-aware cash math as the STP worker (§A2): bond value is
+        # face x price / 100, not face x price.
+        value = trade_value(instrument, execution.quantity, execution.price)
         total_value += value
         rows.append(
             [
@@ -395,25 +404,54 @@ async def _generate_report(
         period_start=start,
         period_end=end,
         format=report_format,
-        status="REQUESTED",
+        status=ReportStatus.REQUESTED,
         requested_by=actor_id,
     )
     db.add(report)
     await db.flush()  # materialize report_id for the filename
 
-    title, headers, rows, summary = await _BUILDERS[report_type](
-        db, portfolio, start, end
-    )
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ext = "pdf" if report_format == "PDF" else "csv"
     path = REPORTS_DIR / f"{report.report_id}.{ext}"
-    if report_format == "PDF":
-        # reportlab is sync CPU work; keep the event loop free.
-        await asyncio.to_thread(_write_pdf, path, title, headers, rows, summary)
-    else:
-        _write_csv(path, title, headers, rows, summary)
+    try:
+        title, headers, rows, summary = await _BUILDERS[report_type](
+            db, portfolio, start, end
+        )
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        if report_format == "PDF":
+            # reportlab is sync CPU work; keep the event loop free.
+            await asyncio.to_thread(_write_pdf, path, title, headers, rows, summary)
+        else:
+            _write_csv(path, title, headers, rows, summary)
+    except Exception as exc:
+        # A failed build/render must not 500 the request (or kill a scheduler
+        # sweep) leaving the row REQUESTED forever: mark it FAILED, audit it
+        # and drop any partially written file so a rollback can never orphan
+        # it. The caller still commits; no "report ready" notification fires.
+        report.status = ReportStatus.FAILED
+        report.file_ref = None
+        path.unlink(missing_ok=True)
+        logger.exception("report %s generation failed", report.report_id)
+        audit_payload = {
+            "type": report.type,
+            "format": report.format,
+            "portfolio_id": portfolio.portfolio_id,
+            "error": str(exc),
+        }
+        if schedule is not None:
+            audit_payload["schedule_id"] = schedule.schedule_id
+        await write_audit(
+            db,
+            actor_id=actor_id,
+            event_type=REPORT_FAILED,
+            resource_type="report",
+            resource_id=report.report_id,
+            severity="WARN",
+            payload=audit_payload,
+            flush_only=True,
+        )
+        return report
 
-    report.status = "DONE"
+    report.status = ReportStatus.DONE
     report.file_ref = str(path)
     audit_payload = {
         "type": report.type,
@@ -562,7 +600,12 @@ async def download_report(
     db: AsyncSession = Depends(get_db),
 ):
     report = await _get_report_for_user(db, report_id, session)
-    if report.status != "DONE":
+    if report.status == ReportStatus.FAILED:
+        raise StateConflict(
+            "report generation failed; request a new report",
+            details=[{"code": "REPORT_FAILED", "status": report.status}],
+        )
+    if report.status != ReportStatus.DONE:
         raise StateConflict(f"report is not ready (status {report.status})")
     if not report.file_ref or not Path(report.file_ref).is_file():
         raise NotFound("report file is missing")

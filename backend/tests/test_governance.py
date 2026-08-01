@@ -411,7 +411,9 @@ async def test_jit_expiry_sweep(gov_app, gov_client):
 
     # Warm the permission cache for trader via a protected route (403 expected,
     # but require_permission computes + caches the effective set first).
-    response = await gov_client.get(f"{API}/roles", headers=trader)
+    # GET /permissions still requires ROLE_VIEW; GET /roles no longer does
+    # (relaxed to any authenticated user — see test_list_roles_open_to_all).
+    response = await gov_client.get(f"{API}/permissions", headers=trader)
     assert response.status_code == 403
     me = await _me(gov_client, trader)
     trader_id = me["user"]["user_id"]
@@ -658,12 +660,14 @@ async def test_role_management(gov_app, gov_client):
     secadmin = await login(gov_client, "secadmin@demo.nomura")
     trader = await login(gov_client, "trader@demo.nomura")
 
-    # Catalog + role list (trader lacks ROLE_VIEW -> 403).
+    # Catalog still requires ROLE_VIEW (trader lacks it -> 403); the role
+    # list itself is now readable by any authenticated user.
     response = await gov_client.get(f"{API}/permissions", headers=secadmin)
     assert response.status_code == 200
     assert "AUDIT_VIEW" in {p["action"] for p in response.json()}
     response = await gov_client.get(f"{API}/roles", headers=trader)
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert "Trader" in {r["name"] for r in response.json()}
 
     response = await gov_client.post(
         f"{API}/roles",
@@ -698,6 +702,19 @@ async def test_role_management(gov_app, gov_client):
     assert response.status_code == 200, response.text
     assert response.json()["version"] == 2
     assert response.json()["permission_actions"] == ["AUDIT_EXPORT", "AUDIT_VIEW"]
+
+
+async def test_list_roles_open_to_all(gov_app, gov_client):
+    """FR-IAM: the role catalog is readable by any authenticated user (the
+    access-request form needs it; Client/Approver hold no ROLE_VIEW)."""
+    client = await login(gov_client, "client@demo.nomura")
+    response = await gov_client.get(f"{API}/roles", headers=client)
+    assert response.status_code == 200
+    names = {r["name"] for r in response.json()}
+    assert {"Client", "Trader", "Approver"} <= names
+    # Unauthenticated callers are still rejected.
+    response = await gov_client.get(f"{API}/roles")
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------

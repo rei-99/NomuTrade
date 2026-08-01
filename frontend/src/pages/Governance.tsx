@@ -61,9 +61,11 @@ export function Governance() {
     <div className="page">
       <div className="page-header">
         <h2>{t("gov.title")}</h2>
-        <button className="btn btn-ghost btn-sm" disabled={downloading} onClick={() => void accessReview()}>
-          {downloading ? t("reports.downloading") : t("gov.accessReview")}
-        </button>
+        {hasPerm("GOVERNANCE_VIEW") && (
+          <button className="btn btn-ghost btn-sm" disabled={downloading} onClick={() => void accessReview()}>
+            {downloading ? t("reports.downloading") : t("gov.accessReview")}
+          </button>
+        )}
       </div>
 
       {summary && (
@@ -131,6 +133,9 @@ export function Governance() {
                 <div key={i.name} className={`health-tile health-${i.status.toLowerCase()}`}>
                   <div className="health-name">{i.name}</div>
                   <Badge text={i.status} />
+                  {i.detail?.startsWith("mock:") && (
+                    <span className="chip chip-static">{t("gov.mockBadge")}</span>
+                  )}
                   <div className="health-detail muted">
                     {t("gov.lastSuccess")} <span className="num">{fmtTs(i.last_success)}</span>
                   </div>

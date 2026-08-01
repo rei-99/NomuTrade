@@ -87,7 +87,7 @@ export function NotificationBell() {
             ))
           )}
           <Link to="/notifications" className="bell-viewall" onClick={() => setOpen(false)}>
-            View all
+            {t("notif.viewAll")}
           </Link>
         </div>
       )}

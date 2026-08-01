@@ -34,21 +34,28 @@ export function Orders() {
   const [amendQty, setAmendQty] = useState("");
   const [amendLimit, setAmendLimit] = useState("");
 
-  const load = useCallback(async () => {
+  // Portfolios are only needed for the order ticket's picker — fetch once on
+  // mount, not per poll.
+  const loadPortfolios = useCallback(async () => {
     const pfRes = await api<ListResponse<Portfolio>>("/portfolios");
     setPortfolios(pfRes.items);
-    const results = await Promise.allSettled(
-      pfRes.items.map((p) =>
-        api<ListResponse<Order>>("/orders", {
-          params: { portfolio_id: p.portfolio_id, status: statusFilter || undefined },
-        }),
-      ),
-    );
-    const merged = results
-      .filter((r): r is PromiseFulfilledResult<ListResponse<Order>> => r.status === "fulfilled")
-      .flatMap((r) => r.value.items)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    setOrders(merged);
+  }, []);
+
+  usePoll(
+    () => {
+      void loadPortfolios();
+    },
+    0,
+    [loadPortfolios],
+  );
+
+  // Single /orders call: without portfolio_id the backend returns all of the
+  // user's own orders, already newest-first.
+  const load = useCallback(async () => {
+    const res = await api<ListResponse<Order>>("/orders", {
+      params: { status: statusFilter || undefined },
+    });
+    setOrders(res.items);
   }, [statusFilter]);
 
   usePoll(

@@ -83,7 +83,7 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
         <h3>{t("news.title")}</h3>
         <span className="news-header-right">
           <span className="chip chip-static" title={summary ? t("news.modelTitle", { m: summary.model }) : undefined}>
-            {t("news.aiChip")}
+            {summary?.mock ? t("news.mockChip") : t("news.aiChip")}
           </span>
           <button
             className="btn btn-ghost btn-sm"

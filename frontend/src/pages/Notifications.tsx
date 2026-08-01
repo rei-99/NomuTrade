@@ -153,11 +153,11 @@ export function Notifications() {
           <h3>{t("notif.preferences")}</h3>
         </div>
         {!prefs ? (
-          <div className="panel-empty muted">Loading preferences…</div>
+          <div className="panel-empty muted">{t("notif.loadingPrefs")}</div>
         ) : (
           <>
             <div className="pref-group">
-              <span className="pref-label muted">Channels</span>
+              <span className="pref-label muted">{t("notif.channels")}</span>
               <div className="pref-toggles">
                 {CHANNELS.map((ch) => (
                   <label key={ch} className={`chip${prefs.channels[ch] ? " chip-on" : ""}`}>
@@ -172,7 +172,7 @@ export function Notifications() {
               </div>
             </div>
             <div className="pref-group">
-              <span className="pref-label muted">Categories</span>
+              <span className="pref-label muted">{t("notif.categories")}</span>
               <div className="pref-toggles">
                 {categories.map((cat) => {
                   const locked = NON_SUPPRESSIBLE.includes(cat);
@@ -181,7 +181,7 @@ export function Notifications() {
                     <span
                       key={cat}
                       className="chip chip-on chip-static"
-                      title="Security-critical — cannot be disabled"
+                      title={t("notif.lockedTip")}
                     >
                       {cat.replace(/_/g, " ")}
                     </span>
@@ -197,10 +197,7 @@ export function Notifications() {
                   );
                 })}
               </div>
-              <p className="muted">
-                Break glass, grant and PAM alerts are security-critical and cannot be disabled.
-                Preferences are stored in memory on the server and reset on restart.
-              </p>
+              <p className="muted">{t("notif.prefsNote")}</p>
             </div>
           </>
         )}

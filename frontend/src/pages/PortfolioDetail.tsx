@@ -89,7 +89,9 @@ export function PortfolioDetail() {
       const res = await api<ListResponse<Transaction>>(`/portfolios/${id}/transactions`, {
         params: {
           from: txFrom ? new Date(txFrom).toISOString() : undefined,
-          to: txTo ? new Date(txTo).toISOString() : undefined,
+          // Backend filters executed_at <= to — send end of day so the picked
+          // day is included (UTC, matching the from side's midnight).
+          to: txTo ? new Date(`${txTo}T23:59:59.999Z`).toISOString() : undefined,
           symbol: txSymbol || undefined,
           side: txSide || undefined,
           cursor: cursor ?? undefined,

@@ -20,8 +20,9 @@ import { useT } from "../i18n";
 const REPORT_TYPES: ReportType[] = ["HOLDINGS", "TRANSACTIONS", "PERFORMANCE"];
 const FORMATS: ReportFormat[] = ["PDF", "CSV"];
 const FREQUENCIES: ReportFrequency[] = ["DAILY", "WEEKLY"];
-// ASSUMPTION: backend report statuses aren't enumerated in the contract;
-// download is enabled for the "ready-like" statuses below.
+// Backend report statuses are REQUESTED → DONE | FAILED (see ReportStatus in
+// api/types.ts); only DONE reports have a file to download. The list keeps a
+// few defensive aliases for rows written before the contract settled.
 const DOWNLOADABLE = ["READY", "COMPLETED", "DONE", "SUCCESS"];
 
 export function Reports() {
@@ -121,7 +122,7 @@ export function Reports() {
 
   const createSchedule = async () => {
     if (!schedPortfolioId) {
-      toast("Portfolio is required", "error");
+      toast(t("reports.portfolioRequired"), "error");
       return;
     }
     setSchedSubmitting(true);
@@ -135,7 +136,7 @@ export function Reports() {
           frequency: schedFrequency,
         },
       });
-      toast("Schedule created", "success");
+      toast(t("reports.scheduleCreated"), "success");
       void loadSchedules();
     } catch {
       // toast raised by client
@@ -148,7 +149,7 @@ export function Reports() {
     setDeletingSchedule(s.schedule_id);
     try {
       await api(`/report-schedules/${s.schedule_id}`, { method: "DELETE" });
-      toast("Schedule deleted", "success");
+      toast(t("reports.scheduleDeleted"), "success");
       void loadSchedules();
     } catch {
       // toast raised by client
@@ -181,7 +182,7 @@ export function Reports() {
           <label>
             {t("common.portfolio")}
             <select value={portfolioId} onChange={(e) => setPortfolioId(e.target.value)}>
-              {portfolios.length === 0 && <option value="">No portfolios</option>}
+              {portfolios.length === 0 && <option value="">{t("portfolios.empty")}</option>}
               {portfolios.map((p) => (
                 <option key={p.portfolio_id} value={p.portfolio_id}>
                   {p.name}
@@ -225,9 +226,7 @@ export function Reports() {
         <div className="panel-header">
           <h3>{t("reports.schedules")}</h3>
         </div>
-        <p className="muted">
-          Schedules run on simulation time — a daily schedule fires once per simulated day.
-        </p>
+        <p className="muted">{t("reports.schedNote")}</p>
         <div className="filter-bar">
           <label>
             {t("common.portfolio")}
@@ -235,7 +234,7 @@ export function Reports() {
               value={schedPortfolioId}
               onChange={(e) => setSchedPortfolioId(e.target.value)}
             >
-              {portfolios.length === 0 && <option value="">No portfolios</option>}
+              {portfolios.length === 0 && <option value="">{t("portfolios.empty")}</option>}
               {portfolios.map((p) => (
                 <option key={p.portfolio_id} value={p.portfolio_id}>
                   {p.name}
@@ -270,7 +269,7 @@ export function Reports() {
             </select>
           </label>
           <label>
-            Frequency
+            {t("reports.frequency")}
             <select
               value={schedFrequency}
               onChange={(e) => setSchedFrequency(e.target.value as ReportFrequency)}
@@ -287,13 +286,13 @@ export function Reports() {
             disabled={schedSubmitting || portfolios.length === 0}
             onClick={() => void createSchedule()}
           >
-            {schedSubmitting ? "Creating…" : "Create schedule"}
+            {schedSubmitting ? t("reports.creating") : t("reports.createSchedule")}
           </button>
         </div>
         <DataTable<ReportSchedule>
           rows={schedules}
           keyFn={(s) => s.schedule_id}
-          empty="No schedules yet"
+          empty={t("reports.noSchedules")}
           columns={[
             { header: t("reports.type"), render: (s) => s.type },
             {
@@ -303,9 +302,9 @@ export function Reports() {
                 s.portfolio_id,
             },
             { header: t("reports.format"), render: (s) => s.format },
-            { header: "Frequency", render: (s) => s.frequency },
+            { header: t("reports.frequency"), render: (s) => s.frequency },
             {
-              header: "Next run",
+              header: t("reports.nextRun"),
               render: (s) => <span className="num">{fmtTs(s.next_run_at)}</span>,
             },
             {
@@ -320,7 +319,7 @@ export function Reports() {
                   disabled={deletingSchedule === s.schedule_id}
                   onClick={() => void deleteSchedule(s)}
                 >
-                  {deletingSchedule === s.schedule_id ? "Deleting…" : "Delete"}
+                  {deletingSchedule === s.schedule_id ? t("reports.deleting") : t("reports.delete")}
                 </button>
               ),
             },

@@ -112,23 +112,28 @@ idempotent startup patch so existing dev DBs get it too). `DEV_AUTH` mode
 (the default) additionally exposes passwordless
 `POST /api/v1/auth/dev-login` for tests and tooling.
 
-| Email | Role |
-|---|---|
-| trader@demo.nomura | Trader |
-| client@demo.nomura | Client |
-| ops@demo.nomura | Operations Analyst |
-| risk@demo.nomura | Risk & Compliance |
-| approver@demo.nomura | Approver |
-| sysadmin@demo.nomura | System Administrator |
-| secadmin@demo.nomura | Security Administrator |
-| auditor@demo.nomura | Auditor |
+| Email | Role | Persona |
+|---|---|---|
+| trader@demo.nomura | Trader | Trader |
+| client@demo.nomura | Client | Risk |
+| ops@demo.nomura | Operations Analyst | Operation |
+| risk@demo.nomura | Risk & Compliance | Risk |
+| approver@demo.nomura | Approver | Admin |
+| sysadmin@demo.nomura | System Administrator | Admin |
+| secadmin@demo.nomura | Security Administrator | Admin |
+| auditor@demo.nomura | Auditor | Risk |
+
+The four UI personas are a presentation-layer consolidation of the 8 RBAC
+roles (design 26): they only hide tabs, while the per-permission gates stay
+the safety net. The Client maps to the Risk persona's view-heavy tab set and
+lands on Portfolios.
 
 Seed data also includes 11 tradable instruments: the 7 dataset US equities
 (AAPL, GOOG, IBM, MSFT, TSLA, UL, WMT — USD) plus 4 bonds (UST10Y, UST2Y,
 AAPL29, MSFT31 — USD, quoted % of par; generated prices, since data.zip is
 equities-only), and two funded portfolios (Client Portfolio A,
 $1,000,000; Desk Book 1, $500,000). Order types: MARKET, LIMIT, STOP,
-STOP_LIMIT.
+STOP_LIMIT, TRAILING_STOP; time-in-force: DAY / GTC / IOC.
 
 ## Demo script (~10 minutes)
 
@@ -181,8 +186,11 @@ working directory is read automatically and is git-ignored.
   time, not wall-clock time. News is static reference data for Jul–Aug 2026,
   capped at the simulation clock. Without `data/`, the app uses a generated
   random-walk feed with the same 7 symbols.
-- **No WebSocket in this build** — the UI polls; `/ws` exists only in
-  `frontend/nginx.conf` and the design docs.
+- **WebSocket push is a hint channel** — `WS /api/v1/ws` (design 22) pushes
+  live ticks plus per-user notification/execution hints; REST stays the
+  source of truth and the UI keeps a 30 s polling fallback, so behavior is
+  unchanged when the socket is down. The connection registry is
+  process-local (single uvicorn worker).
 - **Local vs compose wiring** — locally the app uses SQLite and the in-process
   event bus/session store; the compose stack uses PostgreSQL + Redis Streams.
   Behavior is equivalent by design, not identical infrastructure.

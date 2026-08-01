@@ -27,10 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import NotFound, ValidationError
+from app.core.events import write_outbox
 from app.core.models import (
     Execution,
     Order,
     OrderSide,
+    OrderStatus,
     Portfolio,
     PortfolioType,
     Position,
@@ -45,6 +47,8 @@ router = APIRouter(tags=["paper"])
 
 PAPER_ACCOUNT_CREATED = "PAPER_ACCOUNT_CREATED"
 PAPER_ACCOUNT_RESET = "PAPER_ACCOUNT_RESET"
+ORDER_CANCELLED = "ORDER_CANCELLED"  # same event type as the orders module
+PAPER_RESET = "PAPER_RESET"  # cancel reason stamped on reset-killed orders
 
 DEFAULT_INITIAL_CASH = Decimal("10000000")  # 10M JPY
 
@@ -257,7 +261,9 @@ async def reset_account(
     """Restore cash to the initial balance and clear positions.
 
     Order/execution history is kept (it stays marked PAPER via the portfolio
-    join, per AC-008); only open positions and cash are reset.
+    join, per AC-008); open positions and cash are reset, and any working
+    (OPEN/ACCEPTED) orders are cancelled with reason PAPER_RESET so they
+    cannot fill against the freshly reset account.
     """
     portfolio = await _my_paper_portfolio(db, portfolio_id, session.user_id)
     initial = _initial_balances.get(portfolio_id, DEFAULT_INITIAL_CASH)
@@ -265,13 +271,54 @@ async def reset_account(
     await db.execute(
         delete(Position).where(Position.portfolio_id == portfolio.portfolio_id)
     )
+    # Cancel working orders, mirroring the orders module's cancel path. A
+    # DB-level cancel is sufficient: the execution engine re-reads the order
+    # status on every accepted/tick event and drops closed orders from its
+    # in-memory book (orders/workers.py _fill_order/_on_tick).
+    working_orders = (
+        (
+            await db.execute(
+                select(Order).where(
+                    Order.portfolio_id == portfolio.portfolio_id,
+                    Order.status.in_([OrderStatus.OPEN, OrderStatus.ACCEPTED]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for order in working_orders:
+        order.status = OrderStatus.CANCELLED
+        order.reject_reason = PAPER_RESET
+        order.updated_at = utcnow()
+        await write_audit(
+            db,
+            actor_id=session.user_id,
+            event_type=ORDER_CANCELLED,
+            resource_type="ORDER",
+            resource_id=order.order_id,
+            payload={"reason": PAPER_RESET, "previous_status": "OPEN_OR_ACCEPTED"},
+        )
+        await write_outbox(
+            db,
+            "notify",
+            {
+                "user_id": session.user_id,
+                "category": "ORDER",
+                "title": "Order cancelled (paper reset)",
+                "body": f"Order {order.order_id} cancelled by paper account reset.",
+            },
+        )
     await write_audit(
         db,
         actor_id=session.user_id,
         event_type=PAPER_ACCOUNT_RESET,
         resource_type="portfolio",
         resource_id=portfolio.portfolio_id,
-        payload={"restored_cash": str(initial)},
+        payload={
+            "restored_cash": str(initial),
+            "cancelled_orders": len(working_orders),
+        },
         flush_only=True,
     )
     await db.commit()

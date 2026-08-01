@@ -278,6 +278,9 @@ export interface PerformanceSeries {
 export type ReportType = "HOLDINGS" | "TRANSACTIONS" | "PERFORMANCE";
 export type ReportFormat = "PDF" | "CSV";
 
+/** Report lifecycle status (backend: request → REQUESTED, generator → DONE | FAILED). */
+export type ReportStatus = "REQUESTED" | "DONE" | "FAILED";
+
 export interface Report {
   report_id: string;
   type: ReportType;
@@ -285,14 +288,14 @@ export interface Report {
   period_start: string;
   period_end: string;
   format: ReportFormat;
-  status: string;
+  status: ReportStatus;
   created_at: string;
   download_url: string | null;
 }
 
 export interface ReportCreated {
   report_id: string;
-  status: string;
+  status: ReportStatus;
   download_url: string | null;
 }
 

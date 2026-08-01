@@ -31,15 +31,27 @@ export function Access() {
   const [onBehalfOf, setOnBehalfOf] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    const [roleRes, reqRes] = await Promise.all([
-      api<Role[]>("/roles"),
-      api<ListResponse<AccessRequest>>("/access-requests"),
-    ]);
-    setRoles(roleRes);
-    setRequests(reqRes.items);
-    setRoleId((cur) => cur || roleRes[0]?.role_id || "");
+  // Roles and requests load independently: a /roles failure must not blank
+  // "my requests" — it degrades to an empty picker (select shows "no roles",
+  // submit stays disabled) alongside the client's error toast.
+  const loadRoles = useCallback(async () => {
+    try {
+      const roleRes = await api<Role[]>("/roles");
+      setRoles(roleRes);
+      setRoleId((cur) => cur || roleRes[0]?.role_id || "");
+    } catch {
+      // toast raised by client
+    }
   }, []);
+
+  const loadRequests = useCallback(async () => {
+    const reqRes = await api<ListResponse<AccessRequest>>("/access-requests");
+    setRequests(reqRes.items);
+  }, []);
+
+  const load = useCallback(async () => {
+    await Promise.all([loadRoles(), loadRequests()]);
+  }, [loadRoles, loadRequests]);
 
   usePoll(
     () => {

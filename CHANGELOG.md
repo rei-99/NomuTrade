@@ -7,7 +7,67 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-01 — Portfolio insights + richer risk panel; Trader loses Access Requests tab
+## 2026-08-01 — Demo-critical fixes: 4-persona mapping, reports correctness, UX quick wins, docs reconciliation
+
+**Driver:** owner-commissioned deep improvement review of the whole repo. The
+headline finding: the design-25/26 persona model dead-ended three of the eight
+seeded users (Approver couldn't reach Approvals, Auditor landed on a 403,
+Client saw no portfolio pages) — breaking the README demo script. Plus a batch
+of verified correctness bugs and stale docs. Frontend + backend, no
+architecture changes.
+
+- **4-persona mapping fixed** (design 26 §R1a, personas kept to
+  Trader/Operation/Risk/Admin per owner instruction): `APPROVE_ACCESS → Admin`
+  (Approver lands on **Approvals**); `PORTFOLIO_VIEW → Risk` fallback (Client
+  lands on **Portfolios**, sees Portfolios/Reports/Assistant/Access/
+  Notifications — the client stakeholder's core ask is reachable again);
+  static `PERSONA_HOME` replaced by `personaHome(persona, perms)` = first
+  permission-passing tab (Auditor lands on **Audit**, no more static-home
+  403s); Reports tab perm-gated (`REPORT_VIEW`); Assistant added to the Risk
+  list (`ASSISTANT_USE`-gated); missing Guard on `/portfolios/:id` added
+  (perms-only — traders reach it from the positions table); design 26 doc
+  amended with the mapping and the dynamic-home rule.
+- **`GET /roles` readable by any authenticated user** (deliberate contract
+  change: the access-request form needs the role catalog; role names aren't
+  sensitive; ROLE_MANAGE gates writes, ROLE_VIEW keeps `/permissions`).
+  Access page now loads "my requests" independently of the roles call, so a
+  roles failure no longer blanks the page.
+- **Reports correctness**: holdings/transactions builders use the bond-aware
+  `trade_value()` (bond values were 100× overstated); new `ReportStatus`
+  StrEnum + **FAILED state** — a render failure marks the row FAILED, deletes
+  the partial file, audits `REPORT_FAILED`, and download returns a clear 409
+  instead of the misleading "file missing" 404.
+- **Paper reset cancels working orders** (CANCELLED, reason `PAPER_RESET`,
+  audit + notification) — orders no longer fill after a reset.
+- **Frontend quick wins**: Orders page makes one `/orders` call per poll (was
+  a per-portfolio fan-out every 5 s); transactions date filter includes the
+  end day (was excluded by a midnight boundary); WS client stops reconnecting
+  on close 4401 and bounces to /login like the 401 path; Governance
+  access-review button gated on `GOVERNANCE_VIEW`; directory/SMTP health
+  tiles carry an honest "mock" badge; the news summary reads the backend's
+  `mock` field and badges itself "Rule-based summary (mock LLM)".
+- **i18n**: Reports schedules panel, Notifications preferences, bell
+  "View all", report statuses REQUESTED/DONE/FAILED — 21 new EN/JA key pairs
+  (parity compile-enforced).
+- **Docs reconciliation**: README (the "No WebSocket in this build"
+  limitation was false since design 22 — corrected; TRAILING_STOP + TIF added
+  to order types; demo-users table gains a Persona column), AGENTS.md (16
+  modules incl. `restricted`, 99 tests, 26 design docs), dev.sh
+  (`$USER@localhost` PG URL — was hardcoded to one machine; login banner
+  reflects password login), presentation/script.md (metrics current, Q&A #3
+  rewritten for password login, demo checklist uses the login form, designs
+  25/26 noted). Deck (.pptx) refresh is a pending follow-up.
+- Verified: backend **99/99** (4 new: bond report value hand-computed,
+  FAILED state + 409 download, paper-reset cancel, /roles open to all);
+  `npm run build` zero type errors; live E2E — client `GET /roles` 200,
+  approver `GET /approvals` 200, auditor governance 403 contained server-side
+  as designed; headless screenshots — approver→Approval Inbox,
+  client→Portfolios (Client Portfolio A), auditor→Audit Events, ops
+  Governance with mock badges and no 403ing button. Note: the local dev DB
+  still carries JPY-era seed balances (100M/50M from the original seed;
+  re-seed to refresh) — a data artifact, not a code bug.
+
+
 
 **Driver:** owner asks — more portfolio visualization (trader's perspective),
 more risk metrics, hide Access Requests from traders.

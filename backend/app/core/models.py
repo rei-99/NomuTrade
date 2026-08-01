@@ -109,6 +109,13 @@ class Severity(StrEnum):
     HIGH = "HIGH"
 
 
+class ReportStatus(StrEnum):
+    REQUESTED = "REQUESTED"
+    DONE = "DONE"
+    # Generation failed (render/build raised): terminal state, download 409s.
+    FAILED = "FAILED"
+
+
 # ---------------------------------------------------------------------------
 # IAM / RBAC / JIT / PAM
 # ---------------------------------------------------------------------------

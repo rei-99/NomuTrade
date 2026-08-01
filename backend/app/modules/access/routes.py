@@ -261,7 +261,11 @@ async def decide_approval(
 
 @router.get("/roles")
 async def list_roles(
-    session: SessionData = Depends(require_permission("ROLE_VIEW")),
+    # Any authenticated user may read the role catalog (FR-IAM: access
+    # requests are available to all authenticated users, and the request
+    # form needs the catalog; role names are not sensitive). Role
+    # management below stays ROLE_MANAGE-gated.
+    session: SessionData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     roles = ((await db.execute(select(Role).order_by(Role.name))).scalars().all())
