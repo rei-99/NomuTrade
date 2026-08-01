@@ -7,6 +7,16 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-01 — Workspace proportions: chart-dominant grid
+
+- Owner tweak to the design-25 layout: chart now spans 8/12 columns (2:1)
+  and 3:2 rows (bottom three panels share the smaller track); ≥1401px only —
+  below that the ticket keeps 7:5. Below 800px viewport height (or 1100px
+  width) the page drops to compact document flow (page scrolls) instead of
+  clipping the order ticket. Verified: headless screenshots at 1920×1080,
+  1680×900/1000 and 1366×768 — chart dominant, BUY/SELL always on screen,
+  bottom panels aligned, no dead space.
+
 ## 2026-08-01 — UX round 1 (design 25): Japanese UI, 4 personas, bond/equity split, layout v2, price-follow
 
 **Driver:** owner instruction set (5 items); design doc

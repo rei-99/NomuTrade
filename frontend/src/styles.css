@@ -997,17 +997,18 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 /* ---------- trading workspace ---------- */
 
-/* One-screen workspace v2 (design 25 §U4): tape → main row (chart spanning 7
-   of 12 columns ≈ 2.4fr and extending vertically | order-entry rail) → bottom
+/* One-screen workspace v2 (design 25 §U4): tape → main row (chart spanning 8
+   of 12 columns = 2:1 and extending vertically | order-entry rail) → bottom
    row of three equal panels (Positions | Risk | News) with aligned top/bottom
    edges. The page is fluid full-width and exactly viewport-height; only panel
-   internals scroll. Account summary chips live in the Positions header. */
+   internals scroll. Account summary chips live in the Positions header.
+   Proportions (owner, 2026-08-01): chart dominant — 8:4 columns, 3:2 rows. */
 .trading-page { max-width: none; height: calc(100vh - 78px); }
 
 .trading-grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-template-rows: auto minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1.5fr) minmax(0, 1fr);
   grid-template-areas:
     "tape tape tape tape tape tape tape tape tape tape tape tape"
     "chart chart chart chart chart chart chart order order order order order"
@@ -1017,10 +1018,22 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   min-height: 0;
 }
 
-@media (max-width: 1100px) {
-  /* Single-column fallback: natural document flow — tape → chart → order →
-     positions → risk → news, every panel at natural height, page scrolls.
-     Selectors are scoped with .trading-grid to out-specify the base rules. */
+/* Wide viewports (≥1401px): chart takes the extra column (8:4) — the order
+   ticket is still comfortable there; below, 7:5 keeps the type seg on one
+   row and the ticket fully visible. */
+@media (min-width: 1401px) {
+  .trading-grid {
+    grid-template-areas:
+      "tape tape tape tape tape tape tape tape tape tape tape tape"
+      "chart chart chart chart chart chart chart chart order order order order"
+      "positions positions positions positions risk risk risk risk news news news news";
+  }
+}
+
+@media (max-width: 1100px), (max-height: 800px) {
+  /* Compact mode (narrow OR short viewport): natural document flow — tape →
+     chart → order → positions → risk → news, every panel at natural height,
+     page scrolls. One-screen layout only where it physically fits. */
   .trading-page { height: auto; }
   .trading-grid { display: flex; flex-direction: column; flex: none; }
   .trading-grid .rail { overflow: visible; }
