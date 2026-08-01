@@ -7,6 +7,37 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-01 — Role-faithful views + real login (design 26)
+
+**Driver:** owner instruction set — roles should see only the tabs their job
+needs (researched from SRS §2.3 role duties), and a real username+password
+login instead of persona cards.
+
+- **Persona-faithful views**: Trader → home Trading (full execution tabs);
+  **Operation** → Trades/Governance/Access/Notifications only (their
+  business is the settlement flow + integration health — no trading panel);
+  **Risk** → Portfolios/Trades/Audit/Governance/Reports (+ a new Portfolios
+  tab for book oversight); **Admin** → Admin/Governance/Audit/Approvals.
+  Post-login lands on the persona home; non-traders hitting `/` redirect
+  there too; deep links outside the set keep the friendly not-available
+  page. Two UX bugs fixed in verification: stray `"trading"` left in the
+  Operation tab set, and the Governance page calling `/admin/health` on
+  `GOVERNANCE_VIEW` instead of `INTEGRATION_MONITOR` (403 toast for Risk).
+- **Real login**: `POST /auth/login` (email+password) — PBKDF2-HMAC-SHA256
+  hashes (stdlib, zero deps), `users.password_hash` additive migration,
+  idempotent startup patch giving seeded users the demo password
+  **`demo1234`** (training env, README-documented), uniform
+  anti-enumeration 401 (incl. dummy-verify timing flattening), per-email
+  lockout 5 failures → 60 s with `retry_after_seconds`, full audit.
+  `/auth/dev-login` stays DEV_AUTH-gated for tests/tooling.
+- **Login page**: terminal-styled form (show/hide password, spinner,
+  envelope error banner with traceId + live lockout countdown), demo
+  credentials behind one disclosure card; EN+JA.
+- Verified: backend **93/93** (6 new auth tests); live E2E — good login,
+  bad-vs-unknown identical bodies, lockout with correct password rejected
+  during window; headless screenshots of EN+JA forms and each persona home
+  (Operation: no Trading tab; Risk: Portfolios present, no error toasts).
+
 ## 2026-08-01 — Workspace proportions: chart-dominant grid
 
 - Owner tweak to the design-25 layout: chart now spans 8/12 columns (2:1)

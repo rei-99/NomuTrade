@@ -135,7 +135,7 @@ the docs and code comments for traceability — keep them intact when editing.
 Backend modules under `backend/app/modules/`: `access` (requests/approvals/
 grants/JIT), `admin` (governance dashboard), `analytics` (indicators, alerts,
 news/sentiment), `assistant` (rule-based GenAI stub), `auditlog` (search/export), `auth`
-(dev-login, session profile), `breakglass`, `marketdata` (dataset loader, tick
+(password login via PBKDF2 hash + dev-login, session profile), `breakglass`, `marketdata` (dataset loader, tick
 replay, simulation clock), `notifications`,
 `orders` (order API + execution/STP/settlement workers), `pam` (mock CyberArk),
 `paper` (paper trading = `PAPER` portfolio type), `portfolios` (positions/

@@ -73,6 +73,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await seed_database(session)
                 await session.commit()
 
+        # Idempotent startup patch (design 26 §R2): every user without a
+        # password hash gets the training demo password. Runs on every boot,
+        # so it also reaches dev DBs the once-only seed cannot.
+        from app.modules.auth.passwords import ensure_demo_passwords
+
+        await ensure_demo_passwords(sessionmaker)
+
         # Infrastructure components.
         bus = (
             RedisBus(settings.REDIS_URL)

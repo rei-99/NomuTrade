@@ -123,6 +123,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255))
     manager_upn: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    # Design 26 §R2: PBKDF2 password hash for the real login form (training
+    # environment only — production auth stays SSO per SRS). Nullable; NULL
+    # means no password set, and the idempotent startup patch
+    # (app.modules.auth.passwords.ensure_demo_passwords) backfills the demo
+    # password for such users.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )

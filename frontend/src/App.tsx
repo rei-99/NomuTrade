@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useAuth } from "./auth";
 import { useT } from "./i18n";
-import { PERSONA_TABS } from "./personas";
+import { PERSONA_HOME, PERSONA_TABS } from "./personas";
 import type { TabId } from "./personas";
 import { Layout } from "./components/Layout";
 import { Access } from "./pages/Access";
@@ -92,15 +92,35 @@ function ChartsRedirect() {
   return <Navigate to={symbol ? `/?symbol=${encodeURIComponent(symbol)}` : "/"} replace />;
 }
 
+/**
+ * `/` is the Trader home (design 26 §R1): personas whose home is elsewhere
+ * are redirected there instead of landing on a trading panel that isn't
+ * their business.
+ */
+function HomeRoute() {
+  const { me, loading, persona } = useAuth();
+  if (loading) return <Loading />;
+  if (!me) return <Navigate to="/login" replace />;
+  const home = PERSONA_HOME[persona];
+  if (home !== "/") return <Navigate to={home} replace />;
+  return (
+    <Guard tab="trading">
+      <Trading />
+    </Guard>
+  );
+}
+
 export default function App() {
-  const { me, loading } = useAuth();
+  const { me, loading, persona } = useAuth();
   const { t } = useT();
 
   return (
     <Routes>
       <Route
         path="/login"
-        element={loading ? <Loading /> : me ? <Navigate to="/" replace /> : <Login />}
+        element={
+          loading ? <Loading /> : me ? <Navigate to={PERSONA_HOME[persona]} replace /> : <Login />
+        }
       />
       <Route
         element={
@@ -109,18 +129,11 @@ export default function App() {
           </Guard>
         }
       >
-        <Route
-          index
-          element={
-            <Guard tab="trading">
-              <Trading />
-            </Guard>
-          }
-        />
+        <Route index element={<HomeRoute />} />
         <Route
           path="portfolios"
           element={
-            <Guard perms={["PORTFOLIO_VIEW"]}>
+            <Guard perms={["PORTFOLIO_VIEW", "PORTFOLIO_VIEW_ALL"]} tab="portfolios">
               <Portfolios />
             </Guard>
           }

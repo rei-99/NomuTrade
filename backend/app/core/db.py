@@ -75,6 +75,10 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str | dict[str, str]]] = {
             "postgres": "TIMESTAMP WITH TIME ZONE",
         },
     },
+    "users": {
+        # Design 26 §R2: password hash for the real login (training env).
+        "password_hash": "VARCHAR(255)",
+    },
 }
 
 # table -> {column: wider DDL type} — varchar widens for values added after a

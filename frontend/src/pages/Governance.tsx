@@ -28,7 +28,7 @@ export function Governance() {
       hasPerm("GOVERNANCE_VIEW")
         ? api<GovernanceSummary>("/admin/governance-summary")
         : Promise.resolve(null),
-      hasPerm("INTEGRATION_MONITOR", "GOVERNANCE_VIEW")
+      hasPerm("INTEGRATION_MONITOR")
         ? api<AdminHealth>("/admin/health")
         : Promise.resolve(null),
     ]);

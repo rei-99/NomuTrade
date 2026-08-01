@@ -11,7 +11,8 @@ interface AuthContextValue {
   loading: boolean;
   /** Permission-derived persona (design 25 §U2); NONE when nothing matches. */
   persona: Persona;
-  login: (email: string) => Promise<void>;
+  /** Password login (POST /auth/login); resolves to the user's persona. */
+  login: (email: string, password: string) => Promise<Persona>;
   logout: () => Promise<void>;
   /** True when the user holds ANY of the given permissions (or none given). */
   hasPerm: (...perms: string[]) => boolean;
@@ -44,14 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string) => {
-    const res = await api<DevLoginResponse>("/auth/dev-login", {
+  // Real password login (design 26 §R2). skipAuthRedirect keeps the 401
+  // envelope (invalid credentials / lockout) intact for the form; the
+  // response shape matches dev-login ({token, user}), which stays
+  // backend-only for tests.
+  const login = useCallback(async (email: string, password: string): Promise<Persona> => {
+    const res = await api<DevLoginResponse>("/auth/login", {
       method: "POST",
-      body: { email },
+      body: { email, password },
+      skipErrorToast: true,
+      skipAuthRedirect: true,
     });
     setToken(res.token);
     const profile = await api<MeResponse>("/auth/me");
     setMe(profile);
+    return detectPersona(profile.permissions);
   }, []);
 
   const logout = useCallback(async () => {
