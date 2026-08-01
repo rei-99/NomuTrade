@@ -37,7 +37,8 @@ export type TabId =
   | "approvals"
   | "admin"
   | "audit"
-  | "governance";
+  | "governance"
+  | "portfolios";
 
 export interface TabDef {
   id: TabId;
@@ -78,13 +79,38 @@ export const TABS: Record<TabId, TabDef> = {
     labelKey: "nav.governance",
     perms: ["GOVERNANCE_VIEW", "INTEGRATION_MONITOR"],
   },
+  portfolios: {
+    id: "portfolios",
+    to: "/portfolios",
+    labelKey: "nav.portfolios",
+    perms: ["PORTFOLIO_VIEW", "PORTFOLIO_VIEW_ALL"],
+  },
 };
 
-/** Tabs per persona — the design 25 §U2 table, verbatim. */
+/** Tabs per persona — the design 26 §R1 table, verbatim. */
 export const PERSONA_TABS: Record<Persona, TabId[]> = {
-  TRADER: ["trading", "orders", "trades", "alerts", "reports", "paper", "assistant", "access", "notifications"],
-  ADMIN: ["trading", "admin", "governance", "audit", "approvals", "access", "notifications"],
-  RISK: ["trading", "trades", "reports", "audit", "governance", "access", "notifications"],
-  OPERATION: ["trading", "trades", "governance", "access", "notifications"],
+  TRADER: [
+    "trading",
+    "orders",
+    "trades",
+    "alerts",
+    "reports",
+    "paper",
+    "assistant",
+    "access",
+    "notifications",
+  ],
+  ADMIN: ["admin", "governance", "audit", "approvals", "access", "notifications"],
+  RISK: ["portfolios", "trades", "audit", "governance", "reports", "access", "notifications"],
+  OPERATION: ["trades", "governance", "access", "notifications"],
   NONE: ["access", "notifications"],
+};
+
+/** Post-login landing route per persona (design 26 §R1). */
+export const PERSONA_HOME: Record<Persona, string> = {
+  TRADER: "/",
+  ADMIN: "/admin",
+  RISK: "/governance",
+  OPERATION: "/governance",
+  NONE: "/access",
 };

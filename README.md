@@ -105,9 +105,12 @@ as MRs against `docker-compose.yml`.
 
 ## Demo users
 
-Seeded automatically on first start (idempotent; re-seeding is a no-op). In
-`DEV_AUTH` mode (the default), log in with any seeded email — no password
-(`POST /api/v1/auth/dev-login` behind the login screen).
+Seeded automatically on first start (idempotent; re-seeding is a no-op).
+The login screen takes email + password — every seeded user's password is
+**`demo1234`** (PBKDF2-hashed; training environment only, applied by an
+idempotent startup patch so existing dev DBs get it too). `DEV_AUTH` mode
+(the default) additionally exposes passwordless
+`POST /api/v1/auth/dev-login` for tests and tooling.
 
 | Email | Role |
 |---|---|

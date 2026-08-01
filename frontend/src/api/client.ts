@@ -46,6 +46,12 @@ export interface RequestOptions {
   raw?: boolean;
   /** Do not raise the global error toast for this call. */
   skipErrorToast?: boolean;
+  /**
+   * Do not treat 401 as session-expiry (token clear + redirect to /login).
+   * Needed by the login form itself, where 401 means "invalid credentials"
+   * and the envelope must reach the caller intact.
+   */
+  skipAuthRedirect?: boolean;
 }
 
 export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -75,7 +81,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     throw err;
   }
 
-  if (res.status === 401) {
+  if (res.status === 401 && !opts.skipAuthRedirect) {
     // Session expired / invalid token: drop it and bounce to login.
     setToken(null);
     if (!window.location.pathname.startsWith("/login")) {

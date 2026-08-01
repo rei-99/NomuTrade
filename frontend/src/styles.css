@@ -811,31 +811,58 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .login-title { font-size: 19px; margin-bottom: 4px; }
 
-.login-users {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.login-form-card { width: 400px; }
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   margin-top: 16px;
 }
 
-.login-user {
-  font: inherit;
-  text-align: left;
-  background: var(--panel-2);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 9px 12px;
-  cursor: pointer;
+.password-wrap { position: relative; }
+.password-wrap input { width: 100%; padding-right: 64px; }
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.login-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.login-trace { font-size: 10px; margin-top: 4px; }
+
+.demo-creds {
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  font-size: 12px;
 }
-.login-user:hover:not(:disabled) { border-color: var(--blue); }
-.login-user:disabled { opacity: 0.5; cursor: wait; }
 
-.login-user-label { font-weight: 600; }
-.login-user-email { font-size: 11px; }
+.demo-cred-row { font-size: 12px; }
+.demo-cred-note { font-size: 11px; margin-top: 4px; }
 
 .login-error {
   margin-top: 12px;
@@ -1211,9 +1238,7 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   color: var(--muted);
 }
 
-/* login persona cards (design 25 §U2) */
-.persona-card { gap: 4px; }
-.persona-card-desc { font-size: 11px; line-height: 1.35; }
+/* login demo-credentials disclosure (design 26 §R2) */
 .login-more { margin-top: 12px; }
 .login-more summary {
   cursor: pointer;
@@ -1222,7 +1247,6 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   user-select: none;
 }
 .login-more summary:hover { color: var(--text); }
-.login-users-more { margin-top: 8px; }
 
 .row-clickable { cursor: pointer; }
 
