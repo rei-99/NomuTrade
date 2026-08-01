@@ -417,7 +417,7 @@ export interface Role {
   description: string;
   built_in: boolean;
   version: number;
-  permissions: string[];
+  permission_actions: string[];
 }
 
 // ASSUMPTION: GET /permissions item shape is not specified in the contract;

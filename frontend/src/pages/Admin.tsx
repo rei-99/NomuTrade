@@ -132,7 +132,7 @@ export function Admin() {
     setEditingRole(r);
     setRoleName(r === "new" ? "" : r.name);
     setRoleDesc(r === "new" ? "" : r.description);
-    setRolePerms(new Set(r === "new" ? [] : r.permissions));
+    setRolePerms(new Set(r === "new" ? [] : r.permission_actions));
   };
 
   const saveRole = async () => {
@@ -368,7 +368,7 @@ export function Admin() {
               {
                 header: t("admin.roles.permissions"),
                 className: "num",
-                render: (r) => <span title={r.permissions.join(", ")}>{fmtNum(r.permissions.length)}</span>,
+                render: (r) => <span title={r.permission_actions.join(", ")}>{fmtNum(r.permission_actions.length)}</span>,
               },
               {
                 header: "",
