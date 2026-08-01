@@ -23,6 +23,15 @@ import { useT } from "../i18n";
 
 type Tab = "positions" | "transactions" | "performance";
 
+const DONUT_COLORS = [
+  CHART_COLORS.accent,
+  CHART_COLORS.up,
+  "#f7931a",
+  "#ab7df8",
+  CHART_COLORS.down,
+  CHART_COLORS.text,
+];
+
 export function PortfolioDetail() {
   const { id = "" } = useParams();
   const { t } = useT();
@@ -32,6 +41,8 @@ export function PortfolioDetail() {
   const [perf, setPerf] = useState<PerformanceSeries | null>(null);
   const [perfTf, setPerfTf] = useState<Timeframe>("1M");
   const [tab, setTab] = useState<Tab>("positions");
+  const [allocMode, setAllocMode] = useState<"asset" | "holdings">("asset");
+  const [pnlMode, setPnlMode] = useState<"unrealized" | "day">("unrealized");
 
   // transaction filters + pagination
   const [txFrom, setTxFrom] = useState("");
@@ -126,6 +137,109 @@ export function PortfolioDetail() {
     };
   }, [perf]);
 
+  // ---- Insights (positions tab): allocation donut + P&L contribution ----
+
+  /** Donut slices: asset-class view (EQUITY vs BOND) or holdings view
+   * (top-5 + Other + Cash as its own slice). */
+  const allocSlices = useMemo(() => {
+    if (!valuation) return [] as { name: string; value: number; cash?: boolean }[];
+    if (allocMode === "asset") {
+      return valuation.kpis.allocation.map((a): { name: string; value: number; cash?: boolean } => ({
+        name: a.asset_class,
+        value: a.value,
+      }));
+    }
+    const top5 = valuation.kpis.top_holdings.slice(0, 5);
+    const topSum = top5.reduce((s, h) => s + h.market_value, 0);
+    const other = Math.max(0, valuation.market_value - topSum);
+    const slices: { name: string; value: number; cash?: boolean }[] = top5.map((h) => ({
+      name: h.instrument_symbol,
+      value: h.market_value,
+    }));
+    if (other > 0) slices.push({ name: t("ins.other"), value: other });
+    if (valuation.cash > 0) slices.push({ name: t("acct.cash"), value: valuation.cash, cash: true });
+    return slices;
+  }, [valuation, allocMode, t]);
+
+  const allocOption: echarts.EChartsOption = useMemo(
+    () => ({
+      backgroundColor: "transparent",
+      tooltip: { ...tooltipBase, trigger: "item", valueFormatter: (v) => fmtJpy(Number(v)) },
+      legend: {
+        bottom: 0,
+        textStyle: { color: CHART_COLORS.text, fontSize: 11 },
+        itemWidth: 10,
+        itemHeight: 10,
+      },
+      series: [
+        {
+          type: "pie",
+          radius: ["45%", "70%"],
+          center: ["50%", "44%"],
+          data: allocSlices.map((s, i) => ({
+            name: s.name,
+            value: s.value,
+            itemStyle: {
+              color: s.cash ? CHART_COLORS.text : DONUT_COLORS[i % DONUT_COLORS.length],
+            },
+          })),
+          label: { color: CHART_COLORS.text, fontSize: 11, formatter: "{d}%" },
+        },
+      ],
+    }),
+    [allocSlices],
+  );
+
+  /** Contribution rows: unrealized P&L per position, or day change (nulls
+   * excluded — never plotted as zero). Sorted biggest contributor first. */
+  const pnlRows = useMemo(() => {
+    const items = positions?.items ?? [];
+    const rows =
+      pnlMode === "unrealized"
+        ? items.map((p) => ({ symbol: p.instrument_symbol, value: p.unrealized_pnl }))
+        : items
+            .filter((p): p is (typeof items)[number] & { day_change: number } => p.day_change !== null)
+            .map((p) => ({ symbol: p.instrument_symbol, value: p.day_change }));
+    return rows.sort((a, b) => b.value - a.value);
+  }, [positions, pnlMode]);
+
+  const pnlOption: echarts.EChartsOption = useMemo(
+    () => ({
+      backgroundColor: "transparent",
+      tooltip: {
+        ...tooltipBase,
+        trigger: "item",
+        valueFormatter: (v) => fmtSignedJpy(Number(v)),
+      },
+      grid: { left: 64, right: 80, top: 8, bottom: 24 },
+      xAxis: { ...valueAxis(), type: "value" },
+      yAxis: {
+        ...categoryAxis({ inverse: true }),
+        type: "category",
+        data: pnlRows.map((r) => r.symbol),
+        axisLabel: { color: CHART_COLORS.fg, fontSize: 11 },
+      },
+      series: [
+        {
+          type: "bar",
+          barMaxWidth: 18,
+          data: pnlRows.map((r) => ({
+            value: r.value,
+            itemStyle: { color: r.value >= 0 ? CHART_COLORS.up : CHART_COLORS.down },
+          })),
+          label: {
+            show: true,
+            position: "right",
+            color: CHART_COLORS.text,
+            fontSize: 10,
+            formatter: (p: unknown) => fmtSignedJpy(Number((p as { value?: unknown }).value)),
+          },
+        },
+      ],
+    }),
+    [pnlRows],
+  );
+
   if (!portfolio && !valuation) {
     return (
       <div className="page">
@@ -205,8 +319,67 @@ export function PortfolioDetail() {
       </div>
 
       {tab === "positions" && (
-        <section className="panel">
-          <DataTable
+        <>
+          <div className="insight-grid">
+            <section className="panel">
+              <div className="panel-header">
+                <h3>{t("ins.allocTitle")}</h3>
+                <div className="seg">
+                  <button
+                    type="button"
+                    className={`seg-btn${allocMode === "asset" ? " active" : ""}`}
+                    onClick={() => setAllocMode("asset")}
+                  >
+                    {t("pd.assetClass")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg-btn${allocMode === "holdings" ? " active" : ""}`}
+                    onClick={() => setAllocMode("holdings")}
+                  >
+                    {t("ins.holdings")}
+                  </button>
+                </div>
+              </div>
+              {allocSlices.length === 0 ? (
+                <div className="panel-empty muted">{t("ins.empty")}</div>
+              ) : (
+                <EChart option={allocOption} height={320} />
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="panel-header">
+                <h3>{t("ins.pnlTitle")}</h3>
+                <div className="seg">
+                  <button
+                    type="button"
+                    className={`seg-btn${pnlMode === "unrealized" ? " active" : ""}`}
+                    onClick={() => setPnlMode("unrealized")}
+                  >
+                    {t("pd.upnl")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg-btn${pnlMode === "day" ? " active" : ""}`}
+                    onClick={() => setPnlMode("day")}
+                  >
+                    {t("acct.day")}
+                  </button>
+                </div>
+              </div>
+              {pnlRows.length === 0 ? (
+                <div className="panel-empty muted">
+                  {t(pnlMode === "day" ? "ins.emptyDay" : "ins.empty")}
+                </div>
+              ) : (
+                <EChart option={pnlOption} height={320} />
+              )}
+            </section>
+          </div>
+
+          <section className="panel">
+            <DataTable
             rows={positions?.items ?? []}
             keyFn={(p) => p.instrument_symbol}
             empty={t("pos.empty")}
@@ -245,6 +418,7 @@ export function PortfolioDetail() {
             </div>
           )}
         </section>
+        </>
       )}
 
       {tab === "transactions" && (

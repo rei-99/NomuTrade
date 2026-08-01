@@ -479,6 +479,20 @@ export const ja: Record<I18nKey, string> = {
   "pd.noPerformance": "この期間のパフォーマンスデータはありません。",
   "pd.symbolPlaceholder": "例: AAPL",
 
+  // ---- portfolio insights (PortfolioDetail) ----
+  "ins.allocTitle": "配分",
+  "ins.pnlTitle": "損益寄与",
+  "ins.holdings": "保有銘柄",
+  "ins.other": "その他",
+  "ins.empty": "チャート表示できるポジションがありません。",
+  "ins.emptyDay": "当日損益データがありません。",
+
+  // ---- risk extras ----
+  "risk.var": "VaR (95%, 1日)",
+  "risk.varCaption": "対簿価",
+  "risk.maxDdCaption": "ピーク〜ボトム",
+  "risk.assetMix": "資産構成",
+
   // ---- admin page ----
   "admin.title": "管理",
   "admin.tab.roles": "ロール",

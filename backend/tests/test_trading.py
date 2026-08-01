@@ -907,3 +907,60 @@ async def test_positions_day_change_fields(client, trader, ids):
     assert item["day_change_pct"] == pytest.approx(
         item["day_change"] / (100 * item["prev_day_open"]) * 100
     )
+
+
+# ---------------------------------------------------------------------------
+# 9. Risk KPIs: VaR-95 and max drawdown (from valuation snapshot history)
+# ---------------------------------------------------------------------------
+
+
+async def test_risk_kpis_var_and_drawdown(client, app, trader, ids):
+    import statistics
+    from datetime import timedelta
+
+    from app.core.models import ValuationSnapshot
+    from app.core.timeutil import utcnow
+
+    # 13 daily points with a known drawdown: peak 108 → trough 90 = 16.67%.
+    series = [100, 102, 101, 105, 103, 108, 90, 95, 100, 99, 101, 104, 103]
+    base = utcnow() - timedelta(days=len(series))
+    async with app.state.sessionmaker() as session:
+        for i, total in enumerate(series):
+            session.add(
+                ValuationSnapshot(
+                    portfolio_id=ids["desk"],
+                    ts=base + timedelta(days=i),
+                    market_value=Decimal(total),
+                    cash=Decimal("0"),
+                    realized_pnl=Decimal("0"),
+                    unrealized_pnl=Decimal("0"),
+                )
+            )
+        await session.commit()
+
+    response = await client.get(
+        f"/api/v1/portfolios/{ids['desk']}/valuation", headers=trader
+    )
+    assert response.status_code == 200, response.text
+    kpis = response.json()["kpis"]
+
+    # Max drawdown: (108 - 90) / 108 * 100.
+    assert kpis["max_drawdown_pct"] == pytest.approx((108 - 90) / 108 * 100)
+
+    # VaR-95: -5th percentile of daily returns, computed independently.
+    returns = [b / a - 1 for a, b in zip(series, series[1:]) if a]
+    expected_var = max(0.0, -statistics.quantiles(returns, n=20)[0] * 100)
+    assert kpis["var_95_1d_pct"] == pytest.approx(expected_var)
+    assert kpis["var_95_1d_pct"] > 0  # the 108→90 crash lands in the left tail
+
+
+async def test_risk_kpis_insufficient_history(client, ids):
+    """No snapshot history → metrics are null, never a crash."""
+    headers = await login(client, CLIENT)
+    response = await client.get(
+        f"/api/v1/portfolios/{ids['client_pf']}/valuation", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    kpis = response.json()["kpis"]
+    assert kpis["var_95_1d_pct"] is None
+    assert kpis["max_drawdown_pct"] is None

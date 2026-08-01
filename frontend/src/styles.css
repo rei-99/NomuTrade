@@ -1248,6 +1248,17 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 }
 .login-more summary:hover { color: var(--text); }
 
+/* portfolio insights (PortfolioDetail) */
+.insight-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 1000px) {
+  .insight-grid { grid-template-columns: 1fr; }
+}
+
 .row-clickable { cursor: pointer; }
 
 .mark-cell {
@@ -1314,6 +1325,25 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 }
 .split-invested { background: var(--blue); transition: width 300ms ease; }
 .split-cash { background: var(--border); transition: width 300ms ease; }
+.split-bond { background: var(--violet); transition: width 300ms ease; }
+
+.risk-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.risk-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.risk-stat .num { font-size: 15px; font-weight: 600; }
+.risk-stat-caption { font-size: 10px; min-height: 12px; }
+
+.warn { color: var(--warn); }
 
 .risk-split-labels {
   display: flex;
