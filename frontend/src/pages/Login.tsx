@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth";
 import { useT } from "../i18n";
-import { PERSONA_HOME } from "../personas";
 
 const DEMO_EMAILS = [
   "trader@demo.nomura",
@@ -62,8 +61,10 @@ export function Login() {
     setPending(true);
     setError(null);
     try {
-      const persona = await login(email.trim(), password);
-      navigate(PERSONA_HOME[persona], { replace: true });
+      // HomeRoute computes the persona landing page (personaHome) from the
+      // fresh /auth/me profile — navigate to "/" and let it redirect.
+      await login(email.trim(), password);
+      navigate("/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError({ message: err.message, traceId: err.traceId });

@@ -9,8 +9,8 @@
 **Demo:** live on the simulation dataset, recorded-video fallback (see §10)
 
 > Grounding note: every claim below is traceable to the repo — README, DESIGN.md,
-> docs/design/01–24, docs/interview_outcome.md, CHANGELOG.md, git history
-> (28 commits, 9 merges, 7 feature branches), `.gitlab-ci.yml`, Dockerfiles,
+> docs/design/01–26, docs/interview_outcome.md, CHANGELOG.md, git history
+> (35 commits, 11 merges, 7 feature branches), `.gitlab-ci.yml`, Dockerfiles,
 > `infra/terraform/`. Where functionality is partial or mocked, the script says
 > so out loud — honesty is a feature of this talk, not a weakness.
 
@@ -71,7 +71,9 @@ spine around them — RBAC, just-in-time access, break-glass, and a hash-chained
 audit trail. Eleven instruments: the seven dataset equities plus four bonds the
 business explicitly asked for. Five order types plus time-in-force and trailing
 stops. Price alerts, scheduled PDF/CSV reports, paper trading on the same
-pipeline as real trading, and a GenAI assistant.
+pipeline as real trading, and a GenAI assistant. The UI speaks English and
+Japanese, reshapes itself into four role-faithful personas, and sign-in is
+real password login with per-email lockout.
 
 **[Slide 6: Architecture]** One diagram. A React single-page app talks REST and
 WebSocket to a FastAPI modular monolith — sixteen modules, one deployable.
@@ -152,10 +154,10 @@ feedback round after the trading demo produced four concrete changes you saw:
 the two-click confirmation, bonds, stop orders, and order restrictions. That
 feedback is in the repo as interview notes and a design document.
 
-**[Slide 11: Engineering practices]** Design before code: twenty-four numbered
+**[Slide 11: Engineering practices]** Design before code: twenty-six numbered
 design documents, one per module or major feature, each traced to SRS
 requirement IDs. Git flow: feature branches off an integration branch — you can
-see nine merges and seven feature branches in the history — with a dated
+see eleven merges and seven feature branches in the history — with a dated
 changelog entry per milestone. Every milestone was verified the same way: the
 full test suite, the strict TypeScript build, an end-to-end walk of the real
 stack, and headless-browser screenshots for UI changes — verified by a second
@@ -200,10 +202,10 @@ submit. Faster than a ticket, safer than a blind click.
   timezone-aware ones. Both are now documented pitfalls with fixes and tests
   behind them.
 
-**[Slide 14: What worked / what didn't]** Worked: design-first — 24 design docs
+**[Slide 14: What worked / what didn't]** Worked: design-first — 26 design docs
 meant feedback rounds changed documents before they changed code. The event
 pipeline — the STP flow never needed a manual hack. Verification discipline —
-87 tests, a strict build, and screenshot-verified UI rounds. What didn't: we
+95 backend tests, a strict build, and screenshot-verified UI rounds. What didn't: we
 have **no frontend tests** — UI quality rests on build strictness and manual
 verification. The deployment stack is unexecuted — no cloud in the program
 environment. And the GenAI reality check: a rule-based assistant is robust and
@@ -236,9 +238,9 @@ and that's a phase-2 decision, not a bug.
 
 ## 8. Section 7 — Roadmap & close (P3, 14:00–15:00, slides 16–17)
 
-**[Slide 16: Metrics — honest numbers]** 28 commits on the integration branch,
-9 merges, 7 feature branches. 87 backend tests, all green. 16 backend modules,
-24 design documents, a dated changelog for every milestone. 11 instruments,
+**[Slide 16: Metrics — honest numbers]** 35 commits on the integration branch,
+11 merges, 7 feature branches. 95 backend tests, all green. 16 backend modules,
+26 design documents, a dated changelog for every milestone. 11 instruments,
 ~190k price bars and 9.3k news items replayed on the simulation clock. Zero
 pipeline runs — the CI/CD is defined and reviewed, not yet executed. That zero
 is on the roadmap.
@@ -252,7 +254,7 @@ is on the roadmap.
   change management is a feature, not an afterthought.
 - **Nora** — maintainability: the assistant's LLM seam lets a real model in
   without touching the guardrails; the batch system's knowledge is preserved in
-  24 design docs and a runbook — we built *with* her skepticism, not against it.
+  26 design docs and a runbook — we built *with* her skepticism, not against it.
 - **Rohan** — cost/benefit for the CFO: iceberg orders and per-desk limits are
   designed but deferred; the roadmap is sequenced by business value, and the
   demo you saw runs on a laptop.
@@ -274,10 +276,14 @@ knows; and DevSecOps that was day-one, not day-twenty. Thank you — questions?
    offer live marks, intraday risk, or instant settlement evidence — but the
    rebuild keeps its operational knowledge: the same settlement states, the
    same exception workflow, documented with her in mind.
-3. **"Your login is passwordless — how is that security?"** It isn't, and we
-   say so: dev-login is a training-only flag. The real model is server-side
-   sessions, deny-by-default RBAC re-checked per request, hash-chained audit —
-   and SSO via OIDC is the designed integration point, not an afterthought.
+3. **"A shared demo password — how is that security?"** The demo password is
+   training data, not the security model. The real path is password login —
+   PBKDF2-HMAC-SHA256 (120k iterations) with a per-email lockout after five
+   consecutive failures — and the passwordless dev-login exists only behind
+   the `DEV_AUTH` flag for tests and tooling; it would be off in any real
+   deployment. Around authentication: server-side sessions, deny-by-default
+   RBAC re-checked per request, hash-chained audit — and SSO via OIDC is the
+   designed integration point, not an afterthought.
 4. **"What happens when the GenAI is wrong?"** It can't trade. It's
    advisory-only with citations to your actual data, it declines questions it
    has no data for rather than fabricating, and any suggestion enters the
@@ -316,7 +322,7 @@ status FILLED → settlement instruction → SETTLED.
 **Checklist (T-30 min):**
 - [ ] `./dev.sh sqlite` running; API health 200; UI loads
 - [ ] Fresh dev DB seeded (`backend/stp.db` present; re-seed if stale)
-- [ ] Dev-login as `trader@demo.nomura` works; workspace shows tape + chart
+- [ ] Log in via the form with `trader@demo.nomura` / `demo1234`; workspace shows tape + chart
 - [ ] Sim clock advancing (top bar `SIM …` time moves)
 - [ ] Desk Book 1 has sufficient cash; no restricted flag on TSLA
 - [ ] One rehearsal pass end-to-end, then reset DB if fills accumulated

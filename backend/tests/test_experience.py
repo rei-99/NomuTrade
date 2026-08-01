@@ -9,6 +9,7 @@ team's modules are built in parallel — nothing here depends on their endpoints
 
 import asyncio
 import math
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -276,6 +277,118 @@ async def test_reports_holdings_csv_pdf_and_authz(client, app, tmp_path, monkeyp
     assert response.json()["error"]["code"] == "FORBIDDEN"
     response = await client.post("/api/v1/reports", json=payload, headers=trader)
     assert response.status_code == 403
+
+
+async def test_reports_holdings_bond_market_value(client, app, tmp_path, monkeypatch):
+    """Bond cash math (§A2): holdings reports value bonds at qty x price / 100
+    (quoted % of par, quantity = face), matching the portfolios module."""
+    monkeypatch.setattr(reports_module, "REPORTS_DIR", tmp_path)
+    headers = await login(client, CLIENT)
+
+    portfolio_id = await _portfolio_id(app, "Client Portfolio A")
+    instrument_id = await _instrument_id(app, "UST10Y")
+    async with app.state.sessionmaker() as session:
+        session.add(
+            Position(
+                portfolio_id=portfolio_id,
+                instrument_id=instrument_id,
+                quantity=Decimal("2000"),  # face value (2 x 1000 lots)
+                avg_cost=Decimal("99.50"),
+            )
+        )
+        await session.commit()
+    await _insert_tick(app, "UST10Y", "99.25")
+
+    response = await client.post(
+        "/api/v1/reports",
+        json={
+            "type": "HOLDINGS",
+            "portfolio_id": portfolio_id,
+            "period_start": "2020-01-01T00:00:00Z",
+            "period_end": "2030-01-01T00:00:00Z",
+            "format": "CSV",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+
+    response = await client.get(
+        response.json()["download_url"], headers=headers
+    )
+    assert response.status_code == 200
+    text = response.text
+    assert "UST10Y" in text
+    assert "99.25" in text  # last price, quoted % of par
+    # market value = 2000 x 99.25 / 100 = 1985.00; the 100x bug would
+    # render 198500.00.
+    assert "1985.00" in text
+    assert "198500.00" not in text
+    assert "1001985.00" in text  # total incl. 1M cash
+
+
+async def test_report_generation_failure_marks_failed(
+    client, app, tmp_path, monkeypatch
+):
+    """A render failure marks the row FAILED (never stuck REQUESTED), cleans
+    up the partial file, audits REPORT_FAILED, and download returns a clear
+    409 — not the misleading 404 'report file is missing'."""
+    monkeypatch.setattr(reports_module, "REPORTS_DIR", tmp_path)
+    headers = await login(client, CLIENT)
+    portfolio_id = await _portfolio_id(app, "Client Portfolio A")
+
+    def _boom(path, title, header_row, rows, summary):
+        raise RuntimeError("render exploded")
+
+    monkeypatch.setattr(reports_module, "_write_csv", _boom)
+
+    response = await client.post(
+        "/api/v1/reports",
+        json={
+            "type": "HOLDINGS",
+            "portfolio_id": portfolio_id,
+            "period_start": "2020-01-01T00:00:00Z",
+            "period_end": "2030-01-01T00:00:00Z",
+            "format": "CSV",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["status"] == "FAILED"
+
+    # The partially rendered file is removed.
+    assert not list(tmp_path.glob(f"{created['report_id']}.*"))
+
+    # Metadata shows the terminal FAILED state...
+    response = await client.get(
+        f"/api/v1/reports/{created['report_id']}", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "FAILED"
+
+    # ...the failure is audited...
+    async with app.state.sessionmaker() as session:
+        events = (
+            (
+                await session.execute(
+                    select(AuditEvent).where(
+                        AuditEvent.event_type == "REPORT_FAILED",
+                        AuditEvent.resource_id == created["report_id"],
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(events) == 1
+    assert "render exploded" in events[0].payload["error"]
+
+    # ...and download answers a clear 409, not the 404 file-missing branch.
+    response = await client.get(created["download_url"], headers=headers)
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "STATE_CONFLICT"
+    assert "failed" in error["message"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +783,65 @@ async def test_paper_account_lifecycle(client, app):
     response = await client.post("/api/v1/paper/accounts", json={}, headers=other)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+async def test_paper_reset_cancels_open_orders(client, app):
+    """Reset must cancel working orders: an OPEN/ACCEPTED order left alive
+    would otherwise keep working and fill against the reset account."""
+    trader = await login(client, TRADER)
+
+    response = await client.post(
+        "/api/v1/paper/accounts", json={"name": "Reset"}, headers=trader
+    )
+    assert response.status_code == 201, response.text
+    account = response.json()
+
+    # Resting LIMIT far from market (RUN_WORKERS=False: stays ACCEPTED —
+    # the engine never runs to park it OPEN; reset must cancel both).
+    await _insert_tick(app, "AAPL", "150")  # buying-power check needs a price
+    response = await client.post(
+        "/api/v1/orders",
+        headers={**trader, "Idempotency-Key": uuid.uuid4().hex},
+        json={
+            "portfolio_id": account["portfolio_id"],
+            "instrument": "AAPL",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "quantity": 1,
+            "limit_price": 1,
+        },
+    )
+    assert response.status_code == 201, response.text
+    order_id = response.json()["order_id"]
+    assert response.json()["status"] == "ACCEPTED"
+
+    response = await client.post(
+        f"/api/v1/paper/accounts/{account['portfolio_id']}/reset", headers=trader
+    )
+    assert response.status_code == 200, response.text
+
+    response = await client.get(f"/api/v1/orders/{order_id}", headers=trader)
+    assert response.status_code == 200
+    order = response.json()
+    assert order["status"] == "CANCELLED"
+    assert order["reject_reason"] == "PAPER_RESET"
+
+    # The cancel is audited, mirroring the orders module's cancel path.
+    async with app.state.sessionmaker() as session:
+        events = (
+            (
+                await session.execute(
+                    select(AuditEvent).where(
+                        AuditEvent.event_type == "ORDER_CANCELLED",
+                        AuditEvent.resource_id == order_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(events) == 1
+    assert events[0].payload["reason"] == "PAPER_RESET"
 
 
 # ---------------------------------------------------------------------------

@@ -15,11 +15,9 @@ const TONE_BY_STATUS: Record<string, string> = {
   APPROVED: "green",
   WITHDRAWN: "gray",
   EXPIRED: "gray",
-  // report statuses
-  GENERATING: "blue",
-  QUEUED: "amber",
-  READY: "green",
-  COMPLETED: "green",
+  // report statuses (backend contract: REQUESTED → DONE | FAILED)
+  REQUESTED: "blue",
+  DONE: "green",
   FAILED: "red",
   // grant / notification statuses
   ACTIVE: "green",
@@ -72,10 +70,8 @@ const STATUS_LABEL_KEY: Record<string, I18nKey> = {
   APPROVED: "status.approved",
   WITHDRAWN: "status.withdrawn",
   EXPIRED: "status.expired",
-  GENERATING: "status.generating",
-  QUEUED: "status.queued",
-  READY: "status.ready",
-  COMPLETED: "status.completed",
+  REQUESTED: "status.requested",
+  DONE: "status.done",
   FAILED: "status.failed",
   ACTIVE: "status.active",
   REVOKED: "status.revoked",

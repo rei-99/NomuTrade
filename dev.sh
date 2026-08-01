@@ -51,12 +51,12 @@ else
     echo "starting PostgreSQL (backend/.pgdata)..."
     "$PG_BIN/pg_ctl" -D backend/.pgdata -l backend/.pgdata.log -o "-p 5432" start >/dev/null
   fi
-  export DATABASE_URL="postgresql+asyncpg://rei99@localhost:5432/stp"
+  export DATABASE_URL="postgresql+asyncpg://$USER@localhost:5432/stp"
 fi
 
 echo "STP dev stack starting:"
 echo "  backend   http://localhost:8000  (API docs: http://localhost:8000/docs)"
-echo "  frontend  http://localhost:5173  (dev-login as trader@demo.nomura)"
+echo "  frontend  http://localhost:5173  (login: trader@demo.nomura / demo1234 — dev-login also available under DEV_AUTH for tooling)"
 echo "  database  $DATABASE_URL"
 echo "Ctrl+C to stop both."
 echo

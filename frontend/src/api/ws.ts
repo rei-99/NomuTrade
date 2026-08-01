@@ -1,4 +1,4 @@
-import { getToken } from "./client";
+import { getToken, setToken } from "./client";
 
 /**
  * Real-time push channel client (design 22): a single WebSocket to
@@ -9,8 +9,9 @@ import { getToken } from "./client";
  *
  * Lifecycle is driven from auth.tsx: `start()` once a token exists,
  * `stop()` on logout. On an unexpected close the client reconnects with
- * exponential backoff capped at ~15 s, re-validating the session per
- * reconnect (the server closes 4401 on a bad token).
+ * exponential backoff capped at ~15 s — except close code 4401 (bad or
+ * expired token), which is terminal: the client mirrors the REST 401 path
+ * (drop the token, bounce to /login) instead of reconnecting forever.
  */
 
 export type WsState = "idle" | "connecting" | "open" | "closed";
@@ -139,9 +140,21 @@ class WsClient {
         }
       }
     };
-    socket.onclose = () => {
+    socket.onclose = (ev) => {
       if (this.socket === socket) this.socket = null;
       if (!this.running) return;
+      if (ev.code === 4401) {
+        // Bad/expired token: the server will keep refusing it, so do not
+        // reconnect — mirror the REST 401 path in api/client.ts (drop the
+        // token, bounce to /login).
+        this.running = false;
+        this.setState("closed");
+        setToken(null);
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.assign("/login");
+        }
+        return;
+      }
       this.setState("closed");
       this.scheduleReconnect();
     };

@@ -7,7 +7,12 @@ import type { I18nKey } from "./i18n/en";
 
 export type Persona = "TRADER" | "ADMIN" | "RISK" | "OPERATION" | "NONE";
 
-/** Precedence: Trader > Admin > Risk > Operation; fallback NONE. */
+/**
+ * Precedence: Trader > Admin > Risk > Operation, then a PORTFOLIO_VIEW
+ * fallback into Risk; fallback NONE. Presentation-layer only: the Approver
+ * joins Admin (the approvals tab lives in Admin's list) and the Client lands
+ * in Risk as the closest of the four personas (view-heavy).
+ */
 export function detectPersona(perms: string[]): Persona {
   const has = (p: string) => perms.includes(p);
   if (has("ORDER_SUBMIT")) return "TRADER";
@@ -15,12 +20,16 @@ export function detectPersona(perms: string[]): Persona {
     has("ROLE_MANAGE") ||
     has("GRANT_MANAGE") ||
     has("PAM_CHECKOUT") ||
-    has("BREAKGLASS_ELIGIBLE")
+    has("BREAKGLASS_ELIGIBLE") ||
+    has("APPROVE_ACCESS")
   ) {
     return "ADMIN";
   }
   if (has("AUDIT_VIEW")) return "RISK";
   if (has("INTEGRATION_MONITOR") || has("STP_EXCEPTION_HANDLE")) return "OPERATION";
+  // Checked last so custom ops-flavored roles still win above. (Trader matches
+  // earlier via ORDER_SUBMIT; Ops holds PORTFOLIO_VIEW_ALL, not PORTFOLIO_VIEW.)
+  if (has("PORTFOLIO_VIEW")) return "RISK";
   return "NONE";
 }
 
@@ -52,7 +61,7 @@ export const TABS: Record<TabId, TabDef> = {
   orders: { id: "orders", to: "/orders", labelKey: "nav.orders" },
   trades: { id: "trades", to: "/trades", labelKey: "nav.trades", perms: ["TRADE_VIEW"] },
   alerts: { id: "alerts", to: "/alerts", labelKey: "nav.alerts" },
-  reports: { id: "reports", to: "/reports", labelKey: "nav.reports" },
+  reports: { id: "reports", to: "/reports", labelKey: "nav.reports", perms: ["REPORT_VIEW"] },
   paper: { id: "paper", to: "/paper", labelKey: "nav.paper", perms: ["PAPER_TRADE"] },
   assistant: { id: "assistant", to: "/assistant", labelKey: "nav.assistant", perms: ["ASSISTANT_USE"] },
   access: { id: "access", to: "/access", labelKey: "nav.access" },
@@ -101,16 +110,24 @@ export const PERSONA_TABS: Record<Persona, TabId[]> = {
     "notifications",
   ],
   ADMIN: ["admin", "governance", "audit", "approvals", "access", "notifications"],
-  RISK: ["portfolios", "trades", "audit", "governance", "reports", "access", "notifications"],
+  // "assistant" sits after "reports": perm-gated by ASSISTANT_USE, so risk@
+  // (no ASSISTANT_USE) never sees it while client@ does.
+  RISK: ["portfolios", "trades", "audit", "governance", "reports", "assistant", "access", "notifications"],
   OPERATION: ["trades", "governance", "access", "notifications"],
   NONE: ["access", "notifications"],
 };
 
-/** Post-login landing route per persona (design 26 §R1). */
-export const PERSONA_HOME: Record<Persona, string> = {
-  TRADER: "/",
-  ADMIN: "/admin",
-  RISK: "/governance",
-  OPERATION: "/governance",
-  NONE: "/access",
-};
+/**
+ * Post-login landing route (design 26 §R1): the `to` of the FIRST tab in the
+ * persona's list that passes the same per-permission filter the nav applies
+ * (Layout.tsx), so users land on a page they can actually open — Approver
+ * (Admin persona) → /approvals, Auditor (Risk) → /audit, Client (Risk) →
+ * /portfolios. Presentation-layer only; the per-permission gates stay the
+ * safety net. Falls back to /access.
+ */
+export function personaHome(persona: Persona, perms: string[]): string {
+  const first = PERSONA_TABS[persona]
+    .map((id) => TABS[id])
+    .find((t) => !t.perms || t.perms.some((p) => perms.includes(p)));
+  return first?.to ?? "/access";
+}
