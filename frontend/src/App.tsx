@@ -1,6 +1,10 @@
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "./auth";
+import { useT } from "./i18n";
+import { PERSONA_TABS } from "./personas";
+import type { TabId } from "./personas";
 import { Layout } from "./components/Layout";
 import { Access } from "./pages/Access";
 import { Admin } from "./pages/Admin";
@@ -24,29 +28,60 @@ function FullScreen({ children }: { children: ReactElement }) {
 }
 
 function Loading() {
+  const { t } = useT();
   return (
     <FullScreen>
-      <div className="muted">Loading…</div>
+      <div className="muted">{t("common.loading")}</div>
     </FullScreen>
   );
 }
 
 function Forbidden() {
+  const { t } = useT();
   return (
     <FullScreen>
       <div className="forbidden">
-        <h2>403 — Forbidden</h2>
-        <p className="muted">Your current roles do not grant access to this page.</p>
+        <h2>{t("forbidden.title")}</h2>
+        <p className="muted">{t("forbidden.body")}</p>
       </div>
     </FullScreen>
   );
 }
 
-/** Requires authentication; optionally ANY of the given permissions. */
-function Guard({ perms, children }: { perms?: string[]; children: ReactElement }) {
-  const { me, loading, hasPerm } = useAuth();
+/** Friendly page for deep links to tabs outside the user's persona (§U2). */
+function NotAvailable() {
+  const { t } = useT();
+  return (
+    <FullScreen>
+      <div className="forbidden">
+        <h2>{t("notavail.title")}</h2>
+        <p className="muted">{t("notavail.body")}</p>
+        <p>
+          <Link to="/">{t("notavail.back")}</Link>
+        </p>
+      </div>
+    </FullScreen>
+  );
+}
+
+/**
+ * Requires authentication; optionally ANY of the given permissions, and —
+ * when `tab` is set — membership of that tab in the user's persona set
+ * (design 25 §U2; persona hides, permissions still gate underneath).
+ */
+function Guard({
+  perms,
+  tab,
+  children,
+}: {
+  perms?: string[];
+  tab?: TabId;
+  children: ReactElement;
+}) {
+  const { me, loading, hasPerm, persona } = useAuth();
   if (loading) return <Loading />;
   if (!me) return <Navigate to="/login" replace />;
+  if (tab && !PERSONA_TABS[persona].includes(tab)) return <NotAvailable />;
   if (perms && !hasPerm(...perms)) return <Forbidden />;
   return children;
 }
@@ -59,6 +94,7 @@ function ChartsRedirect() {
 
 export default function App() {
   const { me, loading } = useAuth();
+  const { t } = useT();
 
   return (
     <Routes>
@@ -73,7 +109,14 @@ export default function App() {
           </Guard>
         }
       >
-        <Route index element={<Trading />} />
+        <Route
+          index
+          element={
+            <Guard tab="trading">
+              <Trading />
+            </Guard>
+          }
+        />
         <Route
           path="portfolios"
           element={
@@ -85,22 +128,50 @@ export default function App() {
         <Route path="portfolios/:id" element={<PortfolioDetail />} />
         <Route path="charts" element={<ChartsRedirect />} />
         <Route path="charts/:symbol" element={<ChartsRedirect />} />
-        <Route path="orders" element={<Orders />} />
+        <Route
+          path="orders"
+          element={
+            <Guard tab="orders">
+              <Orders />
+            </Guard>
+          }
+        />
         <Route
           path="trades"
           element={
-            <Guard perms={["TRADE_VIEW"]}>
+            <Guard perms={["TRADE_VIEW"]} tab="trades">
               <Trades />
             </Guard>
           }
         />
-        <Route path="alerts" element={<Alerts />} />
-        <Route path="notifications" element={<Notifications />} />
-        <Route path="reports" element={<Reports />} />
+        <Route
+          path="alerts"
+          element={
+            <Guard tab="alerts">
+              <Alerts />
+            </Guard>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <Guard tab="notifications">
+              <Notifications />
+            </Guard>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <Guard tab="reports">
+              <Reports />
+            </Guard>
+          }
+        />
         <Route
           path="paper"
           element={
-            <Guard perms={["PAPER_TRADE"]}>
+            <Guard perms={["PAPER_TRADE"]} tab="paper">
               <Paper />
             </Guard>
           }
@@ -108,16 +179,23 @@ export default function App() {
         <Route
           path="assistant"
           element={
-            <Guard perms={["ASSISTANT_USE"]}>
+            <Guard perms={["ASSISTANT_USE"]} tab="assistant">
               <Assistant />
             </Guard>
           }
         />
-        <Route path="access" element={<Access />} />
+        <Route
+          path="access"
+          element={
+            <Guard tab="access">
+              <Access />
+            </Guard>
+          }
+        />
         <Route
           path="approvals"
           element={
-            <Guard perms={["APPROVE_ACCESS"]}>
+            <Guard perms={["APPROVE_ACCESS"]} tab="approvals">
               <Approvals />
             </Guard>
           }
@@ -135,6 +213,7 @@ export default function App() {
                 "BREAKGLASS_ELIGIBLE",
                 "BREAKGLASS_REVIEW",
               ]}
+              tab="admin"
             >
               <Admin />
             </Guard>
@@ -143,7 +222,7 @@ export default function App() {
         <Route
           path="audit"
           element={
-            <Guard perms={["AUDIT_VIEW"]}>
+            <Guard perms={["AUDIT_VIEW"]} tab="audit">
               <Audit />
             </Guard>
           }
@@ -151,7 +230,7 @@ export default function App() {
         <Route
           path="governance"
           element={
-            <Guard perms={["GOVERNANCE_VIEW", "INTEGRATION_MONITOR"]}>
+            <Guard perms={["GOVERNANCE_VIEW", "INTEGRATION_MONITOR"]} tab="governance">
               <Governance />
             </Guard>
           }
@@ -161,8 +240,8 @@ export default function App() {
           element={
             <FullScreen>
               <div className="forbidden">
-                <h2>404</h2>
-                <p className="muted">Page not found.</p>
+                <h2>{t("notfound.title")}</h2>
+                <p className="muted">{t("notfound.body")}</p>
               </div>
             </FullScreen>
           }

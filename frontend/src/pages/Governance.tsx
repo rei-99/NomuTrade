@@ -7,6 +7,7 @@ import { StatCard } from "../components/StatCard";
 import { fmtNum, fmtTs } from "../format";
 import { useAuth } from "../auth";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 function exceptionText(e: StpException): string {
   const known = [e.exception_id, e.order_id, e.reason, e.status].filter(
@@ -17,6 +18,7 @@ function exceptionText(e: StpException): string {
 
 export function Governance() {
   const { hasPerm } = useAuth();
+  const { t } = useT();
   const [summary, setSummary] = useState<GovernanceSummary | null>(null);
   const [health, setHealth] = useState<AdminHealth | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -58,33 +60,33 @@ export function Governance() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Governance &amp; Health</h2>
+        <h2>{t("gov.title")}</h2>
         <button className="btn btn-ghost btn-sm" disabled={downloading} onClick={() => void accessReview()}>
-          {downloading ? "Downloading…" : "Access review CSV"}
+          {downloading ? t("reports.downloading") : t("gov.accessReview")}
         </button>
       </div>
 
       {summary && (
         <>
           <div className="stat-row">
-            <StatCard label="Active grants" value={fmtNum(summary.active_grants)} />
+            <StatCard label={t("gov.activeGrants")} value={fmtNum(summary.active_grants)} />
             <StatCard
-              label="Pending approvals"
+              label={t("gov.pendingApprovals")}
               value={fmtNum(summary.pending_approvals)}
               sub={
                 summary.oldest_age_hours !== null && summary.oldest_age_hours !== undefined
-                  ? `oldest ${fmtNum(summary.oldest_age_hours)} h`
+                  ? t("gov.oldestHours", { n: fmtNum(summary.oldest_age_hours) })
                   : undefined
               }
             />
-            <StatCard label="Grants expiring 24 h" value={fmtNum(summary.grants_expiring_24h)} />
+            <StatCard label={t("gov.grantsExpiring")} value={fmtNum(summary.grants_expiring_24h)} />
             <StatCard
-              label="Break-glass pending review"
+              label={t("gov.bgPending")}
               value={fmtNum(summary.break_glass_pending_review)}
               tone={summary.break_glass_pending_review > 0 ? "neg" : ""}
             />
             <StatCard
-              label="Authz denials 24 h"
+              label={t("gov.denials")}
               value={fmtNum(summary.authorization_denials_24h)}
               tone={summary.authorization_denials_24h > 0 ? "neg" : ""}
             />
@@ -93,18 +95,18 @@ export function Governance() {
           {(summary.recent_break_glass ?? []).length > 0 && (
             <section className="panel">
               <div className="panel-header">
-                <h3>Recent break-glass</h3>
+                <h3>{t("gov.recentBg")}</h3>
               </div>
               <DataTable
                 rows={summary.recent_break_glass}
                 keyFn={(r) => r.bg_id}
                 columns={[
-                  { header: "User", render: (r) => r.user.email },
-                  { header: "Role", render: (r) => r.emergency_role },
-                  { header: "Incident", render: (r) => r.incident_ref },
-                  { header: "Activated", render: (r) => <span className="num">{fmtTs(r.activated_at)}</span> },
-                  { header: "Review", render: (r) => <Badge text={r.review_status} /> },
-                  { header: "Verdict", render: (r) => (r.verdict ? <Badge text={r.verdict} /> : "—") },
+                  { header: t("gov.user"), render: (r) => r.user.email },
+                  { header: t("gov.role"), render: (r) => r.emergency_role },
+                  { header: t("gov.incident"), render: (r) => r.incident_ref },
+                  { header: t("gov.activated"), render: (r) => <span className="num">{fmtTs(r.activated_at)}</span> },
+                  { header: t("gov.review"), render: (r) => <Badge text={r.review_status} /> },
+                  { header: t("gov.verdict"), render: (r) => (r.verdict ? <Badge text={r.verdict} /> : "—") },
                 ]}
               />
             </section>
@@ -116,21 +118,21 @@ export function Governance() {
         <>
           <section className="panel">
             <div className="panel-header">
-              <h3>Integration health</h3>
+              <h3>{t("gov.health")}</h3>
               <span className="muted num">
-                outbox unpublished: {fmtNum(health.outbox_unpublished)}
+                {t("gov.outbox", { n: fmtNum(health.outbox_unpublished) })}
               </span>
             </div>
             <div className="health-grid">
               {health.integrations.length === 0 && (
-                <div className="panel-empty muted">No integrations reported.</div>
+                <div className="panel-empty muted">{t("gov.noIntegrations")}</div>
               )}
               {health.integrations.map((i) => (
                 <div key={i.name} className={`health-tile health-${i.status.toLowerCase()}`}>
                   <div className="health-name">{i.name}</div>
                   <Badge text={i.status} />
                   <div className="health-detail muted">
-                    last success <span className="num">{fmtTs(i.last_success)}</span>
+                    {t("gov.lastSuccess")} <span className="num">{fmtTs(i.last_success)}</span>
                   </div>
                   {i.detail && <div className="health-detail muted">{i.detail}</div>}
                 </div>
@@ -140,10 +142,10 @@ export function Governance() {
 
           <section className="panel">
             <div className="panel-header">
-              <h3>STP exceptions</h3>
+              <h3>{t("gov.exceptions")}</h3>
             </div>
             {health.stp_exceptions.length === 0 ? (
-              <div className="panel-empty muted">No STP exceptions — pipeline is clean.</div>
+              <div className="panel-empty muted">{t("gov.noExceptions")}</div>
             ) : (
               <ul className="exception-list">
                 {health.stp_exceptions.map((e, idx) => (
@@ -158,7 +160,7 @@ export function Governance() {
       )}
 
       {!summary && !health && (
-        <div className="panel panel-empty muted">Loading governance data…</div>
+        <div className="panel panel-empty muted">{t("gov.loading")}</div>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 // ASSUMPTION: terminal statuses are not enumerated in the contract; withdraw
 // is offered for everything not in this set.
@@ -20,6 +21,7 @@ function stepSummary(r: AccessRequest): string {
 
 export function Access() {
   const { toast } = useToast();
+  const { t } = useT();
   const [roles, setRoles] = useState<Role[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
 
@@ -50,15 +52,15 @@ export function Access() {
   const submit = async () => {
     const hours = Number(duration);
     if (!roleId) {
-      toast("Select a role", "error");
+      toast(t("access.selectRole"), "error");
       return;
     }
     if (!justification.trim()) {
-      toast("Justification is required", "error");
+      toast(t("access.justRequired"), "error");
       return;
     }
     if (Number.isNaN(hours) || hours <= 0) {
-      toast("Duration must be a positive number of hours", "error");
+      toast(t("access.durationInvalid"), "error");
       return;
     }
     setSubmitting(true);
@@ -73,7 +75,11 @@ export function Access() {
         },
       });
       toast(
-        `Request ${created.request_id} submitted (status ${created.status}, level ${created.current_level})`,
+        t("access.submitted", {
+          id: created.request_id,
+          status: created.status,
+          level: created.current_level,
+        }),
         "success",
       );
       setJustification("");
@@ -88,7 +94,7 @@ export function Access() {
   const withdraw = async (r: AccessRequest) => {
     try {
       await api(`/access-requests/${r.request_id}/withdraw`, { method: "POST" });
-      toast(`Request ${r.request_id} withdrawn`, "success");
+      toast(t("access.withdrawn", { id: r.request_id }), "success");
       void load();
     } catch {
       // toast raised by client
@@ -98,18 +104,18 @@ export function Access() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Access Requests</h2>
+        <h2>{t("access.title")}</h2>
       </div>
 
       <section className="panel">
         <div className="panel-header">
-          <h3>New request</h3>
+          <h3>{t("access.new")}</h3>
         </div>
         <div className="form-grid form-grid-wide">
           <label className="form-field">
-            <span>Role</span>
+            <span>{t("access.role")}</span>
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-              {roles.length === 0 && <option value="">No roles available</option>}
+              {roles.length === 0 && <option value="">{t("access.noRoles")}</option>}
               {roles.map((r) => (
                 <option key={r.role_id} value={r.role_id}>
                   {r.name}
@@ -118,7 +124,7 @@ export function Access() {
             </select>
           </label>
           <label className="form-field">
-            <span>Duration (hours)</span>
+            <span>{t("access.duration")}</span>
             <input
               type="number"
               min="1"
@@ -127,7 +133,7 @@ export function Access() {
             />
           </label>
           <label className="form-field">
-            <span>On behalf of (email, optional)</span>
+            <span>{t("access.onBehalf")}</span>
             <input
               type="email"
               value={onBehalfOf}
@@ -136,12 +142,12 @@ export function Access() {
             />
           </label>
           <label className="form-field form-field-full">
-            <span>Justification</span>
+            <span>{t("access.justification")}</span>
             <textarea
               rows={3}
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
-              placeholder="Why do you need this role, and for what task?"
+              placeholder={t("access.justificationPlaceholder")}
             />
           </label>
         </div>
@@ -151,37 +157,37 @@ export function Access() {
             disabled={submitting || roles.length === 0}
             onClick={() => void submit()}
           >
-            {submitting ? "Submitting…" : "Submit request"}
+            {submitting ? t("access.submitting") : t("access.submit")}
           </button>
         </div>
       </section>
 
       <section className="panel">
         <div className="panel-header">
-          <h3>My requests</h3>
+          <h3>{t("access.my")}</h3>
         </div>
         <DataTable<AccessRequest>
           rows={requests}
           keyFn={(r) => r.request_id}
-          empty="No access requests yet"
+          empty={t("access.empty")}
           columns={[
-            { header: "Created", render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
-            { header: "Role", render: (r) => r.role.name },
+            { header: t("common.created"), render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
+            { header: t("access.role"), render: (r) => r.role.name },
             {
-              header: "Duration",
+              header: t("access.duration"),
               className: "num",
-              render: (r) => `${fmtNum(r.requested_duration_hours)} h`,
+              render: (r) => t("access.hours", { n: fmtNum(r.requested_duration_hours) }),
             },
-            { header: "On behalf of", render: (r) => r.on_behalf_of ?? "—" },
-            { header: "Status", render: (r) => <Badge text={r.status} /> },
-            { header: "Approval steps", render: (r) => <span className="muted">{stepSummary(r)}</span> },
-            { header: "Decided", render: (r) => <span className="num">{fmtTs(r.decided_at)}</span> },
+            { header: t("access.onBehalf"), render: (r) => r.on_behalf_of ?? "—" },
+            { header: t("common.status"), render: (r) => <Badge text={r.status} /> },
+            { header: t("access.steps"), render: (r) => <span className="muted">{stepSummary(r)}</span> },
+            { header: t("access.decided"), render: (r) => <span className="num">{fmtTs(r.decided_at)}</span> },
             {
               header: "",
               render: (r) =>
                 !TERMINAL.includes(r.status.toUpperCase()) ? (
                   <button className="btn btn-danger btn-sm" onClick={() => void withdraw(r)}>
-                    Withdraw
+                    {t("access.withdraw")}
                   </button>
                 ) : null,
             },

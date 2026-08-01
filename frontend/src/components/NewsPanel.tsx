@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 import { Badge } from "./Badge";
 import { Modal } from "./Modal";
 
@@ -74,26 +75,29 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
 
   const mean = summary?.sentiment_mean_7d ?? null;
 
+  const { t } = useT();
+
   return (
     <section className="panel news-panel">
       <div className="panel-header">
-        <h3>News</h3>
+        <h3>{t("news.title")}</h3>
         <span className="news-header-right">
-          <span className="chip chip-static" title={summary ? `model: ${summary.model}` : undefined}>
-            AI summary · beta
+          <span className="chip chip-static" title={summary ? t("news.modelTitle", { m: summary.model }) : undefined}>
+            {t("news.aiChip")}
           </span>
           <button
             className="btn btn-ghost btn-sm"
             disabled={!symbol || summaryState === "loading"}
-            onClick={() => setRefreshTick((t) => t + 1)}
+            onClick={() => setRefreshTick((tk) => tk + 1)}
           >
-            {summaryState === "loading" ? "…" : "Refresh"}
+            {summaryState === "loading" ? "…" : t("common.refresh")}
           </button>
         </span>
       </div>
 
+      <div className="panel-scroll">
       {summaryState === "forbidden" ? (
-        <div className="panel-empty muted">News summary requires the ASSISTANT_USE permission.</div>
+        <div className="panel-empty muted">{t("news.forbidden")}</div>
       ) : !summary ? (
         summaryState === "loading" ? (
           <div className="skeleton-stack">
@@ -102,19 +106,21 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
             <div className="skeleton" style={{ height: 14 }} />
           </div>
         ) : (
-          <div className="panel-empty muted">No summary available.</div>
+          <div className="panel-empty muted">{t("news.noSummary")}</div>
         )
       ) : (
         <div className="news-summary">
           <div className="news-summary-top">
             {mean === null ? (
-              <span className="muted">No sentiment data</span>
+              <span className="muted">{t("news.noSentiment")}</span>
             ) : (
               <>
                 <Badge text={meanToLabel(mean)} />
                 <span className="num muted">
-                  mean {mean >= 0 ? "+" : ""}
-                  {fmtNum(mean, 2)} · {fmtNum(summary.article_count_7d)} articles (7d)
+                  {t("news.meanLine", {
+                    m: `${mean >= 0 ? "+" : ""}${fmtNum(mean, 2)}`,
+                    n: fmtNum(summary.article_count_7d),
+                  })}
                 </span>
               </>
             )}
@@ -128,9 +134,9 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
                 />
               </div>
               <div className="senti-scale num">
-                <span>−1 bearish</span>
+                <span>{t("news.bearish")}</span>
                 <span>0</span>
-                <span>+1 bullish</span>
+                <span>{t("news.bullish")}</span>
               </div>
             </>
           )}
@@ -155,21 +161,21 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
               ))}
             </div>
           )}
-          <div className="muted news-asof num">as of {fmtTs(summary.as_of)}</div>
+          <div className="muted news-asof num">{t("news.asOf", { ts: fmtTs(summary.as_of) })}</div>
         </div>
       )}
 
       <div className="news-divider" />
 
       {headlines.length === 0 ? (
-        <div className="panel-empty muted">No headlines in this period.</div>
+        <div className="panel-empty muted">{t("news.noHeadlines")}</div>
       ) : (
         <div className="news-list news-list-compact">
           {headlines.map((n) => (
             <div
               key={n.news_id}
               className="news-item row-clickable"
-              title="Open headline detail"
+              title={t("news.openDetail")}
               onClick={() => setSelected(n)}
             >
               <span className="news-ts muted num">{fmtTs(n.ts)}</span>
@@ -188,6 +194,7 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
           ))}
         </div>
       )}
+      </div>
 
       {selected && (
         <Modal title={selected.title} onClose={() => setSelected(null)}>
@@ -202,7 +209,7 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
             </div>
           )}
           {selected.sentiments.length === 0 ? (
-            <div className="muted">No per-ticker sentiment annotations.</div>
+            <div className="muted">{t("news.noAnnotations")}</div>
           ) : (
             <div className="news-detail-sentiments">
               {selected.sentiments.map((s) => (
@@ -210,10 +217,14 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
                   <span className="mono">{s.ticker}</span>
                   {s.label && <Badge text={s.label} />}
                   <span className="num muted">
-                    sentiment {s.sentiment_score !== null ? fmtNum(s.sentiment_score, 2) : "—"}
+                    {t("news.sentiment", {
+                      v: s.sentiment_score !== null ? fmtNum(s.sentiment_score, 2) : "—",
+                    })}
                   </span>
                   <span className="num muted">
-                    relevance {s.relevance_score !== null ? fmtNum(s.relevance_score, 2) : "—"}
+                    {t("news.relevance", {
+                      v: s.relevance_score !== null ? fmtNum(s.relevance_score, 2) : "—",
+                    })}
                   </span>
                 </div>
               ))}

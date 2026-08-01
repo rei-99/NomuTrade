@@ -47,3 +47,4 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 | [20 — Trading Workspace UI](20-trading-workspace-ui.md) | — | Research synthesis (TradingView/IBKR/Kite) + design language for the terminal UI |
 | [21 — Product-owner feedback](21-product-owner-feedback.md) | — | Interview analysis: two-click confirm, bonds, STOP/STOP_LIMIT, order restrictions, day-change KPIs, news provider seam |
 | [24 — Advanced Orders](24-advanced-orders.md) | — (extends 02, resolves more of TBD-18) | Time-in-force (DAY/GTC/IOC), TRAILING_STOP with persisted water-mark, bond coupon/maturity fields + YTM/duration analytics |
+| [25 — UX round 1](25-ux-round-1.md) | — | EN/JA i18n, 4 personas, bond/equity split, workspace layout v2, price-follow |

@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { AppNotification, ListResponse } from "../api/types";
 import { usePoll, useWsMessage } from "../hooks";
 import { fmtTs } from "../format";
+import { useT } from "../i18n";
 import { Badge } from "./Badge";
 
 // Structural fallback; push `notification` messages (design 22) trigger an
@@ -11,6 +12,7 @@ import { Badge } from "./Badge";
 const POLL_MS = 30_000;
 
 export function NotificationBell() {
+  const { t } = useT();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -59,15 +61,15 @@ export function NotificationBell() {
 
   return (
     <div className="bell" ref={rootRef}>
-      <button className="btn btn-ghost bell-btn" onClick={() => setOpen((o) => !o)} aria-label="Notifications">
+      <button className="btn btn-ghost bell-btn" onClick={() => setOpen((o) => !o)} aria-label={t("notif.title")}>
         🔔
         {unread > 0 && <span className="bell-count num">{unread}</span>}
       </button>
       {open && (
         <div className="bell-dropdown panel">
-          <div className="bell-header">Notifications</div>
+          <div className="bell-header">{t("notif.title")}</div>
           {items.length === 0 ? (
-            <div className="bell-empty muted">No notifications</div>
+            <div className="bell-empty muted">{t("notif.empty")}</div>
           ) : (
             items.slice(0, 20).map((n) => (
               <button

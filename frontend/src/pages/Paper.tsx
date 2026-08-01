@@ -8,9 +8,11 @@ import { StatCard } from "../components/StatCard";
 import { useToast } from "../components/Toast";
 import { fmtJpy, fmtNum, fmtPct, fmtSignedJpy, pnlClass } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 export function Paper() {
   const { toast } = useToast();
+  const { t } = useT();
   const [paperPortfolios, setPaperPortfolios] = useState<Portfolio[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [account, setAccount] = useState<PaperAccount | null>(null);
@@ -60,7 +62,7 @@ export function Paper() {
         method: "POST",
         body: initialCash === "" || Number.isNaN(cash) ? {} : { initial_cash: cash },
       });
-      toast(`Paper account ${created.name} created`, "success");
+      toast(t("paper.created", { name: created.name }), "success");
       setSelectedId(created.portfolio_id);
       await loadList();
     } catch {
@@ -72,13 +74,13 @@ export function Paper() {
 
   const reset = async () => {
     if (!account) return;
-    if (!window.confirm(`Reset paper account ${account.name}? All positions and history are cleared.`)) {
+    if (!window.confirm(t("paper.resetConfirm", { name: account.name }))) {
       return;
     }
     setBusy(true);
     try {
       await api(`/paper/accounts/${account.portfolio_id}/reset`, { method: "POST" });
-      toast("Paper account reset", "success");
+      toast(t("paper.resetDone"), "success");
       await loadAccount();
     } catch {
       // toast raised by client
@@ -113,7 +115,7 @@ export function Paper() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Paper Trading</h2>
+        <h2>{t("paper.title")}</h2>
         {paperPortfolios.length > 1 && (
           <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
             {paperPortfolios.map((p) => (
@@ -128,7 +130,7 @@ export function Paper() {
       <section className="panel">
         <div className="filter-bar">
           <label>
-            Initial cash (JPY)
+            {t("paper.initialCash")}
             <input
               type="number"
               min="0"
@@ -137,62 +139,61 @@ export function Paper() {
             />
           </label>
           <button className="btn btn-buy active btn-sm filter-submit" disabled={busy} onClick={() => void create()}>
-            Create paper account
+            {t("paper.create")}
           </button>
           {account && (
             <button className="btn btn-danger btn-sm filter-submit" disabled={busy} onClick={() => void reset()}>
-              Reset account
+              {t("paper.reset")}
             </button>
           )}
         </div>
         <p className="muted panel-note">
-          Paper accounts trade through the same order pipeline — use the order panel on the
-          Trading workspace and pick the PAPER portfolio there.
+          {t("paper.note")}
         </p>
       </section>
 
       {!account ? (
         <section className="panel panel-empty muted">
           {paperPortfolios.length === 0
-            ? "No paper account yet — create one above."
-            : "Loading account…"}
+            ? t("paper.none")
+            : t("paper.loadingAccount")}
         </section>
       ) : (
         <>
           <div className="stat-row">
-            <StatCard label="Cash balance" value={fmtJpy(account.cash_balance)} />
-            <StatCard label="Initial balance" value={fmtJpy(account.initial_balance)} />
+            <StatCard label={t("paper.cashBalance")} value={fmtJpy(account.cash_balance)} />
+            <StatCard label={t("paper.initialBalance")} value={fmtJpy(account.initial_balance)} />
             <StatCard
-              label="Cash P&L vs start"
+              label={t("paper.pnlVsStart")}
               value={fmtSignedJpy(pnl)}
               tone={pnlClass(pnl)}
             />
-            <StatCard label="Trades" value={stats ? fmtNum(stats.trades) : "—"} />
+            <StatCard label={t("paper.trades")} value={stats ? fmtNum(stats.trades) : "—"} />
             <StatCard
-              label="Win rate"
+              label={t("paper.winRate")}
               value={stats ? fmtPct(stats.win_rate) : "—"}
             />
             <StatCard
-              label="Avg P&L / trade"
+              label={t("paper.avgPnl")}
               value={stats ? fmtSignedJpy(stats.avg_pnl_per_trade) : "—"}
               tone={stats ? pnlClass(stats.avg_pnl_per_trade) : ""}
             />
             <StatCard
-              label="Max drawdown"
+              label={t("paper.maxDrawdown")}
               value={stats ? fmtSignedJpy(stats.max_drawdown) : "—"}
               tone={stats ? pnlClass(stats.max_drawdown) : ""}
             />
           </div>
           {stats === null && (
-            <p className="muted">Statistics appear after the first closed trades.</p>
+            <p className="muted">{t("paper.statsNote")}</p>
           )}
 
           <section className="panel">
             <div className="panel-header">
-              <h3>Equity curve</h3>
+              <h3>{t("paper.equityCurve")}</h3>
             </div>
             {(account.equity_curve ?? []).length === 0 ? (
-              <div className="panel-empty muted">No equity history yet.</div>
+              <div className="panel-empty muted">{t("paper.noEquity")}</div>
             ) : (
               <EChart option={equityOption} height={300} />
             )}

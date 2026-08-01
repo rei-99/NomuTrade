@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 
 export interface Column<T> {
   header: ReactNode;
@@ -33,7 +34,9 @@ function compareKeys(a: string | number, b: string | number): number {
   return String(a).localeCompare(String(b), undefined, { numeric: true });
 }
 
-export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = true, onRowClick, footer }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, keyFn, empty, dense = true, onRowClick, footer }: DataTableProps<T>) {
+  const { t } = useT();
+  const emptyText = empty ?? t("common.noData");
   const [sort, setSort] = useState<{ col: number; dir: SortDir } | null>(null);
 
   const cycleSort = (i: number) => {
@@ -82,7 +85,7 @@ export function DataTable<T>({ columns, rows, keyFn, empty = "No data", dense = 
           {displayRows.length === 0 ? (
             <tr>
               <td className="table-empty" colSpan={columns.length}>
-                {empty}
+                {emptyText}
               </td>
             </tr>
           ) : (

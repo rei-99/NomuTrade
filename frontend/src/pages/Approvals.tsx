@@ -7,11 +7,13 @@ import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 type Decision = "APPROVED" | "REJECTED";
 
 export function Approvals() {
   const { toast } = useToast();
+  const { t } = useT();
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [deciding, setDeciding] = useState<{ item: ApprovalItem; decision: Decision } | null>(null);
   const [comment, setComment] = useState("");
@@ -38,7 +40,7 @@ export function Approvals() {
   const submitDecision = async () => {
     if (!deciding) return;
     if (!comment.trim()) {
-      toast("A comment is mandatory for approval decisions", "error");
+      toast(t("approvals.commentRequired"), "error");
       return;
     }
     setSubmitting(true);
@@ -47,7 +49,16 @@ export function Approvals() {
         method: "POST",
         body: { decision: deciding.decision, comment: comment.trim() },
       });
-      toast(`Step ${deciding.decision.toLowerCase()}`, "success");
+      toast(
+        t("approvals.done", {
+          decision: t(
+            deciding.decision === "APPROVED"
+              ? "approvals.decisionApproved"
+              : "approvals.decisionRejected",
+          ),
+        }),
+        "success",
+      );
       setDeciding(null);
       void load();
     } catch {
@@ -60,21 +71,21 @@ export function Approvals() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Approval Inbox</h2>
+        <h2>{t("approvals.title")}</h2>
       </div>
 
       <section className="panel">
         <DataTable<ApprovalItem>
           rows={items}
           keyFn={(i) => i.step_id}
-          empty="No pending approvals"
+          empty={t("approvals.empty")}
           columns={[
             {
-              header: "Requested",
+              header: t("approvals.requested"),
               render: (i) => <span className="num">{fmtTs(i.request.created_at)}</span>,
             },
             {
-              header: "Requester",
+              header: t("approvals.requester"),
               render: (i) => (
                 <span>
                   {i.request.requester.display_name}
@@ -82,17 +93,17 @@ export function Approvals() {
                 </span>
               ),
             },
-            { header: "On behalf of", render: (i) => i.request.on_behalf_of ?? "—" },
-            { header: "Role", render: (i) => i.request.role.name },
+            { header: t("access.onBehalf"), render: (i) => i.request.on_behalf_of ?? "—" },
+            { header: t("approvals.role"), render: (i) => i.request.role.name },
             {
-              header: "Duration",
+              header: t("approvals.duration"),
               className: "num",
-              render: (i) => `${fmtNum(i.request.requested_duration_hours)} h`,
+              render: (i) => t("access.hours", { n: fmtNum(i.request.requested_duration_hours) }),
             },
-            { header: "Level", className: "num", render: (i) => `L${i.level}` },
-            { header: "Status", render: (i) => <Badge text={i.request.status} /> },
+            { header: t("approvals.level"), className: "num", render: (i) => `L${i.level}` },
+            { header: t("common.status"), render: (i) => <Badge text={i.request.status} /> },
             {
-              header: "Justification",
+              header: t("approvals.justification"),
               render: (i) => <span className="cell-clip" title={i.request.justification}>{i.request.justification}</span>,
             },
             {
@@ -100,10 +111,10 @@ export function Approvals() {
               render: (i) => (
                 <span className="row-actions">
                   <button className="btn btn-buy btn-sm active" onClick={() => openDecision(i, "APPROVED")}>
-                    Approve
+                    {t("approvals.approve")}
                   </button>
                   <button className="btn btn-sell btn-sm active" onClick={() => openDecision(i, "REJECTED")}>
-                    Reject
+                    {t("approvals.reject")}
                   </button>
                 </span>
               ),
@@ -114,28 +125,40 @@ export function Approvals() {
 
       {deciding && (
         <Modal
-          title={`${deciding.decision === "APPROVED" ? "Approve" : "Reject"} request — ${deciding.item.request.role.name} for ${deciding.item.request.requester.email}`}
+          title={t(
+            deciding.decision === "APPROVED" ? "approvals.modalApprove" : "approvals.modalReject",
+            {
+              role: deciding.item.request.role.name,
+              email: deciding.item.request.requester.email,
+            },
+          )}
           onClose={() => setDeciding(null)}
         >
           <label className="form-field form-field-full">
-            <span>Comment (mandatory)</span>
+            <span>{t("approvals.comment")}</span>
             <textarea
               rows={4}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Reason for your decision"
+              placeholder={t("approvals.commentPlaceholder")}
             />
           </label>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setDeciding(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               className={`btn active ${deciding.decision === "APPROVED" ? "btn-buy" : "btn-sell"}`}
               disabled={submitting}
               onClick={() => void submitDecision()}
             >
-              Confirm {deciding.decision.toLowerCase()}
+              {t("approvals.confirm", {
+                decision: t(
+                  deciding.decision === "APPROVED"
+                    ? "approvals.decisionApproved"
+                    : "approvals.decisionRejected",
+                ),
+              })}
             </button>
           </div>
         </Modal>

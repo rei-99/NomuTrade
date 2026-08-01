@@ -11,6 +11,7 @@ import { INDICATOR_NAMES } from "../api/types";
 import type { TickData } from "../api/ws";
 import { fmtNum } from "../format";
 import { usePoll, useWsMessage, useWsState } from "../hooks";
+import { useT } from "../i18n";
 import { EChart } from "./EChart";
 import { categoryAxis, CHART_COLORS, tooltipBase, valueAxis } from "./chartTheme";
 
@@ -343,6 +344,7 @@ interface PriceChartProps {
 }
 
 export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: PriceChartProps) {
+  const { t } = useT();
   const [toggles, setToggles] = useState<ToggleState>({
     SMA: true,
     EMA: false,
@@ -505,7 +507,7 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
               {n}
             </label>
           ))}
-          {loading && <span className="muted price-chart-loading">Loading…</span>}
+          {loading && <span className="muted price-chart-loading">{t("common.loading")}</span>}
         </div>
       )}
       {candles.length > 0 && legendCandle && (
@@ -536,7 +538,7 @@ export function PriceChart({ symbol, timeframe, showIndicators, height = 480 }: 
             <div className="skeleton" style={{ height }} />
           ) : (
             <div className="panel-empty muted">
-              No price data for {symbol ?? "—"} / {timeframe}.
+              {t("chart.noData", { symbol: symbol ?? "—", tf: timeframe })}
             </div>
           )
         ) : (

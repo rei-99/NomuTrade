@@ -3,10 +3,14 @@ import type { ReactNode } from "react";
 import { api, getToken, setToken } from "./api/client";
 import type { DevLoginResponse, MeResponse } from "./api/types";
 import { wsClient } from "./api/ws";
+import { detectPersona } from "./personas";
+import type { Persona } from "./personas";
 
 interface AuthContextValue {
   me: MeResponse | null;
   loading: boolean;
+  /** Permission-derived persona (design 25 §U2); NONE when nothing matches. */
+  persona: Persona;
   login: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   /** True when the user holds ANY of the given permissions (or none given). */
@@ -77,9 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else wsClient.stop();
   }, [me]);
 
+  const persona = useMemo(() => detectPersona(me?.permissions ?? []), [me]);
+
   const value = useMemo(
-    () => ({ me, loading, login, logout, hasPerm }),
-    [me, loading, login, logout, hasPerm],
+    () => ({ me, loading, persona, login, logout, hasPerm }),
+    [me, loading, persona, login, logout, hasPerm],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

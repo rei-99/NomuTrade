@@ -997,45 +997,41 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 /* ---------- trading workspace ---------- */
 
-/* One-screen workspace: the page fills the content area exactly (46 px topbar
-   + 2×16 px content padding, same calc as .page-chat) and the grid distributes
-   it across fixed tracks — tape (auto) / chart (1fr) / account bar (auto) /
-   positions (1fr) in the left column, with a full-height rail on the right.
-   The page is fluid full-width (no max-width cap): the chart/positions column
-   absorbs any extra width on wide screens while the rail holds its clamped
-   width. Only panel internals scroll; the page itself never does. */
+/* One-screen workspace v2 (design 25 §U4): tape → main row (chart spanning 7
+   of 12 columns ≈ 2.4fr and extending vertically | order-entry rail) → bottom
+   row of three equal panels (Positions | Risk | News) with aligned top/bottom
+   edges. The page is fluid full-width and exactly viewport-height; only panel
+   internals scroll. Account summary chips live in the Positions header. */
 .trading-page { max-width: none; height: calc(100vh - 78px); }
 
 .trading-grid {
   display: grid;
-  grid-template-columns: 1fr clamp(320px, 26vw, 420px);
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: auto minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-areas:
+    "tape tape tape tape tape tape tape tape tape tape tape tape"
+    "chart chart chart chart chart chart chart order order order order order"
+    "positions positions positions positions risk risk risk risk news news news news";
   gap: 12px;
   flex: 1;
   min-height: 0;
 }
 
 @media (max-width: 1100px) {
-  /* Single-column fallback: back to natural document flow — no fixed page
-     height, no fr tracks, no flex/overflow constraints; every panel renders
-     at natural height and the page scrolls normally. Only the chart canvas
-     keeps a pinned size (EChart gets height="100%" from the Trading page).
-     NB: selectors are scoped with .trading-grid so they out-specify the
-     base rail/panel rules, which appear later in this file. */
+  /* Single-column fallback: natural document flow — tape → chart → order →
+     positions → risk → news, every panel at natural height, page scrolls.
+     Selectors are scoped with .trading-grid to out-specify the base rules. */
   .trading-page { height: auto; }
-  .trading-grid { grid-template-columns: 1fr; grid-template-rows: auto; flex: none; }
-  .trading-grid .rail { grid-column: auto; grid-row: auto; overflow: visible; }
-  .trading-grid .rail > .panel { flex: none; overflow: visible; }
-  .trading-grid .rail > .news-panel { min-height: 0; overflow: visible; }
-  .trading-grid .news-panel > .news-summary { overflow: visible; }
-  .trading-grid .news-panel > .news-list { flex: none; min-height: 0; }
-  .trading-grid .chart-panel .price-chart { flex: none; }
+  .trading-grid { display: flex; flex-direction: column; flex: none; }
+  .trading-grid .rail { overflow: visible; }
+  .trading-grid .panel-scroll,
   .trading-grid .positions-scroll { flex: none; overflow: visible; }
+  .trading-grid .chart-panel .price-chart { flex: none; }
   .trading-grid .price-chart-canvas { flex: none; height: 360px; }
 }
 
 .tape {
-  grid-column: 1 / -1;
+  grid-area: tape;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1079,35 +1075,24 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 }
 
 .chart-panel {
+  grid-area: chart;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 .chart-panel .price-chart { flex: 1; min-height: 0; }
 
-/* Full-height rail: spans every row under the tape on the right, so its bottom
-   edge aligns with the positions panel's. The order ticket never scrolls;
-   RiskPanel is fully visible on tall screens and is the first panel to
-   shrink/scroll internally when height gets tight (OrderPanel last);
-   BondAnalyticsCard absorbs the extra deficit when a bond is selected; News
-   takes whatever remains, but never vanishes. The rail's own scroll is only a
-   last-resort safety net (extreme content, e.g. an open confirm card on a
-   short screen) so the page itself stays at one screen. */
+/* Order-entry rail: order ticket (+ bond analytics for bonds), natural
+   stacking; the rail scrolls itself only as a last-resort safety net. */
 .rail {
-  grid-column: 2;
-  grid-row: 2 / -1;
+  grid-area: order;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 0;
   overflow-y: auto;
 }
-.rail > .panel { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-.rail > .order-panel { flex-shrink: 0; overflow: visible; }
-.rail > .news-panel { flex: 1 1 0; min-height: 96px; overflow: hidden; }
-@media (min-height: 950px) {
-  .rail > .risk-panel { flex-shrink: 0; overflow: visible; }
-}
+.rail > .panel { flex: 0 0 auto; }
 
 .price-chart-toggles { margin-bottom: 8px; }
 .price-chart-loading { margin-left: 8px; font-size: 11px; }
@@ -1156,26 +1141,75 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .trade-btn-side { font-size: 15px; font-weight: 800; letter-spacing: 0.08em; }
 .trade-btn-price { font-size: 12px; opacity: 0.9; }
 
-/* account bar */
+/* bottom row: Positions | Risk | News — equal height, internal scroll */
 
-.account-bar {
-  grid-column: 1;
+.account-chips {
   display: flex;
-  gap: 28px;
+  gap: 14px;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--muted);
 }
-
-.account-item { display: flex; flex-direction: column; gap: 1px; }
-.account-item .num { font-size: 15px; font-weight: 600; }
+.account-chip b { color: var(--text); font-weight: 600; margin-left: 4px; }
+.account-chip.pos b { color: var(--green); }
+.account-chip.neg b { color: var(--red); }
 
 .positions-panel {
-  grid-column: 1;
+  grid-area: positions;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 .positions-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+.risk-panel {
+  grid-area: risk;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.news-panel {
+  grid-area: news;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* asset-class scope toggle in the tape (design 25 §U3) */
+.scope-seg { flex: 0 0 auto; }
+.scope-seg .seg-btn { padding: 3px 10px; font-size: 10px; }
+
+/* language selector in the top bar (design 25 §U1) */
+.lang-seg { flex: 0 0 auto; }
+.lang-seg .seg-btn { padding: 3px 9px; font-size: 10px; }
+
+/* grouped symbol search (design 25 §U3) */
+.search-group-label {
+  padding: 5px 9px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* login persona cards (design 25 §U2) */
+.persona-card { gap: 4px; }
+.persona-card-desc { font-size: 11px; line-height: 1.35; }
+.login-more { margin-top: 12px; }
+.login-more summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+.login-more summary:hover { color: var(--text); }
+.login-users-more { margin-top: 8px; }
 
 .row-clickable { cursor: pointer; }
 

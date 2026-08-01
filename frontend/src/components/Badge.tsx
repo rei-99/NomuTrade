@@ -1,3 +1,6 @@
+import { useT } from "../i18n";
+import type { I18nKey } from "../i18n/en";
+
 const TONE_BY_STATUS: Record<string, string> = {
   // order statuses
   ACCEPTED: "blue",
@@ -18,11 +21,8 @@ const TONE_BY_STATUS: Record<string, string> = {
   READY: "green",
   COMPLETED: "green",
   FAILED: "red",
-  // grant / notification / alert statuses
+  // grant / notification statuses
   ACTIVE: "green",
-  TRIGGERED: "amber",
-  DISABLED: "gray",
-  INACTIVE: "gray",
   REVOKED: "red",
   READ: "gray",
   UNREAD: "blue",
@@ -56,8 +56,60 @@ const TONE_BY_STATUS: Record<string, string> = {
   BEARISH: "red",
 };
 
+/** Uppercase enum value (with underscores) → status.* dictionary key. */
+const STATUS_LABEL_KEY: Record<string, I18nKey> = {
+  STALE: "status.stale",
+  BUY: "status.buy",
+  SELL: "status.sell",
+  ACCEPTED: "status.accepted",
+  REJECTED: "status.rejected",
+  OPEN: "status.open",
+  PARTIALLY_FILLED: "status.partially_filled",
+  FILLED: "status.filled",
+  CANCELLED: "status.cancelled",
+  PENDING: "status.pending",
+  IN_PROGRESS: "status.in_progress",
+  APPROVED: "status.approved",
+  WITHDRAWN: "status.withdrawn",
+  EXPIRED: "status.expired",
+  GENERATING: "status.generating",
+  QUEUED: "status.queued",
+  READY: "status.ready",
+  COMPLETED: "status.completed",
+  FAILED: "status.failed",
+  ACTIVE: "status.active",
+  REVOKED: "status.revoked",
+  READ: "status.read",
+  UNREAD: "status.unread",
+  SENT: "status.sent",
+  UP: "status.up",
+  DOWN: "status.down",
+  DEGRADED: "status.degraded",
+  CLIENT: "status.client",
+  HOUSE: "status.house",
+  PAPER: "status.paper",
+  INFO: "status.info",
+  WARNING: "status.warning",
+  ERROR: "status.error",
+  CRITICAL: "status.critical",
+  JUSTIFIED: "status.justified",
+  ESCALATED: "status.escalated",
+  PENDING_REVIEW: "status.pending_review",
+  BUILT_IN: "status.built_in",
+  EXECUTION: "status.execution",
+};
+
+/** Dictionary key for a status enum value, or null when it stays raw. */
+export function statusKeyOf(status: string): I18nKey | null {
+  return STATUS_LABEL_KEY[status.toUpperCase()] ?? null;
+}
+
 export function Badge({ text }: { text: string | null | undefined }) {
+  const { t } = useT();
   const label = text ?? "—";
   const tone = TONE_BY_STATUS[label.toUpperCase()] ?? "gray";
-  return <span className={`badge badge-${tone}`}>{label.replace(/_/g, " ")}</span>;
+  const key = statusKeyOf(label);
+  // Known statuses get localized labels; other enum values (order types,
+  // asset classes, sentiment labels…) keep their raw codes.
+  return <span className={`badge badge-${tone}`}>{key ? t(key) : label.replace(/_/g, " ")}</span>;
 }

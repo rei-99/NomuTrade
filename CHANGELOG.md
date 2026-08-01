@@ -7,6 +7,40 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-01 — UX round 1 (design 25): Japanese UI, 4 personas, bond/equity split, layout v2, price-follow
+
+**Driver:** owner instruction set (5 items); design doc
+`docs/design/25-ux-round-1.md`. Frontend-only; backend untouched (87/87).
+
+- **U1 — EN/JA i18n**: hand-rolled `I18nProvider` + `t()` with `{var}`
+  interpolation and type-enforced dictionary parity (`src/i18n/en|ja.ts`,
+  574 keys each — drift is a compile error); EN|JA pills in the top bar,
+  persisted `stp_lang`, `<html lang>`, locale-aware `Intl` formatting
+  (en-US/ja-JP). Full pass over every page and shared component with
+  natural financial Japanese (成行/指値/逆指値, 買い/売り, 評価損益,
+  シミュレーション取引, 権限リクエスト…); backend-generated text (news
+  summary, error messages, dataset labels) correctly passes through.
+- **U2 — Four personas**: Trader / Risk / Operation / Admin, derived from
+  permission sets (backend 8-role RBAC untouched); nav renders exactly the
+  persona's tabs, deep links outside the set get a friendly "not available
+  for your role" page, login shows 4 persona cards (remaining demo users
+  behind a disclosure). Documented as a presentation-layer consolidation.
+- **U3 — Bond/equity split**: `Equities | Bonds` scope toggle in the tape
+  (chips + hero picker filtered, session-persisted); symbol search groups
+  by asset class.
+- **U4 — Layout v2**: chart extends vertically (7:5 chart:order); bottom
+  row Positions | Risk | News as three equal, aligned, internally-scrolling
+  panels; account chips absorbed into the Positions header; one-screen rule
+  and ≤1100px fallback kept.
+- **U5 — Price fields follow the instrument**: `useAnchoredPriceFields`
+  hook — limit/stop/trail prices re-anchor to the newly selected
+  instrument's last price on symbol change (dirty-tracked manual edits are
+  only preserved within the same symbol; terminal convention, documented).
+- Verified: `npm run build` zero type errors (twice — after layout and
+  after i18n); headless screenshots of the EN layout (persona-filtered
+  Trader nav, scope toggle, bottom-row panels) and the JA workspace
+  (株式/債券 toggle, 成行/買い/売り order panel, JA nav) at 1680×1000.
+
 ## 2026-07-30 — Final presentation pack: script + 21-slide deck
 
 **Driver:** `final-presentation-prompts.md` — two-prompt flow (script, then

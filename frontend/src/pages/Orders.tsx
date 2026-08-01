@@ -8,6 +8,7 @@ import { OrderTicket } from "../components/OrderTicket";
 import { useToast } from "../components/Toast";
 import { fmtJpy, fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 const STATUS_FILTERS: (OrderStatus | "")[] = [
   "",
@@ -24,6 +25,7 @@ const AMENDABLE: OrderStatus[] = ["OPEN", "PARTIALLY_FILLED"];
 
 export function Orders() {
   const { toast } = useToast();
+  const { t } = useT();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
@@ -102,7 +104,7 @@ export function Orders() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Orders</h2>
+        <h2>{t("orders.title")}</h2>
         <div className="page-header-actions">
           <select
             value={statusFilter}
@@ -110,7 +112,7 @@ export function Orders() {
           >
             {STATUS_FILTERS.map((s) => (
               <option key={s} value={s}>
-                {s === "" ? "All statuses" : s.replace(/_/g, " ")}
+                {s === "" ? t("orders.allStatuses") : s.replace(/_/g, " ")}
               </option>
             ))}
           </select>
@@ -119,7 +121,7 @@ export function Orders() {
             disabled={portfolios.length === 0}
             onClick={() => setTicketOpen(true)}
           >
-            New ticket
+            {t("orders.newTicket")}
           </button>
         </div>
       </div>
@@ -128,28 +130,28 @@ export function Orders() {
         <DataTable<Order>
           rows={orders}
           keyFn={(o) => o.order_id}
-          empty="No orders"
+          empty={t("orders.empty")}
           columns={[
             {
-              header: "Submitted",
+              header: t("orders.submitted"),
               sortable: true,
               sortValue: (o) => o.created_at,
               render: (o) => <span className="num">{fmtTs(o.created_at)}</span>,
             },
             {
-              header: "Symbol",
+              header: t("common.symbol"),
               sortable: true,
               sortValue: (o) => o.instrument_symbol,
               render: (o) => o.instrument_symbol,
             },
             {
-              header: "Side",
+              header: t("common.side"),
               sortable: true,
               sortValue: (o) => o.side,
               render: (o) => <Badge text={o.side} />,
             },
             {
-              header: "Type",
+              header: t("common.type"),
               sortable: true,
               sortValue: (o) => o.order_type,
               render: (o) => (
@@ -160,28 +162,28 @@ export function Orders() {
               ),
             },
             {
-              header: "Qty",
+              header: t("common.qty"),
               className: "num",
               sortable: true,
               sortValue: (o) => o.quantity,
               render: (o) => fmtNum(o.quantity),
             },
             {
-              header: "Filled",
+              header: t("orders.filled"),
               className: "num",
               sortable: true,
               sortValue: (o) => filledQty(o),
               render: (o) => fmtNum(filledQty(o)),
             },
             {
-              header: "Limit",
+              header: t("orders.limit"),
               className: "num",
               sortable: true,
               sortValue: (o) => o.limit_price ?? -1,
               render: (o) => (o.limit_price !== null ? fmtJpy(o.limit_price, true) : "—"),
             },
             {
-              header: "Stop",
+              header: t("orders.stop"),
               className: "num",
               sortable: true,
               sortValue: (o) => o.stop_price ?? o.trail_amount ?? o.trail_pct ?? -1,
@@ -197,7 +199,7 @@ export function Orders() {
               },
             },
             {
-              header: "Status",
+              header: t("common.status"),
               sortable: true,
               sortValue: (o) => o.status,
               render: (o) => (
@@ -212,12 +214,12 @@ export function Orders() {
                 <span className="row-actions">
                   {AMENDABLE.includes(o.status) && (
                     <button className="btn btn-ghost btn-sm" onClick={() => openAmend(o)}>
-                      Amend
+                      {t("orders.amend")}
                     </button>
                   )}
                   {CANCELLABLE.includes(o.status) && (
                     <button className="btn btn-danger btn-sm" onClick={() => void cancel(o)}>
-                      Cancel
+                      {t("orders.cancel")}
                     </button>
                   )}
                 </span>
@@ -238,12 +240,12 @@ export function Orders() {
 
       {amending && (
         <Modal
-          title={`Amend order ${amending.order_id}`}
+          title={t("orders.amendTitle", { id: amending.order_id })}
           onClose={() => setAmending(null)}
         >
           <div className="form-grid">
             <label className="form-field">
-              <span>Quantity</span>
+              <span>{t("common.qty")}</span>
               <input
                 type="number"
                 min="0"
@@ -253,7 +255,7 @@ export function Orders() {
             </label>
             {amending.order_type === "LIMIT" && (
               <label className="form-field">
-                <span>Limit price</span>
+                <span>{t("order.limitPrice")}</span>
                 <input
                   type="number"
                   min="0"
@@ -266,10 +268,10 @@ export function Orders() {
           </div>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setAmending(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button className="btn btn-buy active" onClick={() => void submitAmend()}>
-              Save amendment
+              {t("orders.saveAmendment")}
             </button>
           </div>
         </Modal>
