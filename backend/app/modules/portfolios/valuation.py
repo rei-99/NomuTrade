@@ -176,6 +176,18 @@ async def annualized_volatility_pct(
     sqrt(252), expressed as a percentage of the mean total_value. None when
     fewer than 10 daily points exist (FR-PFM-003 minimum history).
     """
+    values = await _daily_total_values(db, portfolio_id)
+    if len(values) < 10:
+        return None
+    mean = statistics.fmean(values)
+    if mean == 0:
+        return None
+    return statistics.stdev(values) * (252**0.5) / mean * 100
+
+
+async def _daily_total_values(db: AsyncSession, portfolio_id: str) -> list[float]:
+    """Daily total_value (market value + cash) series from ValuationSnapshots,
+    one point per day, chronological."""
     rows = (
         (
             await db.execute(
@@ -190,13 +202,40 @@ async def annualized_volatility_pct(
     daily: dict[object, Decimal] = {}
     for row in rows:
         daily[as_utc(row.ts).date()] = row.market_value + row.cash
-    values = [float(v) for v in daily.values()]
-    if len(values) < 10:
+    return [float(v) for v in daily.values()]
+
+
+async def var_95_1d_pct(db: AsyncSession, portfolio_id: str) -> float | None:
+    """Historical 1-day 95% VaR as % of portfolio value (risk metric, A-feat).
+
+    Percentile of daily total-value returns: VaR = -5th percentile x 100, so a
+    positive number means "5% of days lost more than this". 0 when the 5th
+    percentile is non-negative (no observed losses at that confidence).
+    None with fewer than 10 return observations (same minimum as volatility).
+    """
+    values = await _daily_total_values(db, portfolio_id)
+    returns = [b / a - 1 for a, b in zip(values, values[1:]) if a]
+    if len(returns) < 10:
         return None
-    mean = statistics.fmean(values)
-    if mean == 0:
+    q5 = statistics.quantiles(returns, n=20)[0]  # 5th percentile
+    return max(0.0, -q5 * 100)
+
+
+async def max_drawdown_pct(db: AsyncSession, portfolio_id: str) -> float | None:
+    """Largest peak-to-trough decline of daily total_value, as % of the peak.
+
+    None with fewer than 2 daily points.
+    """
+    values = await _daily_total_values(db, portfolio_id)
+    if len(values) < 2:
         return None
-    return statistics.stdev(values) * (252**0.5) / mean * 100
+    peak = values[0]
+    worst = 0.0
+    for value in values:
+        peak = max(peak, value)
+        if peak:
+            worst = max(worst, (peak - value) / peak)
+    return worst * 100
 
 
 async def compute_total_value(db: AsyncSession, portfolio: Portfolio) -> Decimal:

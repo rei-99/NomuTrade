@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Valuation } from "../api/types";
-import { fmtJpy, fmtPct } from "../format";
+import { fmtJpy, fmtPct, fmtSignedJpy, pnlClass } from "../format";
 import { useT } from "../i18n";
 
 type Tone = "green" | "amber" | "red";
@@ -57,6 +57,21 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
   const investedPct = total > 0 ? (valuation.market_value / total) * 100 : 0;
   const top3 = kpis.top_holdings.slice(0, 3);
 
+  // Extended metrics (new kpis contract): VaR, max drawdown, day P&L.
+  const varPct = kpis.var_95_1d_pct;
+  const varTone = varPct === null ? "" : varPct > 10 ? "neg" : varPct > 5 ? "warn" : "";
+  const ddPct = kpis.max_drawdown_pct;
+  const ddTone = ddPct === null ? "" : ddPct > 20 ? "neg" : ddPct > 10 ? "warn" : "";
+  const dayPnl = valuation.day_change;
+  const dayPnlPct =
+    valuation.total_value > 0 ? (dayPnl / valuation.total_value) * 100 : null;
+
+  // Asset mix (EQUITY vs BOND), normalized within the two classes.
+  const eqAlloc = kpis.allocation.find((a) => a.asset_class === "EQUITY")?.pct ?? 0;
+  const bondAlloc = kpis.allocation.find((a) => a.asset_class === "BOND")?.pct ?? 0;
+  const mixTotal = eqAlloc + bondAlloc;
+  const eqShare = mixTotal > 0 ? (eqAlloc / mixTotal) * 100 : 0;
+
   return (
     <section className="panel risk-panel">
       <div className="panel-header">
@@ -78,6 +93,47 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
           display={volatility === null ? "N/A" : fmtPct(volatility, 0)}
         />
       </div>
+
+      <div className="risk-stats">
+        <div className="risk-stat">
+          <span className="muted">{t("risk.var")}</span>
+          <span className={`num ${varTone}`}>{varPct === null ? "N/A" : fmtPct(varPct)}</span>
+          <span className="muted risk-stat-caption">
+            {varPct === null ? " " : t("risk.varCaption")}
+          </span>
+        </div>
+        <div className="risk-stat">
+          <span className="muted">{t("paper.maxDrawdown")}</span>
+          <span className={`num ${ddTone}`}>{ddPct === null ? "N/A" : fmtPct(ddPct)}</span>
+          <span className="muted risk-stat-caption">
+            {ddPct === null ? " " : t("risk.maxDdCaption")}
+          </span>
+        </div>
+        <div className="risk-stat">
+          <span className="muted">{t("pd.dayChange")}</span>
+          <span className={`num ${pnlClass(dayPnl)}`}>{fmtSignedJpy(dayPnl)}</span>
+          <span className="muted risk-stat-caption">
+            {dayPnlPct === null
+              ? " "
+              : `${dayPnlPct >= 0 ? "+" : ""}${fmtPct(dayPnlPct)}`}
+          </span>
+        </div>
+      </div>
+
+      {mixTotal > 0 && (
+        <div className="risk-block">
+          <div className="risk-row">
+            <span className="muted">{t("risk.assetMix")}</span>
+            <span className="num muted">
+              EQUITY {fmtPct(eqAlloc)} · BOND {fmtPct(bondAlloc)}
+            </span>
+          </div>
+          <div className="split-bar">
+            <div className="split-invested" style={{ width: `${eqShare}%` }} />
+            <div className="split-bond" style={{ width: `${100 - eqShare}%` }} />
+          </div>
+        </div>
+      )}
 
       <div className="risk-block">
         <div className="risk-row">

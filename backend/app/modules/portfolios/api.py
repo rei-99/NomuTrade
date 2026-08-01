@@ -29,8 +29,10 @@ from app.modules.portfolios.valuation import (
     annualized_volatility_pct,
     compute_realized,
     compute_total_value,
+    max_drawdown_pct,
     previous_close_map,
     value_positions,
+    var_95_1d_pct,
 )
 
 router = APIRouter(tags=["portfolios"])
@@ -238,6 +240,8 @@ async def get_valuation(
     ]
     concentration_pct = top_holdings[0]["pct"] if top_holdings else 0.0
     volatility = await annualized_volatility_pct(db, portfolio.portfolio_id)
+    var_95 = await var_95_1d_pct(db, portfolio.portfolio_id)
+    max_dd = await max_drawdown_pct(db, portfolio.portfolio_id)
 
     return {
         "portfolio_id": portfolio.portfolio_id,
@@ -253,6 +257,8 @@ async def get_valuation(
             "top_holdings": top_holdings,
             "concentration_pct": concentration_pct,
             "volatility_annualized_pct": volatility,
+            "var_95_1d_pct": var_95,
+            "max_drawdown_pct": max_dd,
         },
     }
 

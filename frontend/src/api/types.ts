@@ -249,6 +249,10 @@ export interface Valuation {
     top_holdings: TopHolding[];
     concentration_pct: number;
     volatility_annualized_pct: number | null;
+    /** Historical 95% 1-day VaR as % of book (new contract). */
+    var_95_1d_pct: number | null;
+    /** Peak-to-trough max drawdown as % of book (new contract). */
+    max_drawdown_pct: number | null;
   };
 }
 

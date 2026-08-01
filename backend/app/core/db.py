@@ -92,7 +92,8 @@ _COLUMN_WIDENS: dict[str, dict[str, str]] = {
 async def _ensure_additive_columns(conn) -> None:
     from sqlalchemy import text
 
-    dialect = conn.dialect.name
+    # conn.dialect.name is "postgresql" for asyncpg; the DDL maps use "postgres".
+    dialect = "sqlite" if conn.dialect.name == "sqlite" else "postgres"
     for table, columns in _ADDITIVE_COLUMNS.items():
         if dialect == "sqlite":
             rows = await conn.execute(text(f"PRAGMA table_info({table})"))

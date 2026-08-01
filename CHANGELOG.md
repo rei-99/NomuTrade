@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-01 — Portfolio insights + richer risk panel; Trader loses Access Requests tab
+
+**Driver:** owner asks — more portfolio visualization (trader's perspective),
+more risk metrics, hide Access Requests from traders.
+
+- **Portfolio Insights section** (PortfolioDetail): allocation donut with
+  Asset-class | Holdings toggle (EQUITY/BOND, or top-5 + Other + Cash slice)
+  answering "how is the book spread?"; P&L contribution horizontal bars with
+  Unrealized | Day toggle (sorted, pos/neg, nulls never plotted as zero)
+  answering "what's making/losing me money?". Existing fetches reused.
+- **Risk metrics**: valuation KPIs gain **`var_95_1d_pct`** (historical 95%
+  1-day VaR from daily book returns, null under 10 observations) and
+  **`max_drawdown_pct`** (largest peak-to-trough decline) — computed from
+  ValuationSnapshot history like volatility. Risk panel adds VaR and
+  drawdown stat cards (threshold-colored), Day P&L (money + %), and an
+  EQUITY/BOND asset-mix bar; concentration/volatility donuts unchanged.
+- **Trader tab set**: Access Requests removed (deep links get the friendly
+  not-available page; API unchanged).
+- **Cross-branch bug fixed (root-caused during verification):** the
+  advanced-orders per-dialect DDL keyed maps on `"postgres"` but
+  `conn.dialect.name` is `"postgresql"` on asyncpg — `KeyError: 'postgresql'`
+  made the app fail to boot on PostgreSQL (SQLite CI masked it; also fixed a
+  latent never-firing column-widen guard).
+- Verified: backend **95/95** (2 new KPI tests); live check of KPI values;
+  headless screenshots — Insights donut + P&L bars on Desk Book 1, risk
+  panel with VaR/drawdown/asset-mix, trader nav without Access Requests.
+
 ## 2026-08-01 — Role-faithful views + real login (design 26)
 
 **Driver:** owner instruction set — roles should see only the tabs their job

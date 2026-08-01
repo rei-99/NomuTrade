@@ -87,7 +87,8 @@ export const TABS: Record<TabId, TabDef> = {
   },
 };
 
-/** Tabs per persona — the design 26 §R1 table, verbatim. */
+/** Tabs per persona — the design 26 §R1 table, verbatim. Trader loses Access
+ * Requests (product-owner instruction: access governance is not their job). */
 export const PERSONA_TABS: Record<Persona, TabId[]> = {
   TRADER: [
     "trading",
@@ -97,7 +98,6 @@ export const PERSONA_TABS: Record<Persona, TabId[]> = {
     "reports",
     "paper",
     "assistant",
-    "access",
     "notifications",
   ],
   ADMIN: ["admin", "governance", "audit", "approvals", "access", "notifications"],

@@ -477,6 +477,20 @@ export const en = {
   "pd.noPerformance": "No performance data for this timeframe.",
   "pd.symbolPlaceholder": "e.g. AAPL",
 
+  // ---- portfolio insights (PortfolioDetail) ----
+  "ins.allocTitle": "Allocation",
+  "ins.pnlTitle": "P&L contribution",
+  "ins.holdings": "Holdings",
+  "ins.other": "Other",
+  "ins.empty": "No positions to chart.",
+  "ins.emptyDay": "No day-change data.",
+
+  // ---- risk extras ----
+  "risk.var": "VaR (95%, 1d)",
+  "risk.varCaption": "of book",
+  "risk.maxDdCaption": "peak-to-trough",
+  "risk.assetMix": "Asset mix",
+
   // ---- admin page ----
   "admin.title": "Administration",
   "admin.tab.roles": "Roles",
