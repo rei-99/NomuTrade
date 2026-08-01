@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Portfolio, Position, PositionsResponse } from "../api/types";
 import { useAuth } from "../auth";
+import { useT } from "../i18n";
 import { DataTable } from "./DataTable";
 import { OrderTicket } from "./OrderTicket";
 import { fmtJpy, fmtNum, fmtPct, fmtSignedJpy, pnlClass } from "../format";
@@ -22,6 +23,7 @@ interface PositionsTableProps {
 export function PositionsTable({ portfolioId, portfolios, positions }: PositionsTableProps) {
   const navigate = useNavigate();
   const { hasPerm } = useAuth();
+  const { t } = useT();
   const prevMarks = useRef<Map<string, number>>(new Map());
   const [flash, setFlash] = useState<Map<string, "up" | "down">>(new Map());
   const [closing, setClosing] = useState<Position | null>(null);
@@ -64,28 +66,28 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
     <DataTable
       rows={positions.items}
       keyFn={(p) => p.instrument_symbol}
-      empty="No open positions"
+      empty={t("pos.empty")}
       onRowClick={() => navigate(`/portfolios/${portfolioId}`)}
       columns={[
-        { header: "Symbol", render: (p) => p.instrument_symbol },
-        { header: "Name", render: (p) => p.name },
-        { header: "Qty", className: "num", render: (p) => fmtNum(p.quantity) },
-        { header: "Avg cost", className: "num", render: (p) => fmtJpy(p.avg_cost, true) },
+        { header: t("common.symbol"), render: (p) => p.instrument_symbol },
+        { header: t("common.name"), render: (p) => p.name },
+        { header: t("common.qty"), className: "num", render: (p) => fmtNum(p.quantity) },
+        { header: t("pos.avgCost"), className: "num", render: (p) => fmtJpy(p.avg_cost, true) },
         {
-          header: "Mark",
+          header: t("pos.mark"),
           className: "num",
           render: (p) => {
             const dir = flash.get(p.instrument_symbol);
             return (
               <span className={`mark-cell${dir ? ` flash-${dir}` : ""}`}>
                 {fmtJpy(p.latest_price, true)}{" "}
-                {p.stale_price && <span className="badge badge-amber">STALE</span>}
+                {p.stale_price && <span className="badge badge-amber">{t("status.stale")}</span>}
               </span>
             );
           },
         },
         {
-          header: "Day chg",
+          header: t("pos.dayChg"),
           className: "num",
           render: (p) => {
             if (p.day_change === null) return <span className="muted">—</span>;
@@ -99,14 +101,14 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
           },
         },
         {
-          header: "Mkt value",
+          header: t("pos.mktValue"),
           className: "num",
           render: (p) => {
             const share = totalMv > 0 ? (p.market_value / totalMv) * 100 : 0;
             return (
               <span className="mv-cell">
                 <span>{fmtJpy(p.market_value)}</span>
-                <span className="alloc-bar" title={`${fmtPct(share)} of book`}>
+                <span className="alloc-bar" title={t("pos.shareOfBook", { pct: fmtPct(share) })}>
                   <span
                     className="alloc-bar-fill"
                     style={{ width: `${Math.min(100, Math.max(0, share))}%`, display: "block" }}
@@ -117,7 +119,7 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
           },
         },
         {
-          header: "uP&L",
+          header: t("pos.upnl"),
           className: "num",
           render: (p) => (
             <span className={`pnl-chip num ${pnlClass(p.unrealized_pnl)}`}>
@@ -126,7 +128,7 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
           ),
         },
         {
-          header: "uP&L %",
+          header: t("pos.upnlPct"),
           className: "num",
           render: (p) => {
             const cost = p.quantity * p.avg_cost;
@@ -146,13 +148,13 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
                 render: (p: Position) => (
                   <button
                     className="btn btn-ghost btn-sm"
-                    title={`Sell the full ${p.instrument_symbol} position at market`}
+                    title={t("pos.closeTitle", { symbol: p.instrument_symbol })}
                     onClick={(e) => {
                       e.stopPropagation();
                       setClosing(p);
                     }}
                   >
-                    Close
+                    {t("pos.close")}
                   </button>
                 ),
               },
@@ -161,7 +163,7 @@ export function PositionsTable({ portfolioId, portfolios, positions }: Positions
       ]}
       footer={[
         <span key="t" className="muted">
-          Totals
+          {t("pos.totals")}
         </span>,
         "",
         "",

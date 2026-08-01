@@ -1,15 +1,39 @@
 // Number / timestamp formatting helpers. Instruments are USD US equities:
-// money renders as en-US USD with 2 decimals; monospace-tabular numerals are
-// applied via CSS (.num).
+// money renders as USD with 2 decimals; the locale follows the UI language
+// (en-US / ja-JP, design 25 §U1); monospace-tabular numerals via CSS (.num).
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { getLang } from "./i18n/lang";
 
-const num = new Intl.NumberFormat("en-US");
+function locale(): string {
+  return getLang() === "ja" ? "ja-JP" : "en-US";
+}
+
+const formatterCache = new Map<string, Intl.NumberFormat>();
+
+function cached(key: string, make: () => Intl.NumberFormat): Intl.NumberFormat {
+  let f = formatterCache.get(key);
+  if (!f) {
+    f = make();
+    formatterCache.set(key, f);
+  }
+  return f;
+}
+
+function usd(): Intl.NumberFormat {
+  const l = locale();
+  return cached(`usd:${l}`, () =>
+    new Intl.NumberFormat(l, {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }),
+  );
+}
+
+function plainNum(): Intl.NumberFormat {
+  return cached(`num:${locale()}`, () => new Intl.NumberFormat(locale()));
+}
 
 /**
  * Money, USD with 2 decimals. The `decimals` parameter is retained only for
@@ -18,13 +42,13 @@ const num = new Intl.NumberFormat("en-US");
  */
 export function fmtJpy(v: number | null | undefined, _decimals = false): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return usd.format(v);
+  return usd().format(v);
 }
 
 export function fmtNum(v: number | null | undefined, digits?: number): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  if (digits === undefined) return num.format(v);
-  return v.toLocaleString("en-US", {
+  if (digits === undefined) return plainNum().format(v);
+  return v.toLocaleString(locale(), {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
@@ -48,7 +72,7 @@ export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US");
+  return d.toLocaleDateString(locale());
 }
 
 /** "pos" / "neg" / "" for P&L coloring. */
@@ -59,6 +83,6 @@ export function pnlClass(v: number | null | undefined): "pos" | "neg" | "" {
 
 export function fmtSignedJpy(v: number | null | undefined): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  const s = usd.format(Math.abs(v));
+  const s = usd().format(Math.abs(v));
   return v < 0 ? `-${s}` : v > 0 ? `+${s}` : s;
 }

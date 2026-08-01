@@ -15,6 +15,7 @@ import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { fmtDate, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 const REPORT_TYPES: ReportType[] = ["HOLDINGS", "TRANSACTIONS", "PERFORMANCE"];
 const FORMATS: ReportFormat[] = ["PDF", "CSV"];
@@ -25,6 +26,7 @@ const DOWNLOADABLE = ["READY", "COMPLETED", "DONE", "SUCCESS"];
 
 export function Reports() {
   const { toast } = useToast();
+  const { t } = useT();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
@@ -78,7 +80,7 @@ export function Reports() {
 
   const submit = async () => {
     if (!portfolioId || !periodStart || !periodEnd) {
-      toast("Portfolio, period start and period end are required", "error");
+      toast(t("reports.required"), "error");
       return;
     }
     setSubmitting(true);
@@ -93,7 +95,7 @@ export function Reports() {
           format,
         },
       });
-      toast(`Report ${created.report_id} requested (${created.status})`, "success");
+      toast(t("reports.requested", { id: created.report_id, status: created.status }), "success");
       void load();
     } catch {
       // toast raised by client
@@ -158,16 +160,16 @@ export function Reports() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Reports</h2>
+        <h2>{t("reports.title")}</h2>
       </div>
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Request a report</h3>
+          <h3>{t("reports.request")}</h3>
         </div>
         <div className="filter-bar">
           <label>
-            Type
+            {t("reports.type")}
             <select value={type} onChange={(e) => setType(e.target.value as ReportType)}>
               {REPORT_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -177,7 +179,7 @@ export function Reports() {
             </select>
           </label>
           <label>
-            Portfolio
+            {t("common.portfolio")}
             <select value={portfolioId} onChange={(e) => setPortfolioId(e.target.value)}>
               {portfolios.length === 0 && <option value="">No portfolios</option>}
               {portfolios.map((p) => (
@@ -188,7 +190,7 @@ export function Reports() {
             </select>
           </label>
           <label>
-            Period start
+            {t("reports.periodStart")}
             <input
               type="date"
               value={periodStart}
@@ -196,11 +198,11 @@ export function Reports() {
             />
           </label>
           <label>
-            Period end
+            {t("reports.periodEnd")}
             <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
           </label>
           <label>
-            Format
+            {t("reports.format")}
             <select value={format} onChange={(e) => setFormat(e.target.value as ReportFormat)}>
               {FORMATS.map((f) => (
                 <option key={f} value={f}>
@@ -214,21 +216,21 @@ export function Reports() {
             disabled={submitting || portfolios.length === 0}
             onClick={() => void submit()}
           >
-            {submitting ? "Requesting…" : "Request"}
+            {submitting ? t("reports.submitting") : t("reports.submit")}
           </button>
         </div>
       </section>
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Report schedules</h3>
+          <h3>{t("reports.schedules")}</h3>
         </div>
         <p className="muted">
           Schedules run on simulation time — a daily schedule fires once per simulated day.
         </p>
         <div className="filter-bar">
           <label>
-            Portfolio
+            {t("common.portfolio")}
             <select
               value={schedPortfolioId}
               onChange={(e) => setSchedPortfolioId(e.target.value)}
@@ -242,7 +244,7 @@ export function Reports() {
             </select>
           </label>
           <label>
-            Type
+            {t("reports.type")}
             <select
               value={schedType}
               onChange={(e) => setSchedType(e.target.value as ReportType)}
@@ -255,7 +257,7 @@ export function Reports() {
             </select>
           </label>
           <label>
-            Format
+            {t("reports.format")}
             <select
               value={schedFormat}
               onChange={(e) => setSchedFormat(e.target.value as ReportFormat)}
@@ -293,21 +295,21 @@ export function Reports() {
           keyFn={(s) => s.schedule_id}
           empty="No schedules yet"
           columns={[
-            { header: "Type", render: (s) => s.type },
+            { header: t("reports.type"), render: (s) => s.type },
             {
-              header: "Portfolio",
+              header: t("common.portfolio"),
               render: (s) =>
                 portfolios.find((p) => p.portfolio_id === s.portfolio_id)?.name ??
                 s.portfolio_id,
             },
-            { header: "Format", render: (s) => s.format },
+            { header: t("reports.format"), render: (s) => s.format },
             { header: "Frequency", render: (s) => s.frequency },
             {
               header: "Next run",
               render: (s) => <span className="num">{fmtTs(s.next_run_at)}</span>,
             },
             {
-              header: "Created",
+              header: t("common.created"),
               render: (s) => <span className="num">{fmtTs(s.created_at)}</span>,
             },
             {
@@ -328,30 +330,30 @@ export function Reports() {
 
       <section className="panel">
         <div className="panel-header">
-          <h3>My reports</h3>
+          <h3>{t("reports.my")}</h3>
         </div>
         <DataTable<Report>
           rows={reports}
           keyFn={(r) => r.report_id}
-          empty="No reports requested yet"
+          empty={t("reports.empty")}
           columns={[
-            { header: "Created", render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
-            { header: "Type", render: (r) => r.type },
+            { header: t("common.created"), render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
+            { header: t("reports.type"), render: (r) => r.type },
             {
-              header: "Portfolio",
+              header: t("common.portfolio"),
               render: (r) =>
                 portfolios.find((p) => p.portfolio_id === r.portfolio_id)?.name ?? r.portfolio_id,
             },
             {
-              header: "Period",
+              header: t("reports.period"),
               render: (r) => (
                 <span className="num">
                   {fmtDate(r.period_start)} → {fmtDate(r.period_end)}
                 </span>
               ),
             },
-            { header: "Format", render: (r) => r.format },
-            { header: "Status", render: (r) => <Badge text={r.status} /> },
+            { header: t("reports.format"), render: (r) => r.format },
+            { header: t("common.status"), render: (r) => <Badge text={r.status} /> },
             {
               header: "",
               render: (r) => (
@@ -362,7 +364,7 @@ export function Reports() {
                   }
                   onClick={() => void download(r)}
                 >
-                  {downloading === r.report_id ? "Downloading…" : "Download"}
+                  {downloading === r.report_id ? t("reports.downloading") : t("common.download")}
                 </button>
               ),
             },

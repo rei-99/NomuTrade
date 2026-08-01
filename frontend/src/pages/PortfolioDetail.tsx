@@ -19,11 +19,13 @@ import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { fmtJpy, fmtNum, fmtPct, fmtSignedJpy, fmtTs, pnlClass } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 type Tab = "positions" | "transactions" | "performance";
 
 export function PortfolioDetail() {
   const { id = "" } = useParams();
+  const { t } = useT();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [valuation, setValuation] = useState<Valuation | null>(null);
   const [positions, setPositions] = useState<PositionsResponse | null>(null);
@@ -127,7 +129,7 @@ export function PortfolioDetail() {
   if (!portfolio && !valuation) {
     return (
       <div className="page">
-        <div className="muted">Loading portfolio…</div>
+        <div className="muted">{t("pd.loading")}</div>
       </div>
     );
   }
@@ -136,28 +138,28 @@ export function PortfolioDetail() {
     <div className="page">
       <div className="page-header">
         <h2>
-          {portfolio?.name ?? "Portfolio"}{" "}
+          {portfolio?.name ?? t("common.portfolio")}{" "}
           {portfolio && <Badge text={portfolio.type} />}
         </h2>
-        {positions && <span className="muted num">as of {fmtTs(positions.as_of)}</span>}
+        {positions && <span className="muted num">{t("pd.asOf", { ts: fmtTs(positions.as_of) })}</span>}
       </div>
 
       <div className="stat-row">
-        <StatCard label="Total value" value={fmtJpy(valuation?.total_value)} />
+        <StatCard label={t("pd.totalValue")} value={fmtJpy(valuation?.total_value)} />
         <StatCard
-          label="Day change"
+          label={t("pd.dayChange")}
           value={fmtSignedJpy(valuation?.day_change)}
           tone={pnlClass(valuation?.day_change)}
         />
-        <StatCard label="Cash" value={fmtJpy(valuation?.cash)} />
-        <StatCard label="Market value" value={fmtJpy(valuation?.market_value)} />
+        <StatCard label={t("pd.cash")} value={fmtJpy(valuation?.cash)} />
+        <StatCard label={t("pd.marketValue")} value={fmtJpy(valuation?.market_value)} />
         <StatCard
-          label="Unrealized P&L"
+          label={t("pd.upnl")}
           value={fmtSignedJpy(valuation?.unrealized_pnl)}
           tone={pnlClass(valuation?.unrealized_pnl)}
         />
         <StatCard
-          label="Realized P&L"
+          label={t("pd.realized")}
           value={fmtSignedJpy(valuation?.realized_pnl)}
           tone={pnlClass(valuation?.realized_pnl)}
         />
@@ -166,11 +168,11 @@ export function PortfolioDetail() {
       {valuation && (
         <div className="kpi-row panel">
           <div className="kpi">
-            <span className="muted">Concentration</span>
+            <span className="muted">{t("risk.concentration")}</span>
             <span className="num">{fmtPct(valuation.kpis.concentration_pct)}</span>
           </div>
           <div className="kpi">
-            <span className="muted">Volatility (ann.)</span>
+            <span className="muted">{t("risk.volatility")}</span>
             <span className="num">
               {valuation.kpis.volatility_annualized_pct === null
                 ? "—"
@@ -178,7 +180,7 @@ export function PortfolioDetail() {
             </span>
           </div>
           <div className="kpi kpi-wide">
-            <span className="muted">Top holdings</span>
+            <span className="muted">{t("risk.topHoldings")}</span>
             <span className="num">
               {valuation.kpis.top_holdings.length === 0
                 ? "—"
@@ -191,13 +193,13 @@ export function PortfolioDetail() {
       )}
 
       <div className="tabs">
-        {(["positions", "transactions", "performance"] as Tab[]).map((t) => (
+        {(["positions", "transactions", "performance"] as Tab[]).map((x) => (
           <button
-            key={t}
-            className={`tab${tab === t ? " active" : ""}`}
-            onClick={() => setTab(t)}
+            key={x}
+            className={`tab${tab === x ? " active" : ""}`}
+            onClick={() => setTab(x)}
           >
-            {t[0].toUpperCase() + t.slice(1)}
+            {t(`pd.${x}`)}
           </button>
         ))}
       </div>
@@ -207,26 +209,26 @@ export function PortfolioDetail() {
           <DataTable
             rows={positions?.items ?? []}
             keyFn={(p) => p.instrument_symbol}
-            empty="No open positions"
+            empty={t("pos.empty")}
             columns={[
-              { header: "Symbol", render: (p) => p.instrument_symbol },
-              { header: "Name", render: (p) => p.name },
-              { header: "Asset class", render: (p) => <Badge text={p.asset_class} /> },
-              { header: "Qty", className: "num", render: (p) => fmtNum(p.quantity) },
-              { header: "Avg cost", className: "num", render: (p) => fmtJpy(p.avg_cost, true) },
+              { header: t("common.symbol"), render: (p) => p.instrument_symbol },
+              { header: t("common.name"), render: (p) => p.name },
+              { header: t("pd.assetClass"), render: (p) => <Badge text={p.asset_class} /> },
+              { header: t("common.qty"), className: "num", render: (p) => fmtNum(p.quantity) },
+              { header: t("pos.avgCost"), className: "num", render: (p) => fmtJpy(p.avg_cost, true) },
               {
-                header: "Latest",
+                header: t("pd.latest"),
                 className: "num",
                 render: (p) => (
                   <span>
                     {fmtJpy(p.latest_price, true)}{" "}
-                    {p.stale_price && <span className="badge badge-amber">STALE</span>}
+                    {p.stale_price && <span className="badge badge-amber">{t("status.stale")}</span>}
                   </span>
                 ),
               },
-              { header: "Mkt value", className: "num", render: (p) => fmtJpy(p.market_value) },
+              { header: t("pos.mktValue"), className: "num", render: (p) => fmtJpy(p.market_value) },
               {
-                header: "Unreal. P&L",
+                header: t("pos.upnl"),
                 className: "num",
                 render: (p) => (
                   <span className={pnlClass(p.unrealized_pnl)}>{fmtSignedJpy(p.unrealized_pnl)}</span>
@@ -236,10 +238,10 @@ export function PortfolioDetail() {
           />
           {positions && positions.items.length > 0 && (
             <div className="table-footer num">
-              Totals — market value {fmtJpy(positions.totals.market_value)} · unrealized P&L{" "}
-              <span className={pnlClass(positions.totals.unrealized_pnl)}>
-                {fmtSignedJpy(positions.totals.unrealized_pnl)}
-              </span>
+              {t("pd.totalsLine", {
+                mv: fmtJpy(positions.totals.market_value),
+                pnl: fmtSignedJpy(positions.totals.unrealized_pnl),
+              })}
             </div>
           )}
         </section>
@@ -249,26 +251,26 @@ export function PortfolioDetail() {
         <section className="panel">
           <div className="filter-bar">
             <label>
-              From
+              {t("common.from")}
               <input type="date" value={txFrom} onChange={(e) => setTxFrom(e.target.value)} />
             </label>
             <label>
-              To
+              {t("common.to")}
               <input type="date" value={txTo} onChange={(e) => setTxTo(e.target.value)} />
             </label>
             <label>
-              Symbol
+              {t("common.symbol")}
               <input
                 type="text"
                 value={txSymbol}
                 onChange={(e) => setTxSymbol(e.target.value.toUpperCase())}
-                placeholder="e.g. 7203"
+                placeholder={t("pd.symbolPlaceholder")}
               />
             </label>
             <label>
-              Side
+              {t("common.side")}
               <select value={txSide} onChange={(e) => setTxSide(e.target.value)}>
-                <option value="">All</option>
+                <option value="">{t("common.all")}</option>
                 <option value="BUY">BUY</option>
                 <option value="SELL">SELL</option>
               </select>
@@ -276,22 +278,22 @@ export function PortfolioDetail() {
           </div>
           <DataTable<Transaction>
             rows={txItems}
-            keyFn={(t) => `${t.ref_id}-${t.ts}`}
-            empty="No transactions in range"
+            keyFn={(x) => `${x.ref_id}-${x.ts}`}
+            empty={t("pd.noTransactions")}
             columns={[
-              { header: "Time", render: (t) => <span className="num">{fmtTs(t.ts)}</span> },
-              { header: "Kind", render: (t) => <Badge text={t.kind} /> },
-              { header: "Symbol", render: (t) => t.instrument_symbol },
-              { header: "Side", render: (t) => <Badge text={t.side} /> },
-              { header: "Qty", className: "num", render: (t) => fmtNum(t.quantity) },
-              { header: "Price", className: "num", render: (t) => fmtJpy(t.price, true) },
-              { header: "Amount", className: "num", render: (t) => fmtJpy(t.amount) },
+              { header: t("pd.time"), render: (x) => <span className="num">{fmtTs(x.ts)}</span> },
+              { header: t("pd.kind"), render: (x) => <Badge text={x.kind} /> },
+              { header: t("common.symbol"), render: (x) => x.instrument_symbol },
+              { header: t("pd.side"), render: (x) => <Badge text={x.side} /> },
+              { header: t("common.qty"), className: "num", render: (x) => fmtNum(x.quantity) },
+              { header: t("common.price"), className: "num", render: (x) => fmtJpy(x.price, true) },
+              { header: t("pd.amount"), className: "num", render: (x) => fmtJpy(x.amount) },
             ]}
           />
           {txCursor && (
             <div className="table-footer">
               <button className="btn btn-ghost btn-sm" onClick={() => void loadTransactions(txCursor, true)}>
-                Load more
+                {t("common.loadMore")}
               </button>
             </div>
           )}
@@ -301,7 +303,7 @@ export function PortfolioDetail() {
       {tab === "performance" && (
         <section className="panel">
           <div className="panel-header">
-            <h3>Total value</h3>
+            <h3>{t("pd.totalValue")}</h3>
             <div className="tf-selector">
               {TIMEFRAMES.map((tf) => (
                 <button
@@ -315,7 +317,7 @@ export function PortfolioDetail() {
             </div>
           </div>
           {(perf?.series ?? []).length === 0 ? (
-            <div className="panel-empty muted">No performance data for this timeframe.</div>
+            <div className="panel-empty muted">{t("pd.noPerformance")}</div>
           ) : (
             <EChart option={perfOption} height={340} />
           )}

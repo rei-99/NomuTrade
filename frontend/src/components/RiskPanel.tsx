@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Valuation } from "../api/types";
 import { fmtJpy, fmtPct } from "../format";
+import { useT } from "../i18n";
 
 type Tone = "green" | "amber" | "red";
 
@@ -37,11 +38,12 @@ interface RiskPanelProps {
 /** Risk exposure: donut gauges (concentration, volatility) with threshold
  * coloring, top-holdings weight bars, invested-vs-cash slim split bar. */
 export function RiskPanel({ valuation }: RiskPanelProps) {
+  const { t } = useT();
   if (!valuation) {
     return (
       <section className="panel risk-panel">
         <div className="panel-header">
-          <h3>Risk exposure</h3>
+          <h3>{t("risk.title")}</h3>
         </div>
         <div className="skeleton" style={{ height: 96 }} />
       </section>
@@ -58,30 +60,31 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
   return (
     <section className="panel risk-panel">
       <div className="panel-header">
-        <h3>Risk exposure</h3>
+        <h3>{t("risk.title")}</h3>
       </div>
 
+      <div className="panel-scroll">
       <div className="donut-row">
         <Donut
           pct={concentration}
           tone={concentrationTone(concentration)}
-          label="Concentration"
+          label={t("risk.concentration")}
           display={fmtPct(concentration, 0)}
         />
         <Donut
           pct={volatility}
           tone={volatility === null ? "na" : volatilityTone(volatility)}
-          label="Volatility ann."
+          label={t("risk.volatility")}
           display={volatility === null ? "N/A" : fmtPct(volatility, 0)}
         />
       </div>
 
       <div className="risk-block">
         <div className="risk-row">
-          <span className="muted">Top holdings</span>
+          <span className="muted">{t("risk.topHoldings")}</span>
         </div>
         {top3.length === 0 ? (
-          <div className="muted risk-empty">No holdings.</div>
+          <div className="muted risk-empty">{t("risk.noHoldings")}</div>
         ) : (
           top3.map((h) => (
             <div key={h.instrument_symbol} className="risk-holding">
@@ -100,17 +103,18 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
 
       <div className="risk-block">
         <div className="risk-row">
-          <span className="muted">Invested vs cash</span>
-          <span className="num">{fmtPct(investedPct)} invested</span>
+          <span className="muted">{t("risk.investedVsCash")}</span>
+          <span className="num">{t("risk.investedPct", { pct: fmtPct(investedPct) })}</span>
         </div>
         <div className="split-bar">
           <div className="split-invested" style={{ width: `${investedPct}%` }} />
           <div className="split-cash" style={{ width: `${100 - investedPct}%` }} />
         </div>
         <div className="risk-split-labels muted num">
-          <span>{fmtJpy(valuation.market_value)} invested</span>
-          <span>{fmtJpy(valuation.cash)} cash</span>
+          <span>{t("risk.invested", { v: fmtJpy(valuation.market_value) })}</span>
+          <span>{t("risk.cashLine", { v: fmtJpy(valuation.cash) })}</span>
         </div>
+      </div>
       </div>
     </section>
   );

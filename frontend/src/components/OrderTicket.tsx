@@ -11,9 +11,21 @@ import type {
   TimeInForce,
 } from "../api/types";
 import { fmtJpy, fmtNum } from "../format";
+import { useAnchoredPriceFields } from "../hooks";
+import { useT } from "../i18n";
+import type { I18nKey } from "../i18n/en";
+import { statusKeyOf } from "./Badge";
 import { useToast } from "./Toast";
 import { Modal } from "./Modal";
 import { detailsToList, postOrder, tradeValue } from "./orderUtils";
+
+const ORDER_TYPE_KEYS: { id: OrderType; labelKey: I18nKey }[] = [
+  { id: "MARKET", labelKey: "order.type.market" },
+  { id: "LIMIT", labelKey: "order.type.limit" },
+  { id: "STOP", labelKey: "order.type.stop" },
+  { id: "STOP_LIMIT", labelKey: "order.type.stopLimit" },
+  { id: "TRAILING_STOP", labelKey: "order.type.trail" },
+];
 
 export interface TicketPrefill {
   instrument?: string;
@@ -31,15 +43,13 @@ interface OrderTicketProps {
 
 export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: OrderTicketProps) {
   const { toast } = useToast();
+  const { t } = useT();
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [symbol, setSymbol] = useState(prefill.instrument ?? "");
   const [side, setSide] = useState<OrderSide>(prefill.side ?? "BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [timeInForce, setTimeInForce] = useState<TimeInForce>("GTC");
   const [qty, setQty] = useState(prefill.quantity ? String(prefill.quantity) : "");
-  const [limitPrice, setLimitPrice] = useState("");
-  const [stopPrice, setStopPrice] = useState("");
-  const [trailAmount, setTrailAmount] = useState("");
   const [trailPct, setTrailPct] = useState("");
   const [portfolioId, setPortfolioId] = useState(
     prefill.portfolioId ?? portfolios[0]?.portfolio_id ?? "",
@@ -76,19 +86,25 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
     [instruments, symbol],
   );
 
+  // §U5: price fields re-anchor to the NEW symbol's last price on symbol
+  // change; typed values survive while the symbol is unchanged.
+  const {
+    limit: limitPrice,
+    stop: stopPrice,
+    trailAmount,
+    onLimitChange: setLimitPrice,
+    onStopChange: setStopPrice,
+    onTrailAmountChange: setTrailAmount,
+  } = useAnchoredPriceFields(symbol, instrument?.latest_price ?? null);
+
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP";
 
+  // Anchored fields (§U5) already track the current symbol's last price, so
+  // switching order type never needs to prefill — it just reveals inputs.
   const pickType = (t: OrderType) => {
     setOrderType(t);
-    const last = instrument?.latest_price;
-    if ((t === "STOP" || t === "STOP_LIMIT") && stopPrice === "" && last !== null && last !== undefined) {
-      setStopPrice(String(last));
-    }
-    if ((t === "LIMIT" || t === "STOP_LIMIT") && limitPrice === "" && last !== null && last !== undefined) {
-      setLimitPrice(String(last));
-    }
   };
 
   const qtyNum = Number(qty);
@@ -110,7 +126,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       : null;
 
   const lotHint =
-    instrument && instrument.lot_size > 1 ? `Lot size ${fmtNum(instrument.lot_size)}` : null;
+    instrument && instrument.lot_size > 1 ? t("order.lotsOf", { n: fmtNum(instrument.lot_size) }) : null;
   const lotInvalid =
     instrument !== undefined &&
     instrument.lot_size > 1 &&
@@ -118,30 +134,32 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
     !Number.isNaN(qtyNum) &&
     qtyNum % instrument.lot_size !== 0;
 
+  const sideLabel = (s: OrderSide): string => t(s === "BUY" ? "order.buy" : "order.sell");
+
   const submit = async () => {
     setViolations([]);
     if (!portfolioId) {
-      setViolations(["Select a portfolio first."]);
+      setViolations([t("order.selectPortfolio")]);
       return;
     }
     if (!symbol) {
-      setViolations(["Select an instrument."]);
+      setViolations([t("order.selectInstrument")]);
       return;
     }
     if (qty === "" || Number.isNaN(qtyNum) || qtyNum <= 0) {
-      setViolations(["Quantity must be a positive number."]);
+      setViolations([t("order.issueQtyTicket")]);
       return;
     }
     if (needsLimit && (limitPrice === "" || Number.isNaN(limitNum) || limitNum <= 0)) {
-      setViolations(["Limit price is required for LIMIT / STOP-LIMIT orders."]);
+      setViolations([t("order.issueLimit")]);
       return;
     }
     if (needsStop && (stopPrice === "" || Number.isNaN(stopNum) || stopNum <= 0)) {
-      setViolations(["Stop price is required for STOP / STOP-LIMIT orders."]);
+      setViolations([t("order.issueStop")]);
       return;
     }
     if (needsTrail && trailAmountSet === trailPctSet) {
-      setViolations(["Exactly one of trail amount / trail % is required for TRAIL orders."]);
+      setViolations([t("order.issueTrail")]);
       return;
     }
 
@@ -163,12 +181,13 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       // Raw response: 201 = created, 200 = duplicate idempotency key replay.
       const res = await postOrder(body, idempotencyKey);
       if (res.status === 200) {
-        toast("Duplicate submission ignored — order was already accepted.", "info");
+        toast(t("order.toastDuplicate"), "info");
         onClose();
         return;
       }
       const created = (await res.json()) as OrderCreated;
-      toast(`Order ${created.order_id} ${created.status}`, "success");
+      const statusKey = statusKeyOf(created.status);
+      toast(t("order.toastCreated", { id: created.order_id, status: statusKey ? t(statusKey) : created.status }), "success");
       onSubmitted?.();
       onClose();
     } catch (e) {
@@ -178,7 +197,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
       } else if (e instanceof ApiError) {
         toast(`${e.message}${e.traceId ? ` · trace ${e.traceId}` : ""}`, "error");
       } else {
-        toast("Order submission failed", "error");
+        toast(t("order.toastFailed"), "error");
       }
     } finally {
       setSubmitting(false);
@@ -186,12 +205,12 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
   };
 
   return (
-    <Modal title="Order Ticket" onClose={onClose}>
+    <Modal title={t("order.ticketTitle")} onClose={onClose}>
       <div className="form-grid">
         <label className="form-field">
-          <span>Portfolio</span>
+          <span>{t("common.portfolio")}</span>
           <select value={portfolioId} onChange={(e) => setPortfolioId(e.target.value)}>
-            {portfolios.length === 0 && <option value="">No portfolios</option>}
+            {portfolios.length === 0 && <option value="">{t("order.noPortfolios")}</option>}
             {portfolios.map((p) => (
               <option key={p.portfolio_id} value={p.portfolio_id}>
                 {p.name} ({p.type})
@@ -201,7 +220,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         </label>
 
         <label className="form-field">
-          <span>Instrument</span>
+          <span>{t("common.instrument")}</span>
           <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
             {instruments
               .filter((i) => i.tradable)
@@ -215,32 +234,34 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         </label>
 
         <div className="form-field">
-          <span>Side</span>
+          <span>{t("common.side")}</span>
           <div className="side-toggle">
             <button
               className={`btn btn-buy${side === "BUY" ? " active" : ""}`}
               onClick={() => setSide("BUY")}
               type="button"
             >
-              BUY
+              {t("order.buy")}
             </button>
             <button
               className={`btn btn-sell${side === "SELL" ? " active" : ""}`}
               onClick={() => setSide("SELL")}
               type="button"
             >
-              SELL
+              {t("order.sell")}
             </button>
           </div>
         </div>
 
         <div className="form-field">
-          <span>Latest price</span>
+          <span>{t("order.latestPrice")}</span>
           <div className="num ticket-price">{fmtJpy(instrument?.latest_price, true)}</div>
         </div>
 
         <label className="form-field">
-          <span>Quantity {lotHint && <em className="muted">({lotHint})</em>}</span>
+          <span>
+            {t("order.quantity")} {lotHint && <em className="muted">({lotHint})</em>}
+          </span>
           <input
             type="number"
             min="0"
@@ -250,37 +271,39 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
             placeholder="0"
           />
           {lotInvalid && (
-            <span className="field-error">Not a multiple of lot size {instrument?.lot_size}</span>
+            <span className="field-error">
+              {t("order.lotMultiple", { n: fmtNum(instrument?.lot_size ?? 0) })}
+            </span>
           )}
         </label>
 
         <div className="form-field form-field-full">
-          <span>Order type</span>
+          <span>{t("order.type")}</span>
           <div className="seg seg-5">
-            {(["MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"] as OrderType[]).map((t) => (
+            {ORDER_TYPE_KEYS.map((ty) => (
               <button
-                key={t}
-                className={`seg-btn${orderType === t ? " active" : ""}`}
-                onClick={() => pickType(t)}
+                key={ty.id}
+                className={`seg-btn${orderType === ty.id ? " active" : ""}`}
+                onClick={() => pickType(ty.id)}
                 type="button"
               >
-                {t === "STOP_LIMIT" ? "STOP-LIMIT" : t === "TRAILING_STOP" ? "TRAIL" : t}
+                {t(ty.labelKey)}
               </button>
             ))}
           </div>
         </div>
 
         <div className="form-field form-field-full">
-          <span>Time in force</span>
+          <span>{t("order.tif")}</span>
           <div className="seg seg-3">
-            {(["DAY", "GTC", "IOC"] as TimeInForce[]).map((t) => (
+            {(["DAY", "GTC", "IOC"] as TimeInForce[]).map((tif) => (
               <button
-                key={t}
-                className={`seg-btn${timeInForce === t ? " active" : ""}`}
-                onClick={() => setTimeInForce(t)}
+                key={tif}
+                className={`seg-btn${timeInForce === tif ? " active" : ""}`}
+                onClick={() => setTimeInForce(tif)}
                 type="button"
               >
-                {t}
+                {tif}
               </button>
             ))}
           </div>
@@ -289,7 +312,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         {needsTrail && (
           <>
             <label className="form-field">
-              <span>Trail amount</span>
+              <span>{t("order.trailAmount")}</span>
               <input
                 type="number"
                 min="0"
@@ -302,7 +325,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
               />
             </label>
             <label className="form-field">
-              <span>Trail %</span>
+              <span>{t("order.trailPct")}</span>
               <input
                 type="number"
                 min="0"
@@ -319,7 +342,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
         {needsStop && (
           <label className="form-field">
-            <span>Stop price</span>
+            <span>{t("order.stopPrice")}</span>
             <input
               type="number"
               min="0"
@@ -334,7 +357,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
         {needsLimit && (
           <label className="form-field">
-            <span>Limit price</span>
+            <span>{t("order.limitPrice")}</span>
             <input
               type="number"
               min="0"
@@ -348,11 +371,11 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
         )}
 
         <div className="form-field">
-          <span>Estimated cost</span>
+          <span>{t("order.estimatedCost")}</span>
           <div className="num ticket-price">
             {fmtJpy(estCost)}
             {instrument?.asset_class === "BOND" && (
-              <span className="muted ticket-bond-note"> (qty × px / 100)</span>
+              <span className="muted ticket-bond-note">{t("order.bondNote")}</span>
             )}
           </div>
         </div>
@@ -360,7 +383,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
       {violations.length > 0 && (
         <div className="ticket-violations">
-          <div className="ticket-violations-title">Order rejected by validation:</div>
+          <div className="ticket-violations-title">{t("order.violationsTitle")}</div>
           <ul>
             {violations.map((v, i) => (
               <li key={i}>{v}</li>
@@ -371,7 +394,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
 
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onClose} type="button">
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           className={`btn ${side === "BUY" ? "btn-buy" : "btn-sell"} active`}
@@ -379,7 +402,7 @@ export function OrderTicket({ prefill, portfolios, onClose, onSubmitted }: Order
           disabled={submitting}
           type="button"
         >
-          {submitting ? "Submitting…" : `Submit ${side}`}
+          {submitting ? t("order.submitting") : t("order.submitSide", { side: sideLabel(side) })}
         </button>
       </div>
     </Modal>

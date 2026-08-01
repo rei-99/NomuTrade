@@ -6,34 +6,14 @@ import type { TickData } from "../api/ws";
 import { useAuth } from "../auth";
 import { fmtJpy } from "../format";
 import { usePoll, useWsMessage, useWsState } from "../hooks";
+import { useT } from "../i18n";
+import { PERSONA_TABS, TABS } from "../personas";
 import { Badge } from "./Badge";
 import { NotificationBell } from "./NotificationBell";
 
-interface NavItem {
-  to: string;
-  label: string;
-  perms?: string[]; // ANY of these
-}
-
-const NAV: NavItem[] = [
-  { to: "/", label: "Trading" },
-  { to: "/orders", label: "Orders" },
-  { to: "/trades", label: "Trades", perms: ["TRADE_VIEW"] },
-  { to: "/portfolios", label: "Portfolios", perms: ["PORTFOLIO_VIEW"] },
-  { to: "/alerts", label: "Alerts" },
-  { to: "/reports", label: "Reports" },
-  { to: "/paper", label: "Paper Trading", perms: ["PAPER_TRADE"] },
-  { to: "/assistant", label: "Assistant", perms: ["ASSISTANT_USE"] },
-  { to: "/access", label: "Access Requests" },
-  { to: "/notifications", label: "Notifications" },
-  { to: "/approvals", label: "Approvals", perms: ["APPROVE_ACCESS"] },
-  { to: "/admin", label: "Admin", perms: ["ROLE_MANAGE", "ROLE_VIEW", "GRANT_VIEW", "GOVERNANCE_VIEW", "PAM_CHECKOUT", "BREAKGLASS_ELIGIBLE", "BREAKGLASS_REVIEW"] },
-  { to: "/audit", label: "Audit", perms: ["AUDIT_VIEW"] },
-  { to: "/governance", label: "Governance", perms: ["GOVERNANCE_VIEW", "INTEGRATION_MONITOR"] },
-];
-
 /** Global symbol search: type-to-filter over instruments, Enter/click selects. */
 function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
+  const { t } = useT();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -50,6 +30,10 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
       )
       .slice(0, 8);
   }, [instruments, query]);
+
+  // Grouped presentation (design 25 §U3): equities first, then bonds.
+  const equityMatches = useMemo(() => matches.filter((i) => i.asset_class !== "BOND"), [matches]);
+  const bondMatches = useMemo(() => matches.filter((i) => i.asset_class === "BOND"), [matches]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,12 +53,30 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
     [navigate],
   );
 
+  const renderItem = (i: Instrument) => (
+    <button
+      key={i.instrument_id}
+      className="search-item"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        pick(i);
+      }}
+    >
+      <span>
+        <span className="search-item-symbol">{i.symbol}</span>{" "}
+        {i.asset_class === "BOND" && <Badge text="BOND" />}{" "}
+        <span className="search-item-name">{i.name}</span>
+      </span>
+      <span className="search-item-price num">{fmtJpy(i.latest_price, true)}</span>
+    </button>
+  );
+
   return (
     <div className="symbol-search" ref={rootRef}>
       <input
         type="text"
         value={query}
-        placeholder="Search symbol…"
+        placeholder={t("topbar.searchPlaceholder")}
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
@@ -92,25 +94,22 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
       {open && query.trim() !== "" && (
         <div className="search-dropdown">
           {matches.length === 0 ? (
-            <div className="search-empty">No instruments match “{query.trim()}”.</div>
+            <div className="search-empty">{t("topbar.searchEmpty", { q: query.trim() })}</div>
           ) : (
-            matches.map((i, idx) => (
-              <button
-                key={i.instrument_id}
-                className={`search-item${idx === 0 ? " active" : ""}`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(i);
-                }}
-              >
-                <span>
-                  <span className="search-item-symbol">{i.symbol}</span>{" "}
-                  {i.asset_class === "BOND" && <Badge text="BOND" />}{" "}
-                  <span className="search-item-name">{i.name}</span>
-                </span>
-                <span className="search-item-price num">{fmtJpy(i.latest_price, true)}</span>
-              </button>
-            ))
+            <>
+              {equityMatches.length > 0 && (
+                <div className="search-group">
+                  <div className="search-group-label">{t("common.equities")}</div>
+                  {equityMatches.map(renderItem)}
+                </div>
+              )}
+              {bondMatches.length > 0 && (
+                <div className="search-group">
+                  <div className="search-group-label">{t("common.bonds")}</div>
+                  {bondMatches.map(renderItem)}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -119,12 +118,19 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
 }
 
 export function Layout() {
-  const { me, logout, hasPerm } = useAuth();
+  const { me, logout, hasPerm, persona } = useAuth();
+  const { t, lang, setLang } = useT();
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [marketLive, setMarketLive] = useState(false);
   const prevPrices = useRef<Map<string, number>>(new Map());
   const [searchParams] = useSearchParams();
   const [simTs, setSimTs] = useState<string | null>(null);
+
+  // Nav = exactly the persona's tab list (design 25 §U2); the per-permission
+  // gates still filter underneath as the safety net.
+  const navTabs = PERSONA_TABS[persona]
+    .map((id) => TABS[id])
+    .filter((t) => !t.perms || hasPerm(...t.perms));
 
   // Simulation clock: the workspace symbol is in the URL (?symbol=) when the
   // Trading page is active; otherwise fall back to a liquid reference symbol.
@@ -163,8 +169,8 @@ export function Layout() {
   );
 
   const dotTitle = useCallback(
-    () => (marketLive ? "Market data updating" : "No price updates in the last poll"),
-    [marketLive],
+    () => (marketLive ? t("topbar.marketLiveTitle") : t("topbar.marketIdleTitle")),
+    [marketLive, t],
   );
 
   // Sim clock: driven by the tick stream (tick.ts is dataset time); the 30 s
@@ -204,18 +210,18 @@ export function Layout() {
           <span className="brand-mark">▮▶</span> STP Platform
         </div>
         <nav className="sidebar-nav">
-          {NAV.filter((n) => !n.perms || hasPerm(...n.perms)).map((n) => (
+          {navTabs.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
               end={n.to === "/"}
               className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
             >
-              {n.label}
+              {t(n.labelKey)}
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar-footer muted">API /api/v1 · dev build</div>
+        <div className="sidebar-footer muted">{t("sidebar.footer")}</div>
       </aside>
 
       <div className="main">
@@ -223,35 +229,44 @@ export function Layout() {
           <div className="topbar-left">
             <span className="market-status" title={dotTitle()}>
               <span className={`market-dot${marketLive ? " live" : ""}`} />
-              {marketLive ? "SIM LIVE" : "SIM IDLE"}
+              {marketLive ? t("topbar.marketLive") : t("topbar.marketIdle")}
             </span>
-            <span
-              className="sim-clock muted num"
-              title="Simulation clock — timestamp of the latest market-data tick"
-            >
+            <span className="sim-clock muted num" title={t("topbar.simClockTitle")}>
               SIM {simTs ? `${simTs.slice(5, 10)} ${simTs.slice(11, 16)}` : "—"}
             </span>
             <span
               className="market-status"
-              title={
-                wsState === "open"
-                  ? "Push channel connected (real-time ticks)"
-                  : "Push channel disconnected — polling fallback"
-              }
+              title={wsState === "open" ? t("topbar.wsOnTitle") : t("topbar.wsOffTitle")}
             >
               <span className={`market-dot${wsState === "open" ? " live" : ""}`} />
-              {wsState === "open" ? "WS" : "WS OFF"}
+              {wsState === "open" ? t("topbar.wsOn") : t("topbar.wsOff")}
             </span>
             <SymbolSearch instruments={instruments} />
           </div>
           <div className="topbar-right">
+            <div className="seg lang-seg" title={t("topbar.langTitle")}>
+              <button
+                type="button"
+                className={`seg-btn${lang === "en" ? " active" : ""}`}
+                onClick={() => setLang("en")}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                className={`seg-btn${lang === "ja" ? " active" : ""}`}
+                onClick={() => setLang("ja")}
+              >
+                JA
+              </button>
+            </div>
             <NotificationBell />
             <div className="topbar-user">
               <div className="topbar-user-name">{me?.user.display_name ?? me?.user.email}</div>
               <div className="topbar-user-roles muted">{(me?.roles ?? []).join(", ")}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => void logout()}>
-              Sign out
+              {t("topbar.signOut")}
             </button>
           </div>
         </header>

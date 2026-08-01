@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { OrderTicket } from "../components/OrderTicket";
 import { fmtTs } from "../format";
+import { useT } from "../i18n";
 
 interface ChatMessage {
   id: number;
@@ -20,6 +21,7 @@ interface ChatMessage {
 }
 
 export function Assistant() {
+  const { t } = useT();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,29 +76,26 @@ export function Assistant() {
         {
           id: ++nextId.current,
           role: "assistant",
-          text: "The assistant request failed — see the error banner for details.",
+          text: t("assistant.failed"),
           ts: new Date().toISOString(),
         },
       ]);
     } finally {
       setBusy(false);
     }
-  }, [input, busy]);
+  }, [input, busy, t]);
 
   return (
     <div className="page page-chat">
       <div className="page-header">
-        <h2>Assistant</h2>
-        <span className="muted">Advisory only — orders always require your explicit confirmation.</span>
+        <h2>{t("assistant.title")}</h2>
+        <span className="muted">{t("assistant.disclaimer")}</span>
       </div>
 
       <section className="panel chat-panel">
         <div className="chat-messages">
           {messages.length === 0 && (
-            <div className="muted chat-empty">
-              Ask about portfolios, positions, instruments or recent activity. The assistant can
-              draft an order ticket, but never submits one by itself.
-            </div>
+            <div className="muted chat-empty">{t("assistant.empty")}</div>
           )}
           {messages.map((m) => (
             <div key={m.id} className={`chat-msg chat-${m.role}`}>
@@ -118,11 +117,11 @@ export function Assistant() {
                 {m.ticket && (
                   <div className="chat-ticket">
                     <span>
-                      Suggested ticket: {m.ticket.side} {m.ticket.instrument}
+                      {t("assistant.suggested")} {m.ticket.side} {m.ticket.instrument}
                       {m.ticket.quantity ? ` × ${m.ticket.quantity}` : ""}
                     </span>
                     <button className="btn btn-buy btn-sm" onClick={() => setTicket(m.ticket ?? null)}>
-                      Review ticket
+                      {t("assistant.reviewTicket")}
                     </button>
                   </div>
                 )}
@@ -130,20 +129,20 @@ export function Assistant() {
               </div>
             </div>
           ))}
-          {busy && <div className="muted chat-thinking">Assistant is thinking…</div>}
+          {busy && <div className="muted chat-thinking">{t("assistant.thinking")}</div>}
           <div ref={bottomRef} />
         </div>
         <div className="chat-input-row">
           <input
             type="text"
             value={input}
-            placeholder="Type a question…"
+            placeholder={t("assistant.placeholder")}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void send()}
             disabled={busy}
           />
           <button className="btn btn-buy active" onClick={() => void send()} disabled={busy || !input.trim()}>
-            Send
+            {t("assistant.send")}
           </button>
         </div>
       </section>

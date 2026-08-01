@@ -17,6 +17,8 @@ import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
+import type { I18nKey } from "../i18n/en";
 
 type TabId = "roles" | "grants" | "breakglass" | "pam" | "restricted";
 
@@ -39,15 +41,16 @@ function normalizePermissions(raw: unknown): string[] {
 export function Admin() {
   const { hasPerm } = useAuth();
   const { toast } = useToast();
+  const { t } = useT();
 
   const visibleTabs = useMemo(() => {
-    const tabs: { id: TabId; label: string }[] = [];
-    if (hasPerm("ROLE_MANAGE", "ROLE_VIEW")) tabs.push({ id: "roles", label: "Roles" });
-    if (hasPerm("GRANT_VIEW", "GRANT_MANAGE")) tabs.push({ id: "grants", label: "Grants" });
+    const tabs: { id: TabId; labelKey: I18nKey }[] = [];
+    if (hasPerm("ROLE_MANAGE", "ROLE_VIEW")) tabs.push({ id: "roles", labelKey: "admin.tab.roles" });
+    if (hasPerm("GRANT_VIEW", "GRANT_MANAGE")) tabs.push({ id: "grants", labelKey: "admin.tab.grants" });
     if (hasPerm("BREAKGLASS_ELIGIBLE", "BREAKGLASS_REVIEW"))
-      tabs.push({ id: "breakglass", label: "Break-glass" });
-    if (hasPerm("PAM_CHECKOUT")) tabs.push({ id: "pam", label: "PAM" });
-    if (hasPerm("ROLE_MANAGE")) tabs.push({ id: "restricted", label: "Restricted" });
+      tabs.push({ id: "breakglass", labelKey: "admin.tab.breakglass" });
+    if (hasPerm("PAM_CHECKOUT")) tabs.push({ id: "pam", labelKey: "admin.tab.pam" });
+    if (hasPerm("ROLE_MANAGE")) tabs.push({ id: "restricted", labelKey: "admin.tab.restricted" });
     return tabs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -59,7 +62,7 @@ export function Admin() {
   );
   useEffect(() => {
     setTab((cur) =>
-      cur && visibleTabs.some((t) => t.id === cur)
+      cur && visibleTabs.some((ty) => ty.id === cur)
         ? cur
         : visibleTabs[0]?.id ?? null,
     );
@@ -134,7 +137,7 @@ export function Admin() {
 
   const saveRole = async () => {
     if (!roleName.trim()) {
-      toast("Role name is required", "error");
+      toast(t("admin.roles.nameRequired"), "error");
       return;
     }
     const body = {
@@ -145,11 +148,11 @@ export function Admin() {
     try {
       if (editingRole === "new") {
         await api("/roles", { method: "POST", body });
-        toast(`Role ${body.name} created`, "success");
+        toast(t("admin.roles.created", { name: body.name }), "success");
       } else if (editingRole) {
         // ASSUMPTION: PATCH /roles/{id} accepts the same body shape as POST.
         await api(`/roles/${editingRole.role_id}`, { method: "PATCH", body });
-        toast(`Role ${body.name} updated`, "success");
+        toast(t("admin.roles.updated", { name: body.name }), "success");
       }
       setEditingRole(null);
       void loadRoles();
@@ -168,7 +171,7 @@ export function Admin() {
   const revoke = async () => {
     if (!revoking) return;
     if (!revokeReason.trim()) {
-      toast("A reason is required to revoke a grant", "error");
+      toast(t("admin.grants.revokeRequired"), "error");
       return;
     }
     try {
@@ -176,7 +179,7 @@ export function Admin() {
         method: "POST",
         body: { reason: revokeReason.trim() },
       });
-      toast("Grant revoked", "success");
+      toast(t("admin.grants.revoked"), "success");
       setRevoking(null);
       void loadGrants(grantFilters);
     } catch {
@@ -188,7 +191,7 @@ export function Admin() {
     if (!extending) return;
     const hours = Number(extendHours);
     if (Number.isNaN(hours) || hours <= 0) {
-      toast("Additional hours must be positive", "error");
+      toast(t("admin.grants.hoursInvalid"), "error");
       return;
     }
     try {
@@ -196,7 +199,7 @@ export function Admin() {
         method: "POST",
         body: { additional_hours: hours, justification: extendJust.trim() },
       });
-      toast("Grant extended", "success");
+      toast(t("admin.grants.extended"), "success");
       setExtending(null);
       void loadGrants(grantFilters);
     } catch {
@@ -217,7 +220,7 @@ export function Admin() {
 
   const activateBg = async () => {
     if (!bgRole.trim() || !bgReason.trim() || !bgIncident.trim()) {
-      toast("Emergency role, reason and incident reference are all required", "error");
+      toast(t("admin.bg.required"), "error");
       return;
     }
     try {
@@ -230,7 +233,7 @@ export function Admin() {
         },
       });
       setBgResult(res);
-      toast(`Break-glass activated until ${fmtTs(res.expires_at)}`, "success");
+      toast(t("admin.bg.activated", { ts: fmtTs(res.expires_at) }), "success");
     } catch {
       // toast raised by client
     }
@@ -239,7 +242,7 @@ export function Admin() {
   const submitVerdict = async () => {
     if (!verdictTarget) return;
     if (!verdictComment.trim()) {
-      toast("A comment is required for the verdict", "error");
+      toast(t("admin.bg.commentRequired"), "error");
       return;
     }
     try {
@@ -247,7 +250,7 @@ export function Admin() {
         method: "POST",
         body: { verdict: verdictTarget.verdict, comment: verdictComment.trim() },
       });
-      toast("Verdict recorded", "success");
+      toast(t("admin.bg.verdictDone"), "success");
       setVerdictTarget(null);
       void loadReviews();
     } catch {
@@ -262,7 +265,7 @@ export function Admin() {
 
   const doCheckout = async () => {
     if (!safeName.trim() || !accountId.trim()) {
-      toast("Safe name and account ID are required", "error");
+      toast(t("admin.pam.required"), "error");
       return;
     }
     try {
@@ -271,7 +274,7 @@ export function Admin() {
         body: { safe_name: safeName.trim(), account_id: accountId.trim() },
       });
       setCheckout(res);
-      toast("Credential checked out — copy it now, it is shown only once", "info");
+      toast(t("admin.pam.checkedOut"), "info");
     } catch {
       // toast raised by client
     }
@@ -281,7 +284,7 @@ export function Admin() {
     if (!checkout) return;
     try {
       await api(`/pam/checkouts/${checkout.checkout_id}/checkin`, { method: "POST" });
-      toast("Credential checked in", "success");
+      toast(t("admin.pam.checkedIn"), "success");
       setCheckout(null);
     } catch {
       // toast raised by client
@@ -294,7 +297,7 @@ export function Admin() {
 
   const addRestriction = async () => {
     if (!restSymbol.trim()) {
-      toast("Symbol is required", "error");
+      toast(t("admin.restricted.symbolRequired"), "error");
       return;
     }
     try {
@@ -302,7 +305,7 @@ export function Admin() {
         method: "POST",
         body: { symbol: restSymbol.trim().toUpperCase(), reason: restReason.trim() },
       });
-      toast(`${restSymbol.trim().toUpperCase()} restricted`, "success");
+      toast(t("admin.restricted.added", { symbol: restSymbol.trim().toUpperCase() }), "success");
       setRestSymbol("");
       setRestReason("");
       void loadRestricted();
@@ -314,7 +317,7 @@ export function Admin() {
   const removeRestriction = async (symbol: string) => {
     try {
       await api(`/restricted-instruments/${encodeURIComponent(symbol)}`, { method: "DELETE" });
-      toast(`${symbol} removed from the restricted list`, "success");
+      toast(t("admin.restricted.removed", { symbol }), "success");
       void loadRestricted();
     } catch {
       // toast raised by client
@@ -324,7 +327,7 @@ export function Admin() {
   if (visibleTabs.length === 0) {
     return (
       <div className="page">
-        <div className="panel panel-empty muted">No admin capabilities granted to your roles.</div>
+        <div className="panel panel-empty muted">{t("admin.noCaps")}</div>
       </div>
     );
   }
@@ -332,13 +335,13 @@ export function Admin() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Administration</h2>
+        <h2>{t("admin.title")}</h2>
       </div>
 
       <div className="tabs">
-        {visibleTabs.map((t) => (
-          <button key={t.id} className={`tab${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.label}
+        {visibleTabs.map((ty) => (
+          <button key={ty.id} className={`tab${tab === ty.id ? " active" : ""}`} onClick={() => setTab(ty.id)}>
+            {t(ty.labelKey)}
           </button>
         ))}
       </div>
@@ -346,24 +349,24 @@ export function Admin() {
       {tab === "roles" && (
         <section className="panel">
           <div className="panel-header">
-            <h3>Roles</h3>
+            <h3>{t("admin.tab.roles")}</h3>
             {hasPerm("ROLE_MANAGE") && (
               <button className="btn btn-buy btn-sm active" onClick={() => openRoleEditor("new")}>
-                New role
+                {t("admin.roles.new")}
               </button>
             )}
           </div>
           <DataTable<Role>
             rows={roles}
             keyFn={(r) => r.role_id}
-            empty="No roles"
+            empty={t("admin.roles.empty")}
             columns={[
-              { header: "Name", render: (r) => r.name },
-              { header: "Description", render: (r) => r.description },
-              { header: "Type", render: (r) => (r.built_in ? <Badge text="BUILT_IN" /> : "Custom") },
-              { header: "Version", className: "num", render: (r) => fmtNum(r.version) },
+              { header: t("admin.roles.name"), render: (r) => r.name },
+              { header: t("admin.roles.description"), render: (r) => r.description },
+              { header: t("common.type"), render: (r) => (r.built_in ? <Badge text="BUILT_IN" /> : t("admin.roles.custom")) },
+              { header: t("admin.roles.version"), className: "num", render: (r) => fmtNum(r.version) },
               {
-                header: "Permissions",
+                header: t("admin.roles.permissions"),
                 className: "num",
                 render: (r) => <span title={r.permissions.join(", ")}>{fmtNum(r.permissions.length)}</span>,
               },
@@ -372,7 +375,7 @@ export function Admin() {
                 render: (r) =>
                   hasPerm("ROLE_MANAGE") ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => openRoleEditor(r)}>
-                      Edit
+                      {t("admin.roles.editBtn")}
                     </button>
                   ) : null,
               },
@@ -384,11 +387,11 @@ export function Admin() {
       {tab === "grants" && (
         <section className="panel">
           <div className="panel-header">
-            <h3>Access grants</h3>
+            <h3>{t("admin.grants.title")}</h3>
           </div>
           <div className="filter-bar">
             <label>
-              User email
+              {t("admin.grants.userEmail")}
               <input
                 type="text"
                 value={grantFilters.user_email}
@@ -397,7 +400,7 @@ export function Admin() {
               />
             </label>
             <label>
-              Role
+              {t("admin.grants.role")}
               <input
                 type="text"
                 value={grantFilters.role}
@@ -406,12 +409,12 @@ export function Admin() {
               />
             </label>
             <label>
-              Status
+              {t("admin.grants.status")}
               <select
                 value={grantFilters.status}
                 onChange={(e) => setGrantFilters((f) => ({ ...f, status: e.target.value }))}
               >
-                <option value="">All</option>
+                <option value="">{t("common.all")}</option>
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="EXPIRED">EXPIRED</option>
                 <option value="REVOKED">REVOKED</option>
@@ -421,19 +424,19 @@ export function Admin() {
               className="btn btn-ghost btn-sm filter-submit"
               onClick={() => void loadGrants(grantFilters)}
             >
-              Apply
+              {t("common.apply")}
             </button>
           </div>
           <DataTable<Grant>
             rows={grants}
             keyFn={(g) => g.grant_id}
-            empty="No grants match the filters"
+            empty={t("admin.grants.empty")}
             columns={[
-              { header: "User", render: (g) => g.user.email },
-              { header: "Role", render: (g) => g.role.name },
-              { header: "Start", render: (g) => <span className="num">{fmtTs(g.start_at)}</span> },
-              { header: "End", render: (g) => <span className="num">{fmtTs(g.end_at)}</span> },
-              { header: "Status", render: (g) => <Badge text={g.status} /> },
+              { header: t("admin.grants.user"), render: (g) => g.user.email },
+              { header: t("admin.grants.role"), render: (g) => g.role.name },
+              { header: t("admin.grants.start"), render: (g) => <span className="num">{fmtTs(g.start_at)}</span> },
+              { header: t("admin.grants.end"), render: (g) => <span className="num">{fmtTs(g.end_at)}</span> },
+              { header: t("admin.grants.status"), render: (g) => <Badge text={g.status} /> },
               {
                 header: "",
                 render: (g) =>
@@ -447,7 +450,7 @@ export function Admin() {
                           setExtendJust("");
                         }}
                       >
-                        Extend
+                        {t("admin.grants.extend")}
                       </button>
                       <button
                         className="btn btn-danger btn-sm"
@@ -456,7 +459,7 @@ export function Admin() {
                           setRevokeReason("");
                         }}
                       >
-                        Revoke
+                        {t("admin.grants.revoke")}
                       </button>
                     </span>
                   ) : null,
@@ -471,20 +474,20 @@ export function Admin() {
           {hasPerm("BREAKGLASS_ELIGIBLE") && (
             <section className="panel">
               <div className="panel-header">
-                <h3>Activate break-glass</h3>
+                <h3>{t("admin.bg.activate")}</h3>
               </div>
               <div className="form-grid form-grid-wide">
                 <label className="form-field">
-                  <span>Emergency role</span>
+                  <span>{t("admin.bg.role")}</span>
                   <input
                     type="text"
                     value={bgRole}
                     onChange={(e) => setBgRole(e.target.value)}
-                    placeholder="e.g. EmergencyOps"
+                    placeholder={t("admin.bg.rolePlaceholder")}
                   />
                 </label>
                 <label className="form-field">
-                  <span>Incident reference</span>
+                  <span>{t("admin.bg.incident")}</span>
                   <input
                     type="text"
                     value={bgIncident}
@@ -493,19 +496,18 @@ export function Admin() {
                   />
                 </label>
                 <label className="form-field form-field-full">
-                  <span>Reason</span>
+                  <span>{t("admin.bg.reason")}</span>
                   <textarea rows={2} value={bgReason} onChange={(e) => setBgReason(e.target.value)} />
                 </label>
               </div>
               <div className="modal-actions">
                 <button className="btn btn-danger" onClick={() => void activateBg()}>
-                  Activate break-glass
+                  {t("admin.bg.action")}
                 </button>
               </div>
               {bgResult && (
                 <div className="callout callout-warn">
-                  Break-glass active — grant {bgResult.grant_id}, expires{" "}
-                  <span className="num">{fmtTs(bgResult.expires_at)}</span>.
+                  {t("admin.bg.activeNote", { id: bgResult.grant_id, ts: fmtTs(bgResult.expires_at) })}
                 </div>
               )}
             </section>
@@ -514,21 +516,21 @@ export function Admin() {
           {hasPerm("BREAKGLASS_REVIEW") && (
             <section className="panel">
               <div className="panel-header">
-                <h3>Break-glass review queue</h3>
+                <h3>{t("admin.bg.queue")}</h3>
               </div>
               <DataTable<BreakGlassReview>
                 rows={reviews}
                 keyFn={(r) => r.bg_id}
-                empty="No break-glass activations to review"
+                empty={t("admin.bg.empty")}
                 columns={[
-                  { header: "User", render: (r) => r.user.email },
-                  { header: "Role", render: (r) => r.emergency_role },
-                  { header: "Incident", render: (r) => r.incident_ref },
-                  { header: "Reason", render: (r) => <span className="cell-clip" title={r.reason}>{r.reason}</span> },
-                  { header: "Activated", render: (r) => <span className="num">{fmtTs(r.activated_at)}</span> },
-                  { header: "Expires", render: (r) => <span className="num">{fmtTs(r.expires_at)}</span> },
-                  { header: "Review", render: (r) => <Badge text={r.review_status} /> },
-                  { header: "Verdict", render: (r) => (r.verdict ? <Badge text={r.verdict} /> : "—") },
+                  { header: t("admin.bg.user"), render: (r) => r.user.email },
+                  { header: t("admin.bg.role"), render: (r) => r.emergency_role },
+                  { header: t("gov.incident"), render: (r) => r.incident_ref },
+                  { header: t("admin.bg.reasonCol"), render: (r) => <span className="cell-clip" title={r.reason}>{r.reason}</span> },
+                  { header: t("admin.bg.activatedCol"), render: (r) => <span className="num">{fmtTs(r.activated_at)}</span> },
+                  { header: t("admin.bg.expires"), render: (r) => <span className="num">{fmtTs(r.expires_at)}</span> },
+                  { header: t("admin.bg.review"), render: (r) => <Badge text={r.review_status} /> },
+                  { header: t("admin.bg.verdict"), render: (r) => (r.verdict ? <Badge text={r.verdict} /> : "—") },
                   {
                     header: "",
                     render: (r) =>
@@ -541,7 +543,7 @@ export function Admin() {
                               setVerdictComment("");
                             }}
                           >
-                            Justified
+                            {t("admin.bg.justified")}
                           </button>
                           <button
                             className="btn btn-sell btn-sm active"
@@ -550,7 +552,7 @@ export function Admin() {
                               setVerdictComment("");
                             }}
                           >
-                            Escalate
+                            {t("admin.bg.escalate")}
                           </button>
                         </span>
                       ) : null,
@@ -565,33 +567,35 @@ export function Admin() {
       {tab === "pam" && (
         <section className="panel">
           <div className="panel-header">
-            <h3>CyberArk credential checkout</h3>
+            <h3>{t("admin.pam.title")}</h3>
           </div>
           <div className="form-grid">
             <label className="form-field">
-              <span>Safe name</span>
+              <span>{t("admin.pam.safe")}</span>
               <input type="text" value={safeName} onChange={(e) => setSafeName(e.target.value)} />
             </label>
             <label className="form-field">
-              <span>Account ID</span>
+              <span>{t("admin.pam.account")}</span>
               <input type="text" value={accountId} onChange={(e) => setAccountId(e.target.value)} />
             </label>
           </div>
           <div className="modal-actions">
             <button className="btn btn-buy active" onClick={() => void doCheckout()}>
-              Check out
+              {t("admin.pam.checkout")}
             </button>
           </div>
           {checkout && (
             <div className="callout callout-warn">
               <div>
-                Credential for <span className="mono">{checkout.safe_name}/{checkout.account_id}</span>{" "}
-                (checked out <span className="num">{fmtTs(checkout.checked_out_at)}</span>) — shown once:
+                {t("admin.pam.shownOnce", {
+                  path: `${checkout.safe_name}/${checkout.account_id}`,
+                  ts: fmtTs(checkout.checked_out_at),
+                })}
               </div>
               <code className="credential">{checkout.credential}</code>
               <div>
                 <button className="btn btn-danger btn-sm" onClick={() => void doCheckin()}>
-                  Check in
+                  {t("admin.pam.checkin")}
                 </button>
               </div>
             </div>
@@ -602,11 +606,11 @@ export function Admin() {
       {tab === "restricted" && (
         <section className="panel">
           <div className="panel-header">
-            <h3>Restricted instruments</h3>
+            <h3>{t("admin.restricted.title")}</h3>
           </div>
           <div className="filter-bar">
             <label>
-              Symbol
+              {t("admin.restricted.symbol")}
               <input
                 type="text"
                 value={restSymbol}
@@ -615,7 +619,7 @@ export function Admin() {
               />
             </label>
             <label>
-              Reason
+              {t("admin.restricted.reason")}
               <input
                 type="text"
                 value={restReason}
@@ -627,26 +631,26 @@ export function Admin() {
               className="btn btn-buy active btn-sm filter-submit"
               onClick={() => void addRestriction()}
             >
-              Restrict symbol
+              {t("admin.restricted.add")}
             </button>
           </div>
           <DataTable<RestrictedInstrument>
             rows={restricted}
             keyFn={(r) => r.symbol}
-            empty="No restricted instruments"
+            empty={t("admin.restricted.empty")}
             columns={[
-              { header: "Symbol", render: (r) => r.symbol },
+              { header: t("admin.restricted.symbol"), render: (r) => r.symbol },
               {
-                header: "Reason",
+                header: t("admin.restricted.reason"),
                 render: (r) => (
                   <span className="cell-clip" title={r.reason}>
                     {r.reason || "—"}
                   </span>
                 ),
               },
-              { header: "Status", render: (r) => <Badge text={r.active ? "ACTIVE" : "INACTIVE"} /> },
-              { header: "Created by", render: (r) => r.created_by },
-              { header: "Created", render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
+              { header: t("common.status"), render: (r) => <Badge text={r.active ? "ACTIVE" : "INACTIVE"} /> },
+              { header: t("admin.restricted.createdBy"), render: (r) => r.created_by },
+              { header: t("common.created"), render: (r) => <span className="num">{fmtTs(r.created_at)}</span> },
               {
                 header: "",
                 render: (r) =>
@@ -655,7 +659,7 @@ export function Admin() {
                       className="btn btn-danger btn-sm"
                       onClick={() => void removeRestriction(r.symbol)}
                     >
-                      Remove
+                      {t("admin.restricted.remove")}
                     </button>
                   ) : null,
               },
@@ -666,23 +670,23 @@ export function Admin() {
 
       {editingRole && (
         <Modal
-          title={editingRole === "new" ? "Create role" : `Edit role — ${editingRole.name}`}
+          title={editingRole === "new" ? t("admin.roles.create") : t("admin.roles.edit", { name: editingRole.name })}
           onClose={() => setEditingRole(null)}
           wide
         >
           <div className="form-grid">
             <label className="form-field">
-              <span>Name</span>
+              <span>{t("admin.roles.name")}</span>
               <input type="text" value={roleName} onChange={(e) => setRoleName(e.target.value)} />
             </label>
             <label className="form-field">
-              <span>Description</span>
+              <span>{t("admin.roles.description")}</span>
               <input type="text" value={roleDesc} onChange={(e) => setRoleDesc(e.target.value)} />
             </label>
           </div>
           <div className="perm-grid">
             {permissions.length === 0 && (
-              <span className="muted">Permission catalog unavailable.</span>
+              <span className="muted">{t("admin.roles.permsUnavailable")}</span>
             )}
             {permissions.map((p) => (
               <label key={p} className={`chip${rolePerms.has(p) ? " chip-on" : ""}`}>
@@ -704,50 +708,50 @@ export function Admin() {
           </div>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setEditingRole(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button className="btn btn-buy active" onClick={() => void saveRole()}>
-              Save role
+              {t("admin.roles.saveRole")}
             </button>
           </div>
         </Modal>
       )}
 
       {revoking && (
-        <Modal title={`Revoke grant — ${revoking.role.name} for ${revoking.user.email}`} onClose={() => setRevoking(null)}>
+        <Modal title={t("admin.grants.revokeTitle", { role: revoking.role.name, email: revoking.user.email })} onClose={() => setRevoking(null)}>
           <label className="form-field form-field-full">
-            <span>Reason (required)</span>
+            <span>{t("admin.grants.revokeReason")}</span>
             <textarea rows={3} value={revokeReason} onChange={(e) => setRevokeReason(e.target.value)} />
           </label>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setRevoking(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button className="btn btn-danger" onClick={() => void revoke()}>
-              Revoke grant
+              {t("admin.grants.revokeAction")}
             </button>
           </div>
         </Modal>
       )}
 
       {extending && (
-        <Modal title={`Extend grant — ${extending.role.name} for ${extending.user.email}`} onClose={() => setExtending(null)}>
+        <Modal title={t("admin.grants.extendTitle", { role: extending.role.name, email: extending.user.email })} onClose={() => setExtending(null)}>
           <div className="form-grid">
             <label className="form-field">
-              <span>Additional hours</span>
+              <span>{t("admin.grants.additionalHours")}</span>
               <input type="number" min="1" value={extendHours} onChange={(e) => setExtendHours(e.target.value)} />
             </label>
             <label className="form-field form-field-full">
-              <span>Justification</span>
+              <span>{t("admin.grants.justification")}</span>
               <textarea rows={2} value={extendJust} onChange={(e) => setExtendJust(e.target.value)} />
             </label>
           </div>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setExtending(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button className="btn btn-buy active" onClick={() => void extend()}>
-              Extend
+              {t("admin.grants.extend")}
             </button>
           </div>
         </Modal>
@@ -755,22 +759,27 @@ export function Admin() {
 
       {verdictTarget && (
         <Modal
-          title={`${verdictTarget.verdict === "JUSTIFIED" ? "Mark justified" : "Escalate"} — break-glass by ${verdictTarget.review.user.email}`}
+          title={t(
+            verdictTarget.verdict === "JUSTIFIED"
+              ? "admin.bg.verdictTitle.justified"
+              : "admin.bg.verdictTitle.escalated",
+            { email: verdictTarget.review.user.email },
+          )}
           onClose={() => setVerdictTarget(null)}
         >
           <label className="form-field form-field-full">
-            <span>Comment (required)</span>
+            <span>{t("admin.bg.comment")}</span>
             <textarea rows={3} value={verdictComment} onChange={(e) => setVerdictComment(e.target.value)} />
           </label>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setVerdictTarget(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               className={`btn active ${verdictTarget.verdict === "JUSTIFIED" ? "btn-buy" : "btn-sell"}`}
               onClick={() => void submitVerdict()}
             >
-              Record verdict
+              {t("admin.bg.recordVerdict")}
             </button>
           </div>
         </Modal>

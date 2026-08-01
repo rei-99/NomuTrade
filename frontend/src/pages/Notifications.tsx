@@ -3,12 +3,14 @@ import { api } from "../api/client";
 import type { ListResponse, NotificationItem, NotificationPreferences } from "../api/types";
 import { Badge } from "../components/Badge";
 import { fmtTs } from "../format";
+import { useT } from "../i18n";
 
 /** Security-critical categories the server refuses to disable (FR-NTF-003 E1). */
 const NON_SUPPRESSIBLE = ["BREAK_GLASS", "GRANT", "PAM"];
 const CHANNELS = ["IN_APP", "EMAIL"] as const;
 
 export function Notifications() {
+  const { t } = useT();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,15 +102,15 @@ export function Notifications() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Notifications</h2>
+        <h2>{t("notif.title")}</h2>
       </div>
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Inbox</h3>
+          <h3>{t("notif.inbox")}</h3>
         </div>
         {items.length === 0 ? (
-          <div className="panel-empty muted">No notifications</div>
+          <div className="panel-empty muted">{t("notif.empty")}</div>
         ) : (
           <div className="notif-list">
             {items.map((n) => (
@@ -122,7 +124,7 @@ export function Notifications() {
                     <Badge text={n.category} />
                     {n.status !== "READ" && (
                       <button className="btn btn-ghost btn-sm" onClick={() => void markRead(n)}>
-                        Mark read
+                        {t("notif.markRead")}
                       </button>
                     )}
                   </span>
@@ -140,7 +142,7 @@ export function Notifications() {
               disabled={loading}
               onClick={() => void load(cursor, true)}
             >
-              {loading ? "Loading…" : "Load more"}
+              {loading ? t("common.loading") : t("common.loadMore")}
             </button>
           </div>
         )}
@@ -148,7 +150,7 @@ export function Notifications() {
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Preferences</h3>
+          <h3>{t("notif.preferences")}</h3>
         </div>
         {!prefs ? (
           <div className="panel-empty muted">Loading preferences…</div>

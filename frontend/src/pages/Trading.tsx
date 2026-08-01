@@ -21,6 +21,7 @@ import { NewsPanel } from "../components/NewsPanel";
 import { PositionsTable } from "../components/PositionsTable";
 import { fmtJpy, fmtSignedJpy, pnlClass } from "../format";
 import { usePoll, useWsMessage } from "../hooks";
+import { useT } from "../i18n";
 
 // Structural fallback cadence — live freshness comes from the push channel
 // (design 22): ticks update tape/chart in place, executions trigger an
@@ -38,6 +39,7 @@ function pickDefaultPortfolio(pfs: Portfolio[]): string {
 }
 
 export function Trading() {
+  const { t } = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSymbol = searchParams.get("symbol");
 
@@ -181,7 +183,7 @@ export function Trading() {
 
         <section className="panel chart-panel">
           <div className="panel-header">
-            <h3>Price — {symbol ?? "—"}</h3>
+            <h3>{t("chart.priceTitle", { symbol: symbol ?? "—" })}</h3>
             <div className="tf-selector">
               {TIMEFRAMES.map((t) => (
                 <button
@@ -208,43 +210,29 @@ export function Trading() {
             onOrderPlaced={() => void loadAccount()}
           />
           <BondAnalyticsCard instrument={activeInstrument} />
-          <RiskPanel valuation={valuation} />
-          <NewsPanel symbol={symbol} />
         </div>
-
-        <section className="panel account-bar">
-          <div className="account-item">
-            <span className="muted">Cash</span>
-            <span className="num">{fmtJpy(valuation?.cash)}</span>
-          </div>
-          <div className="account-item">
-            <span className="muted">Total value</span>
-            <span className="num">{fmtJpy(valuation?.total_value)}</span>
-          </div>
-          <div className="account-item">
-            <span className="muted">Day change</span>
-            <span className={`num ${pnlClass(valuation?.day_change)}`}>
-              {fmtSignedJpy(valuation?.day_change)}
-            </span>
-          </div>
-          <div className="account-item">
-            <span className="muted">Unrealized</span>
-            <span className={`num ${pnlClass(valuation?.unrealized_pnl)}`}>
-              {fmtSignedJpy(valuation?.unrealized_pnl)}
-            </span>
-          </div>
-          <div className="account-item">
-            <span className="muted">Realized</span>
-            <span className={`num ${pnlClass(valuation?.realized_pnl)}`}>
-              {fmtSignedJpy(valuation?.realized_pnl)}
-            </span>
-          </div>
-        </section>
 
         <section className="panel positions-panel">
           <div className="panel-header">
-            <h3>Positions</h3>
-            {positions && <span className="muted num">live · 30 s</span>}
+            <h3>{t("pos.title")}</h3>
+            <div className="account-chips num">
+              <span className="account-chip">
+                {t("acct.cash")} <b>{fmtJpy(valuation?.cash)}</b>
+              </span>
+              <span className="account-chip">
+                {t("acct.total")} <b>{fmtJpy(valuation?.total_value)}</b>
+              </span>
+              <span className={`account-chip ${pnlClass(valuation?.day_change)}`}>
+                {t("acct.day")} <b>{fmtSignedJpy(valuation?.day_change)}</b>
+              </span>
+              <span className={`account-chip ${pnlClass(valuation?.unrealized_pnl)}`}>
+                {t("acct.upnl")} <b>{fmtSignedJpy(valuation?.unrealized_pnl)}</b>
+              </span>
+              <span className={`account-chip ${pnlClass(valuation?.realized_pnl)}`}>
+                {t("acct.realized")} <b>{fmtSignedJpy(valuation?.realized_pnl)}</b>
+              </span>
+            </div>
+            {positions && <span className="muted num">{t("trading.live")}</span>}
           </div>
           <div className="positions-scroll">
             {positions === null ? (
@@ -258,6 +246,9 @@ export function Trading() {
             )}
           </div>
         </section>
+
+        <RiskPanel valuation={valuation} />
+        <NewsPanel symbol={symbol} />
       </div>
     </div>
   );

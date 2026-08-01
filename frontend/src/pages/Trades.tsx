@@ -6,8 +6,10 @@ import { Badge } from "../components/Badge";
 import { tradeValue } from "../components/orderUtils";
 import { fmtJpy, fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
+import { useT } from "../i18n";
 
 export function Trades() {
+  const { t } = useT();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -83,10 +85,10 @@ export function Trades() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Trade Blotter</h2>
+        <h2>{t("trades.title")}</h2>
         <div className="page-header-actions">
           <select value={portfolioFilter} onChange={(e) => changeFilter(e.target.value)}>
-            <option value="">All portfolios</option>
+            <option value="">{t("trades.allPortfolios")}</option>
             {portfolios.map((p) => (
               <option key={p.portfolio_id} value={p.portfolio_id}>
                 {p.name}
@@ -101,7 +103,7 @@ export function Trades() {
               void load(null, false);
             }}
           >
-            Refresh
+            {t("common.refresh")}
           </button>
         </div>
       </div>
@@ -110,49 +112,49 @@ export function Trades() {
         <DataTable<Trade>
           rows={trades}
           keyFn={(t) => t.execution_id}
-          empty="No trades"
+          empty={t("trades.empty")}
           columns={[
             {
-              header: "Time",
+              header: t("trades.time"),
               sortable: true,
               sortValue: (t) => t.executed_at,
               render: (t) => <span className="num">{fmtTs(t.executed_at)}</span>,
             },
             {
-              header: "Symbol",
+              header: t("common.symbol"),
               sortable: true,
               sortValue: (t) => t.instrument_symbol,
               render: (t) => t.instrument_symbol,
             },
             {
-              header: "Side",
+              header: t("common.side"),
               sortable: true,
               sortValue: (t) => t.side,
               render: (t) => <Badge text={t.side} />,
             },
             {
-              header: "Qty",
+              header: t("common.qty"),
               className: "num",
               sortable: true,
               sortValue: (t) => t.quantity,
               render: (t) => fmtNum(t.quantity),
             },
             {
-              header: "Price",
+              header: t("common.price"),
               className: "num",
               sortable: true,
               sortValue: (t) => t.price,
               render: (t) => fmtJpy(t.price, true),
             },
             {
-              header: "Notional",
+              header: t("trades.notional"),
               className: "num",
               sortable: true,
               sortValue: (t) => notional(t),
               render: (t) => fmtJpy(notional(t), true),
             },
             {
-              header: "Portfolio",
+              header: t("common.portfolio"),
               render: (t) => <span title={t.portfolio_id}>{portfolioLabel(t.portfolio_id)}</span>,
             },
           ]}
@@ -164,7 +166,7 @@ export function Trades() {
               disabled={loading}
               onClick={() => void load(cursor, true)}
             >
-              {loading ? "Loading…" : "Load more"}
+              {loading ? t("common.loading") : t("common.loadMore")}
             </button>
           </div>
         )}

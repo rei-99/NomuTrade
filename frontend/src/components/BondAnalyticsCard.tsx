@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BondAnalytics, Instrument } from "../api/types";
 import { fmtJpy, fmtNum, fmtPct } from "../format";
+import { useT } from "../i18n";
 import { Badge } from "./Badge";
 
 interface BondAnalyticsCardProps {
@@ -15,6 +16,7 @@ interface BondAnalyticsCardProps {
  * immediately on Enter. Renders nothing for equities.
  */
 export function BondAnalyticsCard({ instrument }: BondAnalyticsCardProps) {
+  const { t } = useT();
   const symbol = instrument?.asset_class === "BOND" ? instrument.symbol : undefined;
   const [data, setData] = useState<BondAnalytics | null>(null);
   const [yieldInput, setYieldInput] = useState("");
@@ -64,7 +66,7 @@ export function BondAnalyticsCard({ instrument }: BondAnalyticsCardProps) {
   return (
     <section className="panel">
       <div className="panel-header">
-        <h3>Bond analytics — {symbol}</h3>
+        <h3>{t("bond.title", { symbol })}</h3>
         <Badge text="BOND" />
       </div>
       {data === null ? (
@@ -72,21 +74,21 @@ export function BondAnalyticsCard({ instrument }: BondAnalyticsCardProps) {
       ) : (
         <>
           <div className="confirm-grid">
-            <span className="muted">Coupon</span>
+            <span className="muted">{t("bond.coupon")}</span>
             <span className="num">{fmtPct(data.coupon_rate, 2)}</span>
-            <span className="muted">Maturity</span>
+            <span className="muted">{t("bond.maturity")}</span>
             <span className="num">{data.maturity_date}</span>
-            <span className="muted">Years to mat.</span>
+            <span className="muted">{t("bond.yearsToMat")}</span>
             <span className="num">{fmtNum(data.years_to_maturity, 2)}</span>
-            <span className="muted">Price (% par)</span>
+            <span className="muted">{t("bond.pricePar")}</span>
             <span className="num">{fmtJpy(data.latest_price, true)}</span>
             <span className="muted">YTM</span>
             <span className="num">{data.ytm !== null ? fmtPct(data.ytm, 2) : "—"}</span>
-            <span className="muted">Mod. duration</span>
+            <span className="muted">{t("bond.modDuration")}</span>
             <span className="num">{fmtNum(data.modified_duration, 2)}</span>
           </div>
           <label className="form-field">
-            <span>Yield % → implied price</span>
+            <span>{t("bond.yieldInput")}</span>
             <input
               type="number"
               step="any"
@@ -105,9 +107,9 @@ export function BondAnalyticsCard({ instrument }: BondAnalyticsCardProps) {
           {appliedYield !== null && data.implied_price !== undefined && (
             <div className="order-cost-line">
               <span>
-                at {fmtPct(appliedYield, 2)} →{" "}
+                {t("bond.impliedAt", { y: fmtPct(appliedYield, 2) })}
                 <span className="num">{fmtJpy(data.implied_price, true)}</span>
-                <span className="muted"> (% par)</span>
+                <span className="muted">{t("bond.parNote")}</span>
               </span>
             </div>
           )}

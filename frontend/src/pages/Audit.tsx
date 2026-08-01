@@ -5,6 +5,7 @@ import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { fmtTs } from "../format";
+import { useT } from "../i18n";
 
 const SEVERITIES = ["", "INFO", "WARNING", "ERROR", "CRITICAL"];
 
@@ -14,6 +15,7 @@ function toIso(local: string): string | undefined {
 
 export function Audit() {
   const { toast } = useToast();
+  const { t } = useT();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [actor, setActor] = useState("");
@@ -36,7 +38,7 @@ export function Audit() {
 
   const search = async (c: string | null, append: boolean) => {
     if (!from || !to) {
-      toast("From and To are required for audit search", "error");
+      toast(t("audit.required"), "error");
       return;
     }
     setLoading(true);
@@ -54,7 +56,7 @@ export function Audit() {
 
   const doExport = async (format: "csv" | "json") => {
     if (!from || !to) {
-      toast("From and To are required for audit export", "error");
+      toast(t("audit.requiredExport"), "error");
       return;
     }
     setExporting(format);
@@ -74,21 +76,21 @@ export function Audit() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Audit Events</h2>
+        <h2>{t("audit.title")}</h2>
       </div>
 
       <section className="panel">
         <div className="filter-bar">
           <label>
-            From (required)
+            {t("audit.fromRequired")}
             <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
           <label>
-            To (required)
+            {t("audit.toRequired")}
             <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
           <label>
-            Actor
+            {t("audit.actor")}
             <input
               type="text"
               value={actor}
@@ -97,7 +99,7 @@ export function Audit() {
             />
           </label>
           <label>
-            Event type
+            {t("audit.eventType")}
             <input
               type="text"
               value={eventType}
@@ -106,11 +108,11 @@ export function Audit() {
             />
           </label>
           <label>
-            Severity
+            {t("audit.severity")}
             <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
-                  {s === "" ? "All" : s}
+                  {s === "" ? t("common.all") : s}
                 </option>
               ))}
             </select>
@@ -120,48 +122,48 @@ export function Audit() {
             disabled={loading}
             onClick={() => void search(null, false)}
           >
-            {loading ? "Searching…" : "Search"}
+            {loading ? t("audit.searching") : t("audit.search")}
           </button>
           <button
             className="btn btn-ghost btn-sm filter-submit"
             disabled={exporting !== null}
             onClick={() => void doExport("csv")}
           >
-            {exporting === "csv" ? "Exporting…" : "Export CSV"}
+            {exporting === "csv" ? t("audit.exporting") : t("audit.exportCsv")}
           </button>
           <button
             className="btn btn-ghost btn-sm filter-submit"
             disabled={exporting !== null}
             onClick={() => void doExport("json")}
           >
-            {exporting === "json" ? "Exporting…" : "Export JSON"}
+            {exporting === "json" ? t("audit.exporting") : t("audit.exportJson")}
           </button>
         </div>
 
         {!searched ? (
           <div className="panel-empty muted">
-            Choose a time range and run a search. Both From and To are required by the API.
+            {t("audit.hint")}
           </div>
         ) : (
           <>
             <DataTable<AuditEvent>
               rows={items}
               keyFn={(e) => e.event_id}
-              empty="No audit events in range"
+              empty={t("audit.empty")}
               columns={[
-                { header: "Time", render: (e) => <span className="num">{fmtTs(e.ts)}</span> },
-                { header: "Severity", render: (e) => <Badge text={e.severity} /> },
-                { header: "Actor", render: (e) => e.actor_email },
-                { header: "Event", render: (e) => e.event_type },
-                { header: "Resource", render: (e) => `${e.resource_type}/${e.resource_id}` },
-                { header: "Source IP", className: "num", render: (e) => e.source_ip },
+                { header: t("audit.time"), render: (e) => <span className="num">{fmtTs(e.ts)}</span> },
+                { header: t("audit.severity"), render: (e) => <Badge text={e.severity} /> },
+                { header: t("audit.actor"), render: (e) => e.actor_email },
+                { header: t("audit.event"), render: (e) => e.event_type },
+                { header: t("audit.resource"), render: (e) => `${e.resource_type}/${e.resource_id}` },
+                { header: t("audit.sourceIp"), className: "num", render: (e) => e.source_ip },
                 {
-                  header: "Correlation",
+                  header: t("audit.correlation"),
                   className: "num",
                   render: (e) => <span className="cell-clip" title={e.correlation_id}>{e.correlation_id}</span>,
                 },
                 {
-                  header: "Payload",
+                  header: t("audit.payload"),
                   render: (e) => (
                     <span className="cell-clip mono" title={JSON.stringify(e.payload)}>
                       {JSON.stringify(e.payload)}
@@ -173,7 +175,7 @@ export function Audit() {
             {cursor && (
               <div className="table-footer">
                 <button className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void search(cursor, true)}>
-                  Load more
+                  {t("common.loadMore")}
                 </button>
               </div>
             )}

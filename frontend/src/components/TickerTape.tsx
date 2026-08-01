@@ -3,6 +3,7 @@ import type { Instrument } from "../api/types";
 import type { TickData } from "../api/ws";
 import { fmtJpy, fmtNum } from "../format";
 import { useWsMessage, useWsState } from "../hooks";
+import { useT } from "../i18n";
 import { Badge } from "./Badge";
 
 export interface DayOhlc {
@@ -57,9 +58,30 @@ function Sparkline({ data, up }: { data: number[]; up: boolean }) {
 
 /** Top strip: symbol hero (price, day change, O/H/L) + sparkline watchlist chips. */
 export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, dayOhlc }: TickerTapeProps) {
+  const { t } = useT();
   const active = instruments.find((i) => i.symbol === symbol);
   // Retired (off-dataset) instruments are never offered in the pickers.
   const tradable = instruments.filter((i) => i.tradable);
+
+  // Asset-class scope (design 25 §U3): Equities | Bonds toggle filters the
+  // chips and the hero picker; persisted for the session. The hero block
+  // itself is scope-independent — an out-of-scope active symbol stays shown.
+  const [scope, setScope] = useState<"EQUITY" | "BOND">(() =>
+    sessionStorage.getItem("stp_asset_scope") === "BOND" ? "BOND" : "EQUITY",
+  );
+  const pickScope = (s: "EQUITY" | "BOND") => {
+    setScope(s);
+    sessionStorage.setItem("stp_asset_scope", s);
+  };
+  const scoped = tradable.filter((i) =>
+    scope === "BOND" ? i.asset_class === "BOND" : i.asset_class !== "BOND",
+  );
+  // Keep the current symbol selectable in the hero picker even when the scope
+  // filter hides it — it reflects current state, it does not offer it.
+  const pickerOptions =
+    symbol && !scoped.some((i) => i.symbol === symbol)
+      ? [...scoped, ...tradable.filter((i) => i.symbol === symbol)]
+      : scoped;
 
   // Accumulate the last ~30 polled prices per symbol for the sparklines.
   const historyRef = useRef<Map<string, number[]>>(new Map());
@@ -128,8 +150,8 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
           value={symbol ?? ""}
           onChange={(e) => onSymbolChange(e.target.value)}
         >
-          {tradable.length === 0 && <option value="">—</option>}
-          {tradable.map((i) => (
+          {pickerOptions.length === 0 && <option value="">—</option>}
+          {pickerOptions.map((i) => (
             <option key={i.instrument_id} value={i.symbol}>
               {i.symbol} — {i.name}
               {i.asset_class === "BOND" ? " (BOND)" : ""}
@@ -142,7 +164,9 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
         >
           {effChangePct === null
             ? "—"
-            : `${effChangePct >= 0 ? "+" : ""}${fmtNum(effChangePct, 2)}% today`}
+            : t("tape.today", {
+                pct: `${effChangePct >= 0 ? "+" : ""}${fmtNum(effChangePct, 2)}%`,
+              })}
         </span>
         {effOhlc && (
           <span className="tape-ohlc num">
@@ -153,7 +177,23 @@ export function TickerTape({ instruments, symbol, onSymbolChange, dayChangePct, 
         )}
       </div>
       <div className="tape-chips">
-        {tradable.map((i) => {
+        <div className="seg scope-seg">
+          <button
+            type="button"
+            className={`seg-btn${scope === "EQUITY" ? " active" : ""}`}
+            onClick={() => pickScope("EQUITY")}
+          >
+            {t("common.equities")}
+          </button>
+          <button
+            type="button"
+            className={`seg-btn${scope === "BOND" ? " active" : ""}`}
+            onClick={() => pickScope("BOND")}
+          >
+            {t("common.bonds")}
+          </button>
+        </div>
+        {scoped.map((i) => {
           const hist = historyRef.current.get(i.symbol) ?? [];
           const chg =
             hist.length >= 2 && hist[0] !== 0 ? ((hist[hist.length - 1] - hist[0]) / hist[0]) * 100 : null;

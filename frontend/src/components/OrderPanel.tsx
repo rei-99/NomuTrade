@@ -10,17 +10,20 @@ import type {
   TimeInForce,
 } from "../api/types";
 import { fmtJpy, fmtNum } from "../format";
-import { Badge } from "./Badge";
+import { useAnchoredPriceFields } from "../hooks";
+import { useT } from "../i18n";
+import type { I18nKey } from "../i18n/en";
+import { Badge, statusKeyOf } from "./Badge";
 import { useToast } from "./Toast";
 import { detailsToList, postOrder, tradeValue } from "./orderUtils";
 
 const SIZE_CHIPS = [10, 50, 100];
-const ORDER_TYPES: { id: OrderType; label: string }[] = [
-  { id: "MARKET", label: "MARKET" },
-  { id: "LIMIT", label: "LIMIT" },
-  { id: "STOP", label: "STOP" },
-  { id: "STOP_LIMIT", label: "STOP-LIMIT" },
-  { id: "TRAILING_STOP", label: "TRAIL" },
+const ORDER_TYPES: { id: OrderType; labelKey: I18nKey }[] = [
+  { id: "MARKET", labelKey: "order.type.market" },
+  { id: "LIMIT", labelKey: "order.type.limit" },
+  { id: "STOP", labelKey: "order.type.stop" },
+  { id: "STOP_LIMIT", labelKey: "order.type.stopLimit" },
+  { id: "TRAILING_STOP", labelKey: "order.type.trail" },
 ];
 const TIFS: TimeInForce[] = ["DAY", "GTC", "IOC"];
 
@@ -39,17 +42,6 @@ interface OrderPanelProps {
   cash: number | null;
   /** Called after an order resolves so the parent can refresh positions. */
   onOrderPlaced?: () => void;
-}
-
-function typeLabel(t: OrderType): string {
-  if (t === "STOP_LIMIT") return "STOP-LIMIT";
-  if (t === "TRAILING_STOP") return "TRAIL-STOP";
-  return t;
-}
-
-/** Trail param summary for the confirm card / feedback line. */
-function trailLabel(amount: number, pct: number, amountSet: boolean): string {
-  return amountSet ? `trail ${fmtJpy(amount, true)}` : `trail ${pct}%`;
 }
 
 /**
@@ -72,11 +64,9 @@ export function OrderPanel({
   onOrderPlaced,
 }: OrderPanelProps) {
   const { toast } = useToast();
+  const { t } = useT();
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [timeInForce, setTimeInForce] = useState<TimeInForce>("GTC");
-  const [limitInput, setLimitInput] = useState("");
-  const [stopInput, setStopInput] = useState("");
-  const [trailAmountInput, setTrailAmountInput] = useState("");
   const [trailPctInput, setTrailPctInput] = useState("");
   const [sizeInput, setSizeInput] = useState("50");
   const [confirming, setConfirming] = useState<OrderSide | null>(null);
@@ -91,6 +81,17 @@ export function OrderPanel({
   );
   const last = instrument?.latest_price ?? null;
   const isBond = instrument?.asset_class === "BOND";
+
+  // §U5: price fields re-anchor to the NEW symbol's last price on symbol
+  // change; typed values survive while the symbol is unchanged.
+  const {
+    limit: limitInput,
+    stop: stopInput,
+    trailAmount: trailAmountInput,
+    onLimitChange: setLimitInput,
+    onStopChange: setStopInput,
+    onTrailAmountChange: setTrailAmountInput,
+  } = useAnchoredPriceFields(symbol, last);
 
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
@@ -127,24 +128,29 @@ export function OrderPanel({
     setSizeInput(String(Math.max(1, next)));
   };
 
-  const pickType = (t: OrderType) => {
-    setOrderType(t);
-    if ((t === "STOP" || t === "STOP_LIMIT") && stopInput === "" && last !== null) {
-      setStopInput(String(last));
-    }
-    if ((t === "LIMIT" || t === "STOP_LIMIT") && limitInput === "" && last !== null) {
-      setLimitInput(String(last));
-    }
+  // Localized labels for sides / types / trail params (toasts + confirm card).
+  const sideLabel = (s: OrderSide): string => t(s === "BUY" ? "order.buy" : "order.sell");
+  const typeLabel = (ty: OrderType): string =>
+    t(ORDER_TYPES.find((o) => o.id === ty)?.labelKey ?? "order.type.market");
+  const trailLabel = (amountSet: boolean): string =>
+    amountSet
+      ? t("order.trailAmountLabel", { p: fmtJpy(trailAmount, true) })
+      : t("order.trailPctLabel", { p: String(trailPct) });
+
+  // Anchored fields (§U5) already track the current symbol's last price, so
+  // switching order type never needs to prefill — it just reveals inputs.
+  const pickType = (ty: OrderType) => {
+    setOrderType(ty);
   };
 
   /** Client-side issues shown in the confirm card (Confirm stays disabled). */
   const confirmIssues = (side: OrderSide): string[] => {
     const issues: string[] = [];
-    if (!sizeValid) issues.push("Quantity must be a positive whole number.");
-    if (!limitValid) issues.push("Limit price is required for LIMIT / STOP-LIMIT orders.");
-    if (!stopValid) issues.push("Stop price is required for STOP / STOP-LIMIT orders.");
-    if (!trailValid) issues.push("Exactly one of trail amount / trail % is required for TRAIL orders.");
-    if (side === "BUY" && overCash) issues.push("Insufficient cash — est. cost exceeds cash.");
+    if (!sizeValid) issues.push(t("order.issueQty"));
+    if (!limitValid) issues.push(t("order.issueLimit"));
+    if (!stopValid) issues.push(t("order.issueStop"));
+    if (!trailValid) issues.push(t("order.issueTrail"));
+    if (side === "BUY" && overCash) issues.push(t("order.issueCash"));
     return issues;
   };
 
@@ -159,14 +165,22 @@ export function OrderPanel({
           const qtySum = o.executions.reduce((a, e) => a + e.quantity, 0);
           const notional = o.executions.reduce((a, e) => a + e.price * e.quantity, 0);
           const avg = qtySum > 0 ? notional / qtySum : null;
-          const text = `${side} ${fmtNum(qty)} ${o.instrument_symbol} filled${avg !== null ? ` @ ${fmtJpy(avg, true)}` : ""}`;
+          const vars = { side: sideLabel(side), qty: fmtNum(qty), symbol: o.instrument_symbol };
+          const text =
+            avg !== null
+              ? t("order.toastFilledAt", { ...vars, avg: fmtJpy(avg, true) })
+              : t("order.toastFilled", vars);
           toast(text, "success");
           setFeedback({ tone: "ok", text });
           onOrderPlaced?.();
           return;
         }
         if (o.status === "REJECTED" || o.status === "CANCELLED") {
-          const text = `Order ${o.status.toLowerCase()}${o.reject_reason ? `: ${o.reject_reason}` : ""}`;
+          const statusKey = statusKeyOf(o.status) ?? "order.status.rejected";
+          const text = t("order.toastTerminal", {
+            status: t(statusKey),
+            detail: o.reject_reason ? `: ${o.reject_reason}` : "",
+          });
           toast(text, "info");
           setFeedback({ tone: "err", text });
           onOrderPlaced?.();
@@ -205,27 +219,31 @@ export function OrderPanel({
         crypto.randomUUID(), // minted at Confirm, per §A1
       );
       if (res.status === 200) {
-        toast("Duplicate submission ignored — order was already accepted.", "info");
-        setFeedback({ tone: "info", text: "Duplicate submission ignored" });
+        toast(t("order.toastDuplicate"), "info");
+        setFeedback({ tone: "info", text: t("order.toastDuplicateShort") });
         return;
       }
       const created = (await res.json()) as OrderCreated;
+      const vars = { side: sideLabel(side), qty: fmtNum(size), symbol };
       if (orderType === "MARKET") {
-        const text = `${side} ${fmtNum(size)} ${symbol} accepted`;
+        const text = t("order.toastAccepted", vars);
         toast(text, "success");
         setFeedback({ tone: "ok", text });
         watchFill(created.order_id, side, size);
       } else {
         const priceDetail =
           orderType === "LIMIT"
-            ? ` @ ${fmtJpy(limitPrice, true)}`
+            ? t("order.detailLimit", { p: fmtJpy(limitPrice, true) })
             : orderType === "STOP"
-              ? ` stop ${fmtJpy(stopPrice, true)}`
+              ? t("order.detailStop", { p: fmtJpy(stopPrice, true) })
               : orderType === "STOP_LIMIT"
-                ? ` stop ${fmtJpy(stopPrice, true)} / limit ${fmtJpy(limitPrice, true)}`
-                : ` ${trailLabel(trailAmount, trailPct, trailAmountSet)}`;
+                ? t("order.detailStopLimit", {
+                    sp: fmtJpy(stopPrice, true),
+                    lp: fmtJpy(limitPrice, true),
+                  })
+                : ` ${trailLabel(trailAmountSet)}`;
         const tifDetail = timeInForce !== "GTC" ? ` · ${timeInForce}` : "";
-        const text = `${side} ${fmtNum(size)} ${symbol}${priceDetail}${tifDetail} working`;
+        const text = t("order.toastWorking", { ...vars, detail: `${priceDetail}${tifDetail}` });
         toast(text, "success");
         setFeedback({ tone: "ok", text });
         onOrderPlaced?.();
@@ -234,13 +252,13 @@ export function OrderPanel({
       if (e instanceof ApiError && e.status === 422) {
         const list = detailsToList(e.details);
         setViolations(list.length > 0 ? list : [e.message]);
-        setFeedback({ tone: "err", text: "Rejected by validation" });
+        setFeedback({ tone: "err", text: t("order.feedbackRejected") });
       } else if (e instanceof ApiError) {
         toast(`${e.message}${e.traceId ? ` · trace ${e.traceId}` : ""}`, "error");
         setFeedback({ tone: "err", text: e.message });
       } else {
-        toast("Order submission failed", "error");
-        setFeedback({ tone: "err", text: "Submission failed" });
+        toast(t("order.toastFailed"), "error");
+        setFeedback({ tone: "err", text: t("order.feedbackFailed") });
       }
     } finally {
       setInFlight(false);
@@ -275,11 +293,11 @@ export function OrderPanel({
   const openConfirm = (side: OrderSide) => {
     setViolations([]);
     if (!symbol) {
-      setViolations(["Select an instrument first."]);
+      setViolations([t("order.selectInstrument")]);
       return;
     }
     if (!portfolioId) {
-      setViolations(["Select a portfolio first."]);
+      setViolations([t("order.selectPortfolio")]);
       return;
     }
     setConfirming(side);
@@ -297,14 +315,14 @@ export function OrderPanel({
   return (
     <section className="panel order-panel">
       <div className="panel-header">
-        <h3>Order entry</h3>
+        <h3>{t("order.title")}</h3>
         {isBond && <Badge text="BOND" />}
       </div>
 
       <label className="form-field">
-        <span>Portfolio</span>
+        <span>{t("common.portfolio")}</span>
         <select value={portfolioId} onChange={(e) => onPortfolioChange(e.target.value)}>
-          {portfolios.length === 0 && <option value="">No portfolios</option>}
+          {portfolios.length === 0 && <option value="">{t("order.noPortfolios")}</option>}
           {portfolios.map((p) => (
             <option key={p.portfolio_id} value={p.portfolio_id}>
               {p.name} ({p.type})
@@ -314,32 +332,32 @@ export function OrderPanel({
       </label>
 
       <div className="form-field">
-        <span>Order type</span>
+        <span>{t("order.type")}</span>
         <div className="seg seg-5">
-          {ORDER_TYPES.map((t) => (
+          {ORDER_TYPES.map((ty) => (
             <button
-              key={t.id}
+              key={ty.id}
               type="button"
-              className={`seg-btn${orderType === t.id ? " active" : ""}`}
-              onClick={() => pickType(t.id)}
+              className={`seg-btn${orderType === ty.id ? " active" : ""}`}
+              onClick={() => pickType(ty.id)}
             >
-              {t.label}
+              {t(ty.labelKey)}
             </button>
           ))}
         </div>
       </div>
 
       <div className="form-field">
-        <span>Time in force</span>
+        <span>{t("order.tif")}</span>
         <div className="seg seg-3">
-          {TIFS.map((t) => (
+          {TIFS.map((tif) => (
             <button
-              key={t}
+              key={tif}
               type="button"
-              className={`seg-btn${timeInForce === t ? " active" : ""}`}
-              onClick={() => setTimeInForce(t)}
+              className={`seg-btn${timeInForce === tif ? " active" : ""}`}
+              onClick={() => setTimeInForce(tif)}
             >
-              {t}
+              {tif}
             </button>
           ))}
         </div>
@@ -348,7 +366,7 @@ export function OrderPanel({
       {needsTrail && (
         <>
           <label className="form-field">
-            <span>Trail amount</span>
+            <span>{t("order.trailAmount")}</span>
             <input
               type="number"
               min="0"
@@ -361,7 +379,7 @@ export function OrderPanel({
             />
           </label>
           <label className="form-field">
-            <span>Trail %</span>
+            <span>{t("order.trailPct")}</span>
             <input
               type="number"
               min="0"
@@ -378,7 +396,7 @@ export function OrderPanel({
 
       {needsStop && (
         <label className="form-field">
-          <span>Stop price</span>
+          <span>{t("order.stopPrice")}</span>
           <input
             type="number"
             min="0"
@@ -393,7 +411,7 @@ export function OrderPanel({
 
       {needsLimit && (
         <label className="form-field">
-          <span>Limit price</span>
+          <span>{t("order.limitPrice")}</span>
           <input
             type="number"
             min="0"
@@ -407,7 +425,12 @@ export function OrderPanel({
       )}
 
       <div className="form-field order-size">
-        <span>Size {isBond && <em className="muted">(lots of {fmtNum(instrument?.lot_size ?? 0)})</em>}</span>
+        <span>
+          {t("order.size")}{" "}
+          {isBond && (
+            <em className="muted">({t("order.lotsOf", { n: fmtNum(instrument?.lot_size ?? 0) })})</em>
+          )}
+        </span>
         <div className="size-chips">
           <span className="stepper">
             <button
@@ -452,12 +475,12 @@ export function OrderPanel({
 
       <div className={`order-cost-line${overCash ? " warn" : ""}`}>
         <span>
-          Est. cost <span className="num">{fmtJpy(estCost, true)}</span>
-          {isBond && <span className="muted"> (qty × px / 100)</span>}
+          {t("order.estCost")} <span className="num">{fmtJpy(estCost, true)}</span>
+          {isBond && <span className="muted">{t("order.bondNote")}</span>}
         </span>
         <span>
-          cash <span className="num">{fmtJpy(cash)}</span>
-          {overCash && " — over cash"}
+          {t("order.cash")} <span className="num">{fmtJpy(cash)}</span>
+          {overCash && t("order.overCash")}
         </span>
       </div>
 
@@ -468,7 +491,7 @@ export function OrderPanel({
           disabled={buttonsDisabled}
           onClick={() => openConfirm("BUY")}
         >
-          <span className="trade-btn-side">BUY</span>
+          <span className="trade-btn-side">{t("order.buy")}</span>
           <span className="trade-btn-price num">{fmtJpy(last, true)}</span>
         </button>
         <button
@@ -477,37 +500,39 @@ export function OrderPanel({
           disabled={buttonsDisabled}
           onClick={() => openConfirm("SELL")}
         >
-          <span className="trade-btn-side">SELL</span>
+          <span className="trade-btn-side">{t("order.sell")}</span>
           <span className="trade-btn-price num">{fmtJpy(last, true)}</span>
         </button>
       </div>
 
       {confirming !== null && (
         <div className={`confirm-card ${confirming === "BUY" ? "buy" : "sell"}`}>
-          <div className="confirm-title">Confirm {confirming}</div>
+          <div className="confirm-title">{t("order.confirmTitle", { side: sideLabel(confirming) })}</div>
           <div className="confirm-grid">
-            <span className="muted">Instrument</span>
+            <span className="muted">{t("common.instrument")}</span>
             <span className="num">
               {symbol} {isBond && <Badge text="BOND" />}
             </span>
-            <span className="muted">Side</span>
-            <span className={`num ${confirming === "BUY" ? "pos" : "neg"}`}>{confirming}</span>
-            <span className="muted">Type</span>
+            <span className="muted">{t("common.side")}</span>
+            <span className={`num ${confirming === "BUY" ? "pos" : "neg"}`}>
+              {sideLabel(confirming)}
+            </span>
+            <span className="muted">{t("common.type")}</span>
             <span className="num">
               {typeLabel(orderType)}
-              {needsStop && stopValid && ` · stop ${fmtJpy(stopPrice, true)}`}
-              {needsLimit && limitValid && ` · limit ${fmtJpy(limitPrice, true)}`}
-              {needsTrail && trailValid && ` · ${trailLabel(trailAmount, trailPct, trailAmountSet)}`}
+              {needsStop && stopValid && ` · ${t("order.detailStop", { p: fmtJpy(stopPrice, true) }).trim()}`}
+              {needsLimit && limitValid && ` · ${t("order.detailLimit", { p: fmtJpy(limitPrice, true) }).trim()}`}
+              {needsTrail && trailValid && ` · ${trailLabel(trailAmountSet)}`}
             </span>
-            <span className="muted">TIF</span>
+            <span className="muted">{t("order.tif")}</span>
             <span className="num">{timeInForce}</span>
-            <span className="muted">Quantity</span>
+            <span className="muted">{t("common.qty")}</span>
             <span className="num">{sizeValid ? fmtNum(size) : "—"}</span>
-            <span className="muted">Est. cost</span>
+            <span className="muted">{t("order.estCost")}</span>
             <span className="num">{fmtJpy(estCost, true)}</span>
-            <span className="muted">Cash before</span>
+            <span className="muted">{t("order.cashBefore")}</span>
             <span className="num">{fmtJpy(cash)}</span>
-            <span className="muted">Cash after</span>
+            <span className="muted">{t("order.cashAfter")}</span>
             <span className={`num ${cashAfter !== null && cashAfter < 0 ? "neg" : ""}`}>
               {fmtJpy(cashAfter)}
             </span>
@@ -526,7 +551,7 @@ export function OrderPanel({
               disabled={inFlight}
               onClick={() => setConfirming(null)}
             >
-              Cancel (Esc)
+              {t("order.cancelEsc")}
             </button>
             <button
               type="button"
@@ -534,7 +559,7 @@ export function OrderPanel({
               disabled={inFlight || issues.length > 0}
               onClick={() => confirmRef.current()}
             >
-              {inFlight ? "Submitting…" : `Confirm ${confirming} (Enter)`}
+              {inFlight ? t("order.submitting") : t("order.confirmAction", { side: sideLabel(confirming) })}
             </button>
           </div>
         </div>
@@ -548,7 +573,7 @@ export function OrderPanel({
 
       {violations.length > 0 && (
         <div className="ticket-violations">
-          <div className="ticket-violations-title">Order rejected by validation:</div>
+          <div className="ticket-violations-title">{t("order.violationsTitle")}</div>
           <ul>
             {violations.map((v, i) => (
               <li key={i}>{v}</li>

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { useT } from "../i18n";
 
 interface ModalProps {
   title: ReactNode;
@@ -10,6 +11,7 @@ interface ModalProps {
 }
 
 export function Modal({ title, onClose, children, footer, wide = false }: ModalProps) {
+  const { t } = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -23,7 +25,7 @@ export function Modal({ title, onClose, children, footer, wide = false }: ModalP
       <div className={`modal${wide ? " modal-wide" : ""}`} role="dialog" aria-modal="true">
         <div className="modal-header">
           <h3>{title}</h3>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label={t("common.close")}>
             ✕
           </button>
         </div>
