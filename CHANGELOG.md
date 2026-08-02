@@ -7,7 +7,51 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-01 — Trader gains the Portfolios tab (own books only)
+## 2026-08-01 — Settlement visibility + ops retry (Pass 2); presentation pack reworked for 4 presenters / 10+5
+
+**Driver:** owner direction — (a) Pass 2 of the improvement review: make the
+"S" in STP visible and give the dead `STP_EXCEPTION_HANDLE` permission a
+purpose; (b) the group presents as **4 people in a 15-minute slot** (10 min
+presenting+demoing, 5 min Q&A).
+
+- **New `settlements` module (17th)**: `GET /api/v1/settlements`
+  (`TRADE_VIEW`; own-book scoped unless `PORTFOLIO_VIEW_ALL` /
+  `STP_EXCEPTION_HANDLE` / `INTEGRATION_MONITOR`) — settlement instructions
+  joined to execution/order/instrument with bond-aware `trade_value()`,
+  cursor-paged, `portfolio_id` + `lifecycle_state` filters.
+  `POST /api/v1/settlements/exceptions/{execution_id}/retry`
+  (`STP_EXCEPTION_HANDLE` — its first real consumer): 404 unknown execution,
+  409 when an instruction already exists, otherwise re-publishes the
+  `trading.executions` event through the outbox (the STP worker's idempotency
+  check makes it safe), audits `STP_EXCEPTION_RETRY` (WARN, fail-closed),
+  notifies the owner. STP exceptions are no longer a dead end (FR-ORD-005 E1).
+- **`GET /trades` gains `settlement_state`** via one LEFT OUTER JOIN (no N+1).
+- **Frontend**: Settlement column in the Trade Blotter (sortable, state
+  badges) + WS `execution`-hint refetch; Governance gains a "Recent
+  settlements" lane (newest 15, 10 s poll) and per-exception **Retry**
+  buttons for `STP_EXCEPTION_HANDLE` holders (409 → standard conflict toast +
+  refetch); the exceptions list text was silently broken (fields that don't
+  exist → raw JSON) and now renders `execution_id · state · age`. 11 new
+  EN/JA i18n pairs (決済/約定済/確認済/決済済…).
+- **Presentation pack**: script + deck rebuilt for **4 presenters** (old P5
+  merged into P1; balanced 2:00/3:30/2:30/2:00) and a **10-minute
+  present+demo** flow (7 beats; two war stories demoted to Q&A ammo) + 5-min
+  Q&A; metrics refreshed to reality (42 commits / 14 merges / 12 branches /
+  ~100 tests / **17 modules** / 26 design docs — measured, then pinned to the
+  post-merge counts); STP-flow slides carry the settlement-visibility line.
+  Deck regenerated (`build_deck.py`, python-pptx in the venv only) — `verify()`
+  PASS: 21 slides, notes on all, no empty frames, no off-canvas shapes.
+  AGENTS.md: 17 modules incl. `settlements`, 103 tests.
+- Verified: backend **103/103** (4 new in `test_settlements.py` — lifecycle +
+  trades join, hand-computed bond value, own-vs-all scoping, retry
+  403/404/409/200 + instruction created + audit); `npm run build` zero type
+  errors; live E2E — MARKET BUY 5 AAPL filled and its instruction reached
+  **SETTLED** with zero manual steps, visible in `GET /settlements` and the
+  blotter; ops 200 vs trader 403 on the retry gate, 404 on bogus id;
+  headless screenshots of the blotter Settlement column and the ops
+  Governance settlements lane.
+
+
 
 **Driver:** owner instruction — portfolio management belongs in the Trader's
 view too, scoped to their own books.

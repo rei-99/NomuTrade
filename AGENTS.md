@@ -113,7 +113,7 @@ the docs and code comments for traceability — keep them intact when editing.
 │   │   │               audit.py (hash-chained audit), secrets.py, models.py (all
 │   │   │               SQLAlchemy entities), errors.py (error envelope + trace id),
 │   │   │               timeutil.py
-│   │   └── modules/    16 auto-discovered feature packages (see below)
+│   │   └── modules/    17 auto-discovered feature packages (see below)
 │   ├── tests/          pytest, asyncio_mode=auto (see pytest.ini)
 │   ├── requirements.txt  pinned deps; there is no pyproject.toml
 │   └── Dockerfile      python:3.13-slim → uvicorn app.main:app
@@ -141,7 +141,8 @@ replay, simulation clock), `notifications`,
 `paper` (paper trading = `PAPER` portfolio type), `portfolios` (positions/
 valuation/KPIs + valuation projector), `push` (WebSocket push channel,
 design 22), `reports` (PDF/CSV via reportlab), `restricted` (admin-managed
-restricted-instrument list, enforced in order validation).
+restricted-instrument list, enforced in order validation), `settlements`
+(settlement-instruction list + STP-exception retry, `STP_EXCEPTION_HANDLE`).
 
 ## Build and test commands
 
@@ -171,8 +172,8 @@ Docker (whole stack): `POSTGRES_PASSWORD=changeme docker compose up --build`
 CI pipeline are written and statically reviewed but were not run in the dev
 environment** — treat them as unverified and report issues as MRs.
 
-Test suite status: `cd backend && ./.venv/bin/python -m pytest` → **99 passed
-in ~54 s** (verified 2026-08-01).
+Test suite status: `cd backend && ./.venv/bin/python -m pytest` → **103 passed
+in ~44 s** (verified 2026-08-01).
 
 There is **no linter/formatter configured** (no ruff/black/eslint configs).
 CI "lint" is `python -m compileall -q backend/app` + `pip check`; the frontend

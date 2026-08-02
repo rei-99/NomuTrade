@@ -263,6 +263,9 @@ export const en = {
   "status.pending_review": "PENDING REVIEW",
   "status.built_in": "BUILT IN",
   "status.execution": "EXECUTION",
+  "status.executed": "EXECUTED",
+  "status.affirmed": "AFFIRMED",
+  "status.settled": "SETTLED",
 
   // ---- orders page ----
   "orders.title": "Orders",
@@ -283,6 +286,7 @@ export const en = {
   "trades.allPortfolios": "All portfolios",
   "trades.time": "Time",
   "trades.notional": "Notional",
+  "trades.settlement": "Settlement",
   "trades.empty": "No trades",
 
   // ---- alerts page ----
@@ -455,6 +459,13 @@ export const en = {
   "gov.lastSuccess": "last success",
   "gov.exceptions": "STP exceptions",
   "gov.noExceptions": "No STP exceptions — pipeline is clean.",
+  "gov.retry": "Retry",
+  "gov.retryTitle": "Re-publish the dropped execution event to the STP pipeline",
+  "gov.retryDone": "Execution {id} re-queued for settlement",
+  "gov.settlements": "Recent settlements",
+  "gov.noSettlements": "No settlement instructions yet.",
+  "gov.value": "Value",
+  "gov.settledAt": "Settled",
   "gov.loading": "Loading governance data…",
 
   // ---- notifications page + bell ----

@@ -39,6 +39,7 @@ from app.core.models import (
     Order,
     OrderStatus,
     Portfolio,
+    SettlementInstruction,
     TimeInForce,
 )
 from app.core.security import (
@@ -595,10 +596,17 @@ async def list_trades(
     view_all = "PORTFOLIO_VIEW_ALL" in perms
 
     stmt = (
-        select(Execution, Order, Portfolio, Instrument)
+        select(Execution, Order, Portfolio, Instrument, SettlementInstruction)
         .join(Order, Execution.order_id == Order.order_id)
         .join(Portfolio, Order.portfolio_id == Portfolio.portfolio_id)
         .join(Instrument, Order.instrument_id == Instrument.instrument_id)
+        # One LEFT OUTER JOIN (execution_id is unique there) so each trade
+        # carries its settlement lifecycle state — NULL until the STP worker
+        # books the instruction.
+        .outerjoin(
+            SettlementInstruction,
+            SettlementInstruction.execution_id == Execution.execution_id,
+        )
     )
     if not view_all:
         stmt = stmt.where(Portfolio.owner_id == user.user_id)
@@ -626,7 +634,10 @@ async def list_trades(
             "quantity": float(ex.quantity),
             "executed_at": _iso(ex.executed_at),
             "portfolio_type": portfolio.type,
+            "settlement_state": (
+                settlement.lifecycle_state if settlement is not None else None
+            ),
         }
-        for ex, order, portfolio, instrument in rows[:PAGE_SIZE]
+        for ex, order, portfolio, instrument, settlement in rows[:PAGE_SIZE]
     ]
     return {"items": items, "next_cursor": next_cursor}

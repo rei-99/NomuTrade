@@ -5,7 +5,7 @@ import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { tradeValue } from "../components/orderUtils";
 import { fmtJpy, fmtNum, fmtTs } from "../format";
-import { usePoll } from "../hooks";
+import { usePoll, useWsMessage } from "../hooks";
 import { useT } from "../i18n";
 
 export function Trades() {
@@ -68,6 +68,16 @@ export function Trades() {
       if (cursorRef.current === null) void load(null, false);
     },
     12_000,
+    [load],
+  );
+
+  // Execution hint (design 22): refetch the newest page immediately so the
+  // new trade (and its settlement state) shows up; paged-back views stay put.
+  useWsMessage(
+    "execution",
+    () => {
+      if (cursorRef.current === null) void load(null, false);
+    },
     [load],
   );
 
@@ -152,6 +162,12 @@ export function Trades() {
               sortable: true,
               sortValue: (t) => notional(t),
               render: (t) => fmtJpy(notional(t), true),
+            },
+            {
+              header: t("trades.settlement"),
+              sortable: true,
+              sortValue: (t) => t.settlement_state ?? "",
+              render: (t) => <Badge text={t.settlement_state} />,
             },
             {
               header: t("common.portfolio"),

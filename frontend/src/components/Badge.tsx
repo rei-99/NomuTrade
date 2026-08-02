@@ -19,6 +19,10 @@ const TONE_BY_STATUS: Record<string, string> = {
   REQUESTED: "blue",
   DONE: "green",
   FAILED: "red",
+  // settlement lifecycle (EXECUTED → AFFIRMED → SETTLED)
+  EXECUTED: "blue",
+  AFFIRMED: "blue",
+  SETTLED: "green",
   // grant / notification statuses
   ACTIVE: "green",
   REVOKED: "red",
@@ -73,6 +77,9 @@ const STATUS_LABEL_KEY: Record<string, I18nKey> = {
   REQUESTED: "status.requested",
   DONE: "status.done",
   FAILED: "status.failed",
+  EXECUTED: "status.executed",
+  AFFIRMED: "status.affirmed",
+  SETTLED: "status.settled",
   ACTIVE: "status.active",
   REVOKED: "status.revoked",
   READ: "status.read",

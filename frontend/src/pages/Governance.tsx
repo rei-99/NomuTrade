@@ -1,27 +1,42 @@
 import { useCallback, useState } from "react";
 import { api, downloadFile } from "../api/client";
-import type { AdminHealth, GovernanceSummary, StpException } from "../api/types";
+import type {
+  AdminHealth,
+  GovernanceSummary,
+  SettlementInstruction,
+  SettlementListResponse,
+  StpException,
+} from "../api/types";
 import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { StatCard } from "../components/StatCard";
-import { fmtNum, fmtTs } from "../format";
+import { useToast } from "../components/Toast";
+import { fmtJpy, fmtNum, fmtTs } from "../format";
 import { useAuth } from "../auth";
 import { usePoll } from "../hooks";
 import { useT } from "../i18n";
 
+// Newest instructions shown in the settlements lane (first page is 50).
+const SETTLEMENTS_SHOWN = 15;
+
 function exceptionText(e: StpException): string {
-  const known = [e.exception_id, e.order_id, e.reason, e.status].filter(
+  const parts = [e.execution_id, e.lifecycle_state, e.reason].filter(
     (v): v is string => typeof v === "string",
   );
-  return known.length > 0 ? known.join(" · ") : JSON.stringify(e);
+  if (typeof e.age_seconds === "number") parts.push(`age ${Math.round(e.age_seconds)}s`);
+  return parts.length > 0 ? parts.join(" · ") : JSON.stringify(e);
 }
 
 export function Governance() {
   const { hasPerm } = useAuth();
   const { t } = useT();
+  const { toast } = useToast();
   const [summary, setSummary] = useState<GovernanceSummary | null>(null);
   const [health, setHealth] = useState<AdminHealth | null>(null);
+  const [settlements, setSettlements] = useState<SettlementInstruction[] | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const canRetry = hasPerm("STP_EXCEPTION_HANDLE");
 
   const load = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -31,10 +46,18 @@ export function Governance() {
       hasPerm("INTEGRATION_MONITOR")
         ? api<AdminHealth>("/admin/health")
         : Promise.resolve(null),
+      // Settlement lane: TRADE_VIEW-gated like the backend; rows come back
+      // scoped server-side (own books unless the caller has a view-all perm).
+      hasPerm("TRADE_VIEW")
+        ? api<SettlementListResponse>("/settlements")
+        : Promise.resolve(null),
     ]);
-    const [s, h] = results;
+    const [s, h, st] = results;
     if (s.status === "fulfilled" && s.value) setSummary(s.value);
     if (h.status === "fulfilled" && h.value) setHealth(h.value);
+    if (st.status === "fulfilled" && st.value) {
+      setSettlements(st.value.items.slice(0, SETTLEMENTS_SHOWN));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -45,6 +68,22 @@ export function Governance() {
     10_000,
     [load],
   );
+
+  // FR-ORD-005 E1 remediation: re-publish the dropped execution event. The
+  // STP worker's idempotency check makes a duplicate harmless; a 409 means
+  // the exception was already remediated — the refetch drops the row.
+  const retry = async (executionId: string) => {
+    setRetrying(executionId);
+    try {
+      await api(`/settlements/exceptions/${executionId}/retry`, { method: "POST" });
+      toast(t("gov.retryDone", { id: executionId }), "success");
+    } catch {
+      // error toast raised by the client (shows the 409 conflict message)
+    } finally {
+      setRetrying(null);
+      void load();
+    }
+  };
 
   const accessReview = async () => {
     setDownloading(true);
@@ -153,18 +192,88 @@ export function Governance() {
               <div className="panel-empty muted">{t("gov.noExceptions")}</div>
             ) : (
               <ul className="exception-list">
-                {health.stp_exceptions.map((e, idx) => (
-                  <li key={typeof e.exception_id === "string" ? e.exception_id : idx} className="mono">
-                    {exceptionText(e)}
-                  </li>
-                ))}
+                {health.stp_exceptions.map((e, idx) => {
+                  const execId = typeof e.execution_id === "string" ? e.execution_id : null;
+                  return (
+                    <li key={execId ?? idx} className="mono">
+                      {exceptionText(e)}
+                      {canRetry && execId && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginLeft: 8 }}
+                          disabled={retrying !== null}
+                          title={t("gov.retryTitle")}
+                          onClick={() => void retry(execId)}
+                        >
+                          {retrying === execId ? t("common.loading") : t("gov.retry")}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
         </>
       )}
 
-      {!summary && !health && (
+      {settlements && (
+        <section className="panel">
+          <div className="panel-header">
+            <h3>{t("gov.settlements")}</h3>
+          </div>
+          <DataTable<SettlementInstruction>
+            rows={settlements}
+            keyFn={(s) => s.settlement_id}
+            empty={t("gov.noSettlements")}
+            columns={[
+              {
+                header: t("common.symbol"),
+                sortable: true,
+                sortValue: (s) => s.instrument_symbol,
+                render: (s) => s.instrument_symbol,
+              },
+              {
+                header: t("common.side"),
+                render: (s) => <Badge text={s.side} />,
+              },
+              {
+                header: t("common.qty"),
+                className: "num",
+                sortable: true,
+                sortValue: (s) => s.quantity,
+                render: (s) => fmtNum(s.quantity),
+              },
+              {
+                header: t("gov.value"),
+                className: "num",
+                sortable: true,
+                sortValue: (s) => s.value,
+                render: (s) => fmtJpy(s.value, true),
+              },
+              {
+                header: t("common.portfolio"),
+                render: (s) => <span title={s.portfolio_id}>{s.portfolio_name}</span>,
+              },
+              {
+                header: t("common.status"),
+                sortable: true,
+                sortValue: (s) => s.lifecycle_state,
+                render: (s) => <Badge text={s.lifecycle_state} />,
+              },
+              {
+                header: t("gov.settledAt"),
+                className: "num",
+                sortable: true,
+                sortValue: (s) => s.settled_at ?? "",
+                render: (s) => <span className="num">{fmtTs(s.settled_at)}</span>,
+              },
+            ]}
+          />
+        </section>
+      )}
+
+      {!summary && !health && !settlements && (
         <div className="panel panel-empty muted">{t("gov.loading")}</div>
       )}
     </div>
