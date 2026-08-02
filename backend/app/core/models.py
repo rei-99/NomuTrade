@@ -629,6 +629,25 @@ class AssistantInteraction(Base):
     )
 
 
+class ConversationState(Base):
+    """Agent workflow memory (design 28, D-28.2): the in-flight pending action
+    for one assistant conversation, e.g.
+    ``{"pending_clarification": {"instrument": "AAPL", "side": "BUY", ...}}``
+    or ``{"pending_confirmation": {"ticket": {...}}}``. Written/cleared by the
+    LangGraph nodes so the pending action survives across turns and restarts;
+    turn history itself is rebuilt from AssistantInteraction rows — this table
+    holds only the cross-turn pending state.
+    """
+
+    __tablename__ = "conversation_states"
+
+    conversation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class DocEmbedding(Base):
     """RAG doc chunk + embedding (design 27, D-27.4).
 

@@ -19,6 +19,14 @@ produce advice text plus a `suggested_ticket` for the UI to render into the
 standard order ticket; confirmation goes through POST /orders by the user.
 The assistant identity holds no trading permissions, so any direct API misuse
 is denied by default and logged as a security event (DESIGN 09/17).
+
+AGENT WORKFLOW (design 28): `AssistantEngine.answer`/`ground` delegate to the
+LangGraph state graph in `agent.py` (D-28.1) — intent routing, fuzzy
+instrument resolution, clarify/confirm/cancel and the read-only question
+handlers run as graph nodes, with conversation memory (turn history from
+AssistantInteraction rows + pending action in ConversationState, D-28.2).
+The handlers below are the graph's tools and stay rule-side and
+deterministic regardless of the mock/LLM split.
 """
 
 from __future__ import annotations
@@ -475,6 +483,37 @@ DECLINE_TEXT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Trade-slot extraction (shared by _handle_trade and the design-28 agent graph)
+# ---------------------------------------------------------------------------
+
+
+def _extract_side(question: str) -> str:
+    """BUY/SELL keyword; BUY when ambiguous ("purchase 10 AAPL")."""
+    return "SELL" if "sell" in question.lower() else "BUY"
+
+
+def _extract_quantity(question: str, instrument: Instrument | None) -> float | None:
+    """First number that is not part of the symbol/name mention."""
+    scrubbed = question.lower()
+    if instrument is not None:
+        scrubbed = scrubbed.replace(instrument.symbol.lower(), " ").replace(
+            instrument.name.lower(), " "
+        )
+    match = _NUMBER.search(scrubbed)
+    return float(match.group()) if match else None
+
+
+def _extract_order_type(question: str) -> str | None:
+    """"at market price" → MARKET, "limit" → LIMIT, else unspecified."""
+    lowered = question.lower()
+    if "market" in lowered:
+        return "MARKET"
+    if "limit" in lowered:
+        return "LIMIT"
+    return None
+
+
 class AssistantEngine:
     """Advisory-only responder. See module docstring for the LLM seam."""
 
@@ -490,21 +529,12 @@ class AssistantEngine:
         """Install/remove the LLM prose seam (design 27 startup wiring)."""
         self._llm = llm
 
-    async def _resolve_instrument(
-        self, db: AsyncSession, question: str
-    ) -> Instrument | None:
-        instruments = (await db.execute(select(Instrument))).scalars().all()
-        lowered = question.lower()
-        for instrument in instruments:  # exact symbol mention wins ("7203.T")
-            if instrument.symbol.lower() in lowered:
-                return instrument
-        for instrument in instruments:  # then name mention ("Sony")
-            if instrument.name.lower() in lowered:
-                return instrument
-        return None
-
     async def ground(
-        self, db: AsyncSession, session: SessionData, question: str
+        self,
+        db: AsyncSession,
+        session: SessionData,
+        question: str,
+        conversation_id: str | None = None,
     ) -> tuple[str, dict]:
         """Intent routing + rule-based grounding — NO LLM prose drafting.
 
@@ -512,62 +542,24 @@ class AssistantEngine:
         citations and suggested_ticket. The streaming route calls this so all
         DB work finishes before the first byte goes out; ``answer()`` adds
         the optional LLM reword on top for the one-shot route.
+
+        Design 28: delegates to the LangGraph agent graph (``agent.py``).
+        With a ``conversation_id`` the graph loads turn history and any
+        pending clarification/confirmation (conversation memory, D-28.2);
+        without one it answers statelessly, exactly as before.
         """
-        lowered = question.lower()
-        instrument = await self._resolve_instrument(db, question)
+        from app.modules.assistant.agent import run_agent
 
-        review_match = bool(_REVIEW_WORDS.search(lowered))
-        if (
-            review_match
-            and _LEADING_QUESTION_WORD.match(lowered)
-            and _has_platform_word(lowered)
-        ):
-            # "how do I review a report?" is a usage question, not advice.
-            review_match = False
-
-        if review_match:
-            intent = "review"
-            result = await self._handle_review(db, session, question, instrument)
-        elif _TRADE_WORDS.search(lowered):
-            intent = "trade"
-            result = await self._handle_trade(db, session, question, instrument)
-        elif "position" in lowered or "holding" in lowered:
-            intent = "positions"
-            result = await self._handle_positions(db, session)
-        elif any(
-            word in lowered
-            for word in ("valuation", "value", "p&l", "pnl", "worth")
-        ):
-            intent = "valuation"
-            result = await self._handle_valuation(db, session)
-        elif any(
-            word in lowered for word in ("transaction", "trade", "execution")
-        ):
-            intent = "transactions"
-            result = await self._handle_transactions(db, session)
-        elif instrument is not None and any(
-            word in lowered for word in ("price", "quote", "last", "how much")
-        ):
-            intent = "price"
-            result = await self._handle_price(db, instrument)
-        elif any(
-            word in lowered for word in ("news", "headline", "sentiment", "moving")
-        ):
-            intent = "news"
-            result = await self._handle_news(db, instrument)
-        elif _looks_like_platform_help(lowered):
-            intent = "help"
-            result = await self._handle_help(db, question)
-        else:
-            intent = "out_of_scope"
-            result = {"answer": DECLINE_TEXT, "citations": [], "suggested_ticket": None}
-
-        return intent, result
+        return await run_agent(self, db, session, question, conversation_id)
 
     async def answer(
-        self, db: AsyncSession, session: SessionData, question: str
+        self,
+        db: AsyncSession,
+        session: SessionData,
+        question: str,
+        conversation_id: str | None = None,
     ) -> dict:
-        intent, result = await self.ground(db, session, question)
+        intent, result = await self.ground(db, session, question, conversation_id)
         if self._llm is not None:  # prose only; data and citations stay ours
             drafted = await self._llm(intent, result, question)
             if drafted:
@@ -582,17 +574,19 @@ class AssistantEngine:
         session: SessionData,
         question: str,
         instrument: Instrument | None,
+        *,
+        side: str | None = None,
+        quantity: float | None = None,
+        order_type: str | None = None,
     ) -> dict:
-        lowered = question.lower()
-        side = "BUY" if "buy" in lowered else "SELL"
-        # Quantity: first number that is not part of the symbol/name mention.
-        scrubbed = lowered
-        if instrument is not None:
-            scrubbed = scrubbed.replace(instrument.symbol.lower(), " ").replace(
-                instrument.name.lower(), " "
-            )
-        match = _NUMBER.search(scrubbed)
-        quantity = float(match.group()) if match else None
+        """Rule ticket builder (also the design-28 graph's prepare_ticket
+        tool): parse side/quantity/order_type from the question, or take them
+        as explicit overrides when the graph supplies confirmed slots."""
+        side = side or _extract_side(question)
+        if quantity is None:
+            # Quantity: first number that is not part of the symbol/name mention.
+            quantity = _extract_quantity(question, instrument)
+        order_type = order_type or _extract_order_type(question)
 
         portfolio = (
             (
@@ -671,14 +665,16 @@ class AssistantEngine:
                 "instrument": instrument.symbol,
                 "side": side,
                 "quantity": quantity,
+                "order_type": order_type,
             }
             qty_text = f"{quantity:g} " if quantity is not None else ""
+            order_type_text = f" at {order_type}" if order_type else ""
             answer = (
                 f"I can't place trades — I'm advisory only, and orders are yours "
                 f"to confirm. Based on the latest data I've prepared a suggested "
                 f"ticket: {side} {qty_text}{instrument.symbol} "
-                f"({instrument.name}).{price_note} Review it in the order ticket "
-                f"and confirm to submit. {DISCLAIMER_TEXT}"
+                f"({instrument.name}){order_type_text}.{price_note} Review it in "
+                f"the order ticket and confirm to submit. {DISCLAIMER_TEXT}"
             )
         else:
             answer = (
@@ -1355,7 +1351,7 @@ async def query_assistant(
         raise ValidationError("question must not be empty")
     conversation_id = body.conversation_id or uuid.uuid4().hex
 
-    result = await engine.answer(db, session, question)
+    result = await engine.answer(db, session, question, conversation_id)
 
     interaction = AssistantInteraction(
         user_id=session.user_id,
@@ -1472,7 +1468,7 @@ async def query_assistant_stream(
         raise ValidationError("question must not be empty")
     conversation_id = body.conversation_id or uuid.uuid4().hex
 
-    intent, result = await engine.ground(db, session, question)
+    intent, result = await engine.ground(db, session, question, conversation_id)
     sessionmaker = request.app.state.sessionmaker
 
     async def event_stream() -> AsyncIterator[str]:

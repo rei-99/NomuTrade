@@ -7,7 +7,41 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Assistant streaming replies (SSE)
+## 2026-08-02 — Agent workflow (design 28): LangGraph + conversation memory
+
+**Driver:** owner report — the assistant failed multi-turn conversations
+("did you mean AAPL?" → "yes" → out-of-scope, because every question was
+routed statelessly). Owner direction: a real agent framework + memory.
+Design: `docs/design/28-agent-workflow.md`.
+
+- **LangGraph state graph** (`langgraph==1.2.10`, `langchain-core==1.5.3`,
+  pinned): `load_context → route → {confirm | cancel | resolve_instrument →
+  prepare_ticket | clarify | answer_question} → persist_state`. Pending-state
+  resolution always beats new intents; the live LLM only classifies fresh
+  intents (strict JSON, mock fallback on parse failure) — routing,
+  ticket construction, validation and guardrails stay rule-side, always.
+- **Memory, two layers**: turn history rebuilt from `assistant_interactions`
+  by `conversation_id` (last 10); pending actions in the new
+  `conversation_states` table (JSON per conversation, committed per turn —
+  survives restarts). The frontend now round-trips `conversation_id` (kept
+  in the same sessionStorage entry as the chat; both SSE and one-shot paths).
+- **Fuzzy symbols**: exact → prefix → name-substring → difflib (0.8).
+  "APPL" → AAPL via the name-substring tier, one clarification, then it
+  sticks. Pronouns ("what about its sentiment?") inherit the last-resolved
+  instrument from history.
+- **Guardrails unchanged**: no node creates orders (asserted in tests —
+  zero Order rows across the whole clarify→confirm flow); the ticket is
+  still a user-confirmed prefill; disclaimer intact. `ground()`/SSE contract
+  unchanged; `answer_question` delegates to the untouched engine handlers.
+- Verified: backend **133/133** (7 new — the owner's exact 3-turn flow in
+  mock AND with a fake live classifier, cancel path, fuzzy tiers, pronoun
+  inheritance, invalid-JSON fallback, memory isolation by conversation_id);
+  `npm run build` clean; live against the real proxy — "yes" →
+  `{BUY AAPL ×10 MARKET}` ticket with price/position grounding, pronoun
+  sentiment answer for AAPL; headless screenshot of the 3-turn UI flow
+  (clarify → ticket card + Review ticket → sentiment).
+
+
 
 **Driver:** owner ask — replies should appear progressively instead of all at
 once.

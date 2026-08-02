@@ -394,6 +394,8 @@ export interface AssistantResponse {
   answer: string;
   citations: Citation[];
   suggested_ticket: SuggestedTicket | null;
+  /** Present on the one-shot route; the SSE route carries it in `meta`. */
+  conversation_id?: string;
 }
 
 // ---------- access requests / approvals ----------

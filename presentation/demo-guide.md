@@ -111,9 +111,11 @@ rules advisory review. To flip the agent live for the presentation:
      summary (mock LLM)" to the live model — same grounding, real prose.
    - **RAG help** (Assistant tab): "how do I approve an access request?" →
      answer grounded in the project's own docs with `[doc]` citations.
-   - **Advisory review**: "should I trim my MSFT?" → KPI-grounded advice
-     with the fixed disclaimer; then a trade phrasing ("buy 10 IBM") → a
-     **prefill ticket the user must confirm** — the agent never decides.
+   - **Multi-turn agent flow** (design 28): "Help me buy 10 stocks of APPL at
+     market price" → the agent asks "did you mean AAPL?" → say "yes" → a
+     **prefill ticket the user must confirm** appears (it never decides) →
+     then "what about its sentiment?" resolves *its* from the conversation.
+     The replies stream token-by-token when the LLM is live.
 4. If no key: present the same three beats in mock mode — the honest line is
    "the seams are real, the default is mock; one config file takes it live".
 
