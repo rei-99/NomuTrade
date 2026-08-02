@@ -20,15 +20,43 @@ interface ChatMessage {
   ts: string;
 }
 
+/** Chat history persists across tab switches / reloads within the browser
+ * session (the page unmounts on navigation; state alone would be lost). */
+const STORAGE_KEY = "stp_assistant_chat";
+
+function restoreMessages(): ChatMessage[] {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function Assistant() {
   const { t } = useT();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(restoreMessages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [ticket, setTicket] = useState<SuggestedTicket | null>(null);
   const nextId = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Resume the id counter above the restored history (mount only).
+  useEffect(() => {
+    nextId.current = messages.reduce((max, m) => Math.max(max, m.id), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      // storage quota — chat keeps working, history just won't persist
+    }
+  }, [messages]);
 
   useEffect(() => {
     void (async () => {

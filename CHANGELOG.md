@@ -7,6 +7,22 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-02 — Fix: assistant chat survives tab switches
+
+**Driver:** owner bug report — leaving the Assistant tab and returning wiped
+the conversation. Cause: chat history lived in page component state, which
+React Router destroys on unmount.
+
+- Messages now persist to `sessionStorage` (`stp_assistant_chat`): restored
+  on mount, saved on every change; the id counter resumes above the restored
+  history. Survives tab switches and page reloads within the browser
+  session; cleared when the tab closes (no stale chat across days).
+- Verified: headless Playwright — 2 messages sent, navigate Trading → back
+  to Assistant, both messages present in the DOM with full content
+  (screenshot); `npm run build` clean.
+
+---
+
 ## 2026-08-02 — Replay fast-forward (flush): `» +1d` button
 
 **Driver:** owner ask — a button to advance a day so trade/settlement states
