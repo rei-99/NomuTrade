@@ -629,6 +629,32 @@ class AssistantInteraction(Base):
     )
 
 
+class DocEmbedding(Base):
+    """RAG doc chunk + embedding (design 27, D-27.4).
+
+    One row per (source, chunk_ix) of the platform-doc corpus (README.md,
+    DESIGN.md, docs/design/*.md). content_hash (SHA-256 of the chunk text)
+    lets the startup indexer skip re-embedding unchanged chunks; embedding is
+    NULL until the embedding endpoint has been live at some boot (keyword
+    retrieval reads the same rows and never needs vectors).
+    """
+
+    __tablename__ = "doc_embeddings"
+    __table_args__ = (UniqueConstraint("source", "chunk_ix"),)
+
+    doc_embedding_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=uuid_str
+    )
+    source: Mapped[str] = mapped_column(String(255), index=True)
+    chunk_ix: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+
 # ---------------------------------------------------------------------------
 # Audit + outbox (infrastructure tables)
 # ---------------------------------------------------------------------------

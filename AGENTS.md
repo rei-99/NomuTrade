@@ -134,7 +134,8 @@ the docs and code comments for traceability — keep them intact when editing.
 
 Backend modules under `backend/app/modules/`: `access` (requests/approvals/
 grants/JIT), `admin` (governance dashboard), `analytics` (indicators, alerts,
-news/sentiment), `assistant` (rule-based GenAI stub), `auditlog` (search/export), `auth`
+news/sentiment), `assistant` (GenAI agent — mock rules by default, live
+OpenAI-compatible LLM + RAG over project docs when configured, design 27), `auditlog` (search/export), `auth`
 (password login via PBKDF2 hash + dev-login, session profile), `breakglass`, `marketdata` (dataset loader, tick
 replay, simulation clock), `notifications`,
 `orders` (order API + execution/STP/settlement workers), `pam` (mock CyberArk),
@@ -281,6 +282,11 @@ git-ignored):
 | `DATA_DIR` | `data` | simulation dataset; resolved vs cwd/parent/repo root; missing → generated fallback feed |
 | `REPLAY_BARS_PER_SECOND` | `1.0` | dataset replay speed (≈6.5 min per market day, wall-second aligned) |
 | `REPLAY_START` | `""` (first bar) | dataset-time start of each replay pass (ISO date, e.g. `2026-08-24`) |
+| `LLM_PROVIDER` | `mock` | `mock` \| `openai` — GenAI agent provider (design 27) |
+| `LLM_API_URL` / `LLM_API_KEY` | `""` | OpenAI-compatible endpoint + key (chat; embeddings fall back to these) |
+| `LLM_CHAT_MODEL` / `LLM_EMBED_MODEL` | `gpt-4o-mini` / `text-embedding-3-small` | model names |
+| `EMBEDDING_API_URL` / `EMBEDDING_API_KEY` | `""` → `LLM_*` | separate embedding endpoint/key if needed |
+| `LLM_TIMEOUT_SECONDS` / `RAG_TOP_K` | `15` / `4` | per-call timeout / retrieved doc chunks |
 | `REPLAY_MODE` | `loop` | `loop` \| `hold` at dataset end |
 | `WS_PUSH_ENABLED` | `true` | WS push channel kill-switch (design 22) |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
@@ -366,8 +372,11 @@ cd backend && ../backend/.venv/bin/python -m pytest    # or: make test
   feed with the same 7 symbols is used.
 - Partial order fills are out of MVP scope; orders fill whole or rest unfilled.
 - Notification preferences are kept in memory; they reset on restart.
-- The GenAI assistant is rule-based grounding over platform data; no external
-  LLM is called (an LLM-provider seam exists).
+- The GenAI assistant defaults to rule-based grounding (mock); `LLM_*`
+  settings (`.env.example`) switch it to a live OpenAI-compatible chat +
+  embedding endpoint with a startup connectivity check and mock fallback
+  (design 27). RAG embeddings persist in the `doc_embeddings` table;
+  keyword retrieval is the no-embeddings path.
 - The WebSocket push channel (design 22, `WS /api/v1/ws`) is a hint +
   market-data channel: REST stays the source of truth and the UI keeps a
   30 s polling fallback, so behavior is unchanged when the socket is down.

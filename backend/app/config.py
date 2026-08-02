@@ -43,3 +43,16 @@ class Settings(BaseSettings):
     # (live fetch-on-demand; requires ALPHAVANTAGE_API_KEY).
     NEWS_PROVIDER: Literal["dataset", "alphavantage"] = "dataset"
     ALPHAVANTAGE_API_KEY: str = ""
+    # GenAI agent (design 27, D-27.1): one OpenAI-compatible HTTP provider for
+    # chat + embeddings. Default "mock" keeps every AI feature rule-based; the
+    # startup self-check (D-27.2) falls back per capability when unreachable.
+    # Empty EMBEDDING_API_URL/KEY fall back to the LLM_API_URL/KEY connection.
+    LLM_PROVIDER: Literal["mock", "openai"] = "mock"
+    LLM_API_URL: str = ""  # e.g. https://api.openai.com/v1 (no trailing slash)
+    LLM_API_KEY: str = ""
+    LLM_CHAT_MODEL: str = "gpt-4o-mini"
+    LLM_EMBED_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_API_URL: str = ""
+    EMBEDDING_API_KEY: str = ""
+    LLM_TIMEOUT_SECONDS: float = 15.0
+    RAG_TOP_K: int = 4

@@ -108,7 +108,12 @@ export function Assistant() {
                         <span className="badge badge-blue">{c.kind}</span>{" "}
                         <span className="mono">{c.ref}</span>
                         {Object.keys(c.figures ?? {}).length > 0 && (
-                          <span className="muted"> — {JSON.stringify(c.figures)}</span>
+                          <span className="muted">
+                            {" — "}
+                            {c.kind === "doc" && typeof c.figures.chunk === "string"
+                              ? c.figures.chunk.replace(/\s+/g, " ").trim()
+                              : JSON.stringify(c.figures)}
+                          </span>
                         )}
                       </div>
                     ))}

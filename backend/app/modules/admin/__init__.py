@@ -13,7 +13,7 @@ import io
 import os
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -174,8 +174,33 @@ async def governance_summary(
 # ---------------------------------------------------------------------------
 
 
+def _llm_tile(request: Request, now) -> dict:
+    """GenAI provider integration tile (design 27, D-27.2).
+
+    Reads the startup self-check from app.state.llm_status:
+    UP + "live: <model>" when the chat probe passed, UP + "mock: not
+    configured" when no provider is set, DOWN + "down: <reason> — using mock"
+    when a configured provider is unreachable (the app keeps running on the
+    rule-based mock either way).
+    """
+    llm_status = getattr(request.app.state, "llm_status", None) or {
+        "provider": "mock",
+        "chat": "skipped",
+        "detail": "mock: not configured",
+    }
+    detail = llm_status.get("detail") or "mock: not configured"
+    down = llm_status.get("provider") == "openai" and llm_status.get("chat") != "ok"
+    return {
+        "name": "llm",
+        "status": "DOWN" if down else "UP",
+        "last_success": None if down else now.isoformat(),
+        "detail": detail,
+    }
+
+
 @router.get("/admin/health")
 async def integration_health(
+    request: Request,
     session: SessionData = Depends(require_permission("INTEGRATION_MONITOR")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -220,6 +245,9 @@ async def integration_health(
             "last_success": feed_last_success,
             "detail": feed_detail,
         },
+        # GenAI provider self-check (design 27, D-27.2): shows the startup
+        # probe result — live model, honest mock, or down-with-reason.
+        _llm_tile(request, now),
     ]
 
     outbox_unpublished = await db.scalar(
