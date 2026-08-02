@@ -983,8 +983,6 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .news-list {
   display: flex;
   flex-direction: column;
-  max-height: 420px;
-  overflow-y: auto;
 }
 
 .news-item {
@@ -1364,20 +1362,15 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .news-topics { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
-.news-summary-headlines {
-  border-top: 1px solid var(--border-soft);
-  padding-top: 4px;
-  margin-bottom: 6px;
-}
-
 .news-asof { font-size: 10px; text-align: right; }
 
 .news-divider { border-top: 1px solid var(--border-soft); margin: 10px 0 6px; }
 
 /* Bounded panel (Trading one-screen grid): the header stays pinned; the
-   whole content below it — summary, divider, headline list — scrolls as one
-   region, so a long summary never makes the cited headlines unreachable
-   (owner call, supersedes the earlier fixed-summary design). */
+   whole content below it — summary (prose + topics), divider, clickable
+   headline feed — scrolls as one region with a single scrollbar, so a long
+   summary never makes the feed unreachable (owner call, supersedes the
+   earlier fixed-summary design). */
 .news-panel { display: flex; flex-direction: column; min-height: 0; }
 .news-panel > * { flex: 0 0 auto; }
 .news-panel > .panel-scroll { flex: 1 1 auto; min-height: 0; }

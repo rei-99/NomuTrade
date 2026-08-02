@@ -29,9 +29,9 @@ interface NewsPanelProps {
  * Mock-GenAI news summary (/assistant/news-summary) + compact headline list
  * (/instruments/{symbol}/news?limit=8). Summary refetches on symbol change and
  * refresh click only. The panel is height-bounded (Trading one-screen grid):
- * the header stays pinned and the whole content below it — summary, divider,
- * headline list — scrolls as one region, so a long summary never makes the
- * cited headlines unreachable. Clicking a headline opens its detail modal.
+ * the header stays pinned and the content below it — summary prose + topic
+ * chips, divider, the clickable headline feed — scrolls as ONE region with a
+ * single scrollbar. Headlines open their detail modal on click.
  */
 export function NewsPanel({ symbol }: NewsPanelProps) {
   const [summary, setSummary] = useState<NewsSummary | null>(null);
@@ -148,17 +148,6 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
                 <span key={t} className="chip chip-static">
                   {t}
                 </span>
-              ))}
-            </div>
-          )}
-          {summary.headlines.length > 0 && (
-            <div className="news-summary-headlines">
-              {summary.headlines.slice(0, 3).map((h, i) => (
-                <div key={`${h.ts}-${i}`} className="news-item">
-                  <span className="news-ts muted num">{fmtTs(h.ts)}</span>
-                  <span className="news-title">{h.title}</span>
-                  <span className="news-badges">{h.label && <Badge text={h.label} />}</span>
-                </div>
               ))}
             </div>
           )}

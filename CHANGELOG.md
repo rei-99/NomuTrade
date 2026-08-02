@@ -7,7 +7,24 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — News panel: whole panel scrolls (pinned header only)
+## 2026-08-02 — News panel: one inline feed, one scrollbar
+
+**Driver:** owner UX review — the summary's cited-3 headlines duplicated the
+feed but weren't clickable ("why not just keep them in line?"), and the panel
+showed two scrollbars.
+
+- **Cited-3 block removed** from the summary (sentiment row, strip, prose,
+  topic chips, as-of remain); the feed below carries the same headlines —
+  clickable with the detail modal, as before. One list, one behavior.
+- **Nested scrollbar removed**: `.news-list` had its own `max-height: 420px;
+  overflow-y: auto` inside the already-scrolling `.panel-scroll` — the inner
+  rule is gone (its only consumer is this panel); the panel scrolls as a
+  single region.
+- Verified: `npm run build` clean; headless probe — no cited block, exactly
+  one scroll region (`panel-scroll`), 8 clickable feed rows, feed click opens
+  the detail modal (screenshot).
+
+
 
 **Driver:** owner UX review — a long summary could push the third cited
 headline out of reach. Root cause: the CSS for the earlier "fixed summary +
