@@ -7,7 +7,22 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Risk panel: ES-95, Sharpe ratio, bond-book metrics + single series fetch
+## 2026-08-02 — Risk panel: four donut gauges
+
+**Driver:** owner ask — convert percentage metrics into ring gauges so the
+panel reads as a proper gauge row.
+
+- VaR and ES join Concentration and Volatility as donuts (4 across,
+  space-between spread); each keeps its threshold coloring (VaR/ES red > 10,
+  amber > 5) and 3-decimal display; N/A renders as a grey ring. Sharpe stays
+  a stat tile (not a percentage); the stat row is now Sharpe / Max drawdown /
+  Day change. Two caption keys that only the old stat tiles used removed from
+  both dictionaries.
+- Verified: `npm run build` clean; headless screenshot — CONCENTRATION 73 %,
+  VOLATILITY 0.08 %, VAR 0.003 %, ES 0.004 % as rings, stat tiles and the
+  bond-book line intact at 1680×1000.
+
+
 
 **Driver:** owner question — the Risk Exposure panel showed only the two
 donut gauges; what else belongs there. (The panel already had VaR/drawdown/

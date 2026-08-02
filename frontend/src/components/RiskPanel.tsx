@@ -35,10 +35,10 @@ interface RiskPanelProps {
   valuation: Valuation | null;
 }
 
-/** Risk exposure: donut gauges (concentration, volatility) with threshold
- * coloring; VaR/ES/Sharpe/drawdown stat tiles; conditional bond-book line
- * (weighted YTM + modified duration); asset-mix, top-holdings and
- * invested-vs-cash bars. */
+/** Risk exposure: donut gauges (concentration, volatility, VaR, ES) with
+ * threshold coloring; Sharpe/drawdown/day-change stat tiles; conditional
+ * bond-book line (weighted YTM + modified duration); asset-mix,
+ * top-holdings and invested-vs-cash bars. */
 export function RiskPanel({ valuation }: RiskPanelProps) {
   const { t } = useT();
   if (!valuation) {
@@ -98,23 +98,21 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
           label={t("risk.volatility")}
           display={volatility === null ? "N/A" : fmtPct(volatility, 2)}
         />
+        <Donut
+          pct={varPct}
+          tone={varPct === null ? "na" : varTone === "neg" ? "red" : varTone === "warn" ? "amber" : "green"}
+          label={t("risk.var")}
+          display={varPct === null ? "N/A" : fmtPct(varPct, 3)}
+        />
+        <Donut
+          pct={esPct}
+          tone={esPct === null ? "na" : esTone === "neg" ? "red" : esTone === "warn" ? "amber" : "green"}
+          label={t("risk.es")}
+          display={esPct === null ? "N/A" : fmtPct(esPct, 3)}
+        />
       </div>
 
       <div className="risk-stats">
-        <div className="risk-stat">
-          <span className="muted">{t("risk.var")}</span>
-          <span className={`num ${varTone}`}>{varPct === null ? "N/A" : fmtPct(varPct, 3)}</span>
-          <span className="muted risk-stat-caption">
-            {varPct === null ? " " : t("risk.varCaption")}
-          </span>
-        </div>
-        <div className="risk-stat">
-          <span className="muted">{t("risk.es")}</span>
-          <span className={`num ${esTone}`}>{esPct === null ? "N/A" : fmtPct(esPct, 3)}</span>
-          <span className="muted risk-stat-caption">
-            {esPct === null ? " " : t("risk.esCaption")}
-          </span>
-        </div>
         <div className="risk-stat">
           <span className="muted">{t("risk.sharpe")}</span>
           <span className={`num ${sharpeTone}`}>{sharpe === null ? "N/A" : sharpe.toFixed(2)}</span>

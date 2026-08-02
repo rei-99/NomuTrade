@@ -1637,7 +1637,7 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 /* ---------- v2: risk donuts ---------- */
 
-.donut-row { display: flex; gap: 18px; margin-bottom: 12px; }
+.donut-row { display: flex; gap: 18px; margin-bottom: 12px; justify-content: space-between; }
 
 .donut-wrap {
   display: flex;
