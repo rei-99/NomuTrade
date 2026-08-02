@@ -1374,14 +1374,13 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .news-divider { border-top: 1px solid var(--border-soft); margin: 10px 0 6px; }
 
-/* Bounded panel (Trading one-screen grid): header + AI summary stay at the
-   top; the compact headline list takes the remaining height and scrolls in
-   its own region. When the rail squeezes the panel hard, the summary block
-   scrolls internally before the headline list is crushed below usability. */
+/* Bounded panel (Trading one-screen grid): the header stays pinned; the
+   whole content below it — summary, divider, headline list — scrolls as one
+   region, so a long summary never makes the cited headlines unreachable
+   (owner call, supersedes the earlier fixed-summary design). */
 .news-panel { display: flex; flex-direction: column; min-height: 0; }
 .news-panel > * { flex: 0 0 auto; }
-.news-panel > .news-summary { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-.news-panel > .news-list { flex: 1 1 0; min-height: 48px; max-height: none; }
+.news-panel > .panel-scroll { flex: 1 1 auto; min-height: 0; }
 
 /* headline detail modal */
 .news-detail-meta { font-size: 11px; margin-bottom: 8px; }

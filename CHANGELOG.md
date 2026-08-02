@@ -7,7 +7,25 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — GenAI agent (design 27): live-LLM seam with startup self-check, RAG help, advisory review
+## 2026-08-02 — News panel: whole panel scrolls (pinned header only)
+
+**Driver:** owner UX review — a long summary could push the third cited
+headline out of reach. Root cause: the CSS for the earlier "fixed summary +
+separately scrolling list" design targeted `.news-panel > .news-summary` /
+`> .news-list` — **dead selectors** since the summary/list are nested inside
+`.panel-scroll`, so the scroll container sized to content and clipped at the
+grid boundary instead of scrolling.
+
+- The panel is now one scroll region: header pinned, everything below
+  (summary → divider → feed) scrolls together — the layout the code was
+  already structured for; the two dead rules and the stale design comment are
+  gone (owner call, supersedes the fixed-summary design).
+- Verified: `npm run build` clean; headless Playwright probe at 1680×820 —
+  panel content 787 px vs 200 px visible, scrollTop 0 → 587, bottom feed
+  items reachable (screenshot confirmed); at roomier sizes nothing scrolls
+  unnecessarily (content fits).
+
+
 
 **Driver:** owner instruction set — a real AI agent behind config: (1) LLM
 news summary; (2) Assistant with RAG over the project's own docs plus
