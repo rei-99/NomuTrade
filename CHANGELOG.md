@@ -7,7 +7,36 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — VaR for fresh books (repriced-history fallback) + REPLAY_START
+## 2026-08-02 — Risk panel: ES-95, Sharpe ratio, bond-book metrics + single series fetch
+
+**Driver:** owner question — the Risk Exposure panel showed only the two
+donut gauges; what else belongs there. (The panel already had VaR/drawdown/
+day-change tiles and mix/holdings/cash bars; this round adds the missing
+risk-metric depth and the bond angle.)
+
+- **New valuation KPIs** (`GET /portfolios/{id}/valuation`):
+  `es_95_1d_pct` (expected shortfall — mean of the worst-5% daily returns;
+  always ≥ VaR by construction), `sharpe_ratio` (annualized, rf=0,
+  documented simplification), and `bond_wtd_ytm_pct` +
+  `bond_wtd_mod_duration` — market-value-weighted over bond holdings using
+  the design-24 bond math (null for equity-only books, never fabricated).
+  All series KPIs now share **one** `_daily_total_values` fetch per request
+  (was one scan per KPI — the 3× redundancy from the risk-viz branch, gone
+  as the panel grew to five consumers).
+- **Risk panel UI**: ES and Sharpe stat tiles (with tone thresholds and
+  captions), a conditional "Bond book" line (YTM · mod. duration) that
+  appears only when the book holds bonds, and precision bumps so small
+  honest values don't render as zero (volatility/VaR/ES/drawdown at 2–3
+  decimals). 6 new EN/JA key pairs (ES/シャープ比/債券ブック…); Valuation
+  type extended.
+- Verified: backend **106/106** (repriced-history test extended — ES ≥ VaR,
+  Sharpe non-null, equity-only bond keys null; new bond-book test — UST10Y
+  fill → weighted YTM/duration in sane ranges); `npm run build` clean;
+  live — Desk Book 1 reports VaR 0.003 %, ES 0.004 %, Sharpe 0.09–0.16,
+  bond YTM 3.74 %, mod. duration 4.60 y; headless screenshots of the panel
+  at 1680×1000 and 1680×1600 confirm every tile renders with real values.
+
+
 
 **Driver:** owner asks — fix the VaR `N/A` on the demo book, and let the
 replay start mid-dataset so the sim clock shows late-August dates on stage.

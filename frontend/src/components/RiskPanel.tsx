@@ -36,7 +36,9 @@ interface RiskPanelProps {
 }
 
 /** Risk exposure: donut gauges (concentration, volatility) with threshold
- * coloring, top-holdings weight bars, invested-vs-cash slim split bar. */
+ * coloring; VaR/ES/Sharpe/drawdown stat tiles; conditional bond-book line
+ * (weighted YTM + modified duration); asset-mix, top-holdings and
+ * invested-vs-cash bars. */
 export function RiskPanel({ valuation }: RiskPanelProps) {
   const { t } = useT();
   if (!valuation) {
@@ -57,9 +59,13 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
   const investedPct = total > 0 ? (valuation.market_value / total) * 100 : 0;
   const top3 = kpis.top_holdings.slice(0, 3);
 
-  // Extended metrics (new kpis contract): VaR, max drawdown, day P&L.
+  // Extended metrics (new kpis contract): VaR, ES, Sharpe, max drawdown, day P&L.
   const varPct = kpis.var_95_1d_pct;
   const varTone = varPct === null ? "" : varPct > 10 ? "neg" : varPct > 5 ? "warn" : "";
+  const esPct = kpis.es_95_1d_pct;
+  const esTone = esPct === null ? "" : esPct > 12 ? "neg" : esPct > 6 ? "warn" : "";
+  const sharpe = kpis.sharpe_ratio;
+  const sharpeTone = sharpe === null ? "" : sharpe < 0 ? "neg" : sharpe < 0.5 ? "warn" : "pos";
   const ddPct = kpis.max_drawdown_pct;
   const ddTone = ddPct === null ? "" : ddPct > 20 ? "neg" : ddPct > 10 ? "warn" : "";
   const dayPnl = valuation.day_change;
@@ -90,21 +96,35 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
           pct={volatility}
           tone={volatility === null ? "na" : volatilityTone(volatility)}
           label={t("risk.volatility")}
-          display={volatility === null ? "N/A" : fmtPct(volatility, 0)}
+          display={volatility === null ? "N/A" : fmtPct(volatility, 2)}
         />
       </div>
 
       <div className="risk-stats">
         <div className="risk-stat">
           <span className="muted">{t("risk.var")}</span>
-          <span className={`num ${varTone}`}>{varPct === null ? "N/A" : fmtPct(varPct)}</span>
+          <span className={`num ${varTone}`}>{varPct === null ? "N/A" : fmtPct(varPct, 3)}</span>
           <span className="muted risk-stat-caption">
             {varPct === null ? " " : t("risk.varCaption")}
           </span>
         </div>
         <div className="risk-stat">
+          <span className="muted">{t("risk.es")}</span>
+          <span className={`num ${esTone}`}>{esPct === null ? "N/A" : fmtPct(esPct, 3)}</span>
+          <span className="muted risk-stat-caption">
+            {esPct === null ? " " : t("risk.esCaption")}
+          </span>
+        </div>
+        <div className="risk-stat">
+          <span className="muted">{t("risk.sharpe")}</span>
+          <span className={`num ${sharpeTone}`}>{sharpe === null ? "N/A" : sharpe.toFixed(2)}</span>
+          <span className="muted risk-stat-caption">
+            {sharpe === null ? " " : t("risk.sharpeCaption")}
+          </span>
+        </div>
+        <div className="risk-stat">
           <span className="muted">{t("paper.maxDrawdown")}</span>
-          <span className={`num ${ddTone}`}>{ddPct === null ? "N/A" : fmtPct(ddPct)}</span>
+          <span className={`num ${ddTone}`}>{ddPct === null ? "N/A" : fmtPct(ddPct, 2)}</span>
           <span className="muted risk-stat-caption">
             {ddPct === null ? " " : t("risk.maxDdCaption")}
           </span>
@@ -131,6 +151,20 @@ export function RiskPanel({ valuation }: RiskPanelProps) {
           <div className="split-bar">
             <div className="split-invested" style={{ width: `${eqShare}%` }} />
             <div className="split-bond" style={{ width: `${100 - eqShare}%` }} />
+          </div>
+        </div>
+      )}
+
+      {kpis.bond_wtd_mod_duration !== null && kpis.bond_wtd_ytm_pct !== null && (
+        <div className="risk-block">
+          <div className="risk-row">
+            <span className="muted">{t("risk.bondBook")}</span>
+            <span className="num muted">
+              {t("risk.bondBookLine", {
+                ytm: fmtPct(kpis.bond_wtd_ytm_pct),
+                dur: kpis.bond_wtd_mod_duration.toFixed(2),
+              })}
+            </span>
           </div>
         </div>
       )}

@@ -991,4 +991,40 @@ async def test_risk_kpis_repriced_history_fresh_book(client, app, trader, ids):
     assert kpis["var_95_1d_pct"] is not None
     assert kpis["max_drawdown_pct"] is not None
     assert kpis["var_95_1d_pct"] >= 0
+    # ES >= VaR by construction; Sharpe defined on the same series.
+    assert kpis["es_95_1d_pct"] is not None
+    assert kpis["es_95_1d_pct"] >= kpis["var_95_1d_pct"] >= 0
+    assert kpis["sharpe_ratio"] is not None
+    # Equity-only book: bond-book metrics are null, not fabricated.
+    assert kpis["bond_wtd_ytm_pct"] is None
+    assert kpis["bond_wtd_mod_duration"] is None
+
+
+async def test_bond_book_metrics(client, app, trader, ids):
+    """Bond positions surface market-value-weighted YTM + modified duration
+    in the valuation KPIs (design 24 conventions)."""
+    await wait_for_prices(client, trader)
+    order_id = await submit_market_buy(
+        client, trader, ids["desk"], symbol="UST10Y", qty=1000
+    )
+    await wait_order_status(client, trader, order_id, "FILLED")
+
+    async def bond_position_present():
+        response = await client.get(
+            f"/api/v1/portfolios/{ids['desk']}/positions", headers=trader
+        )
+        items = response.json()["items"]
+        return [i for i in items if i["instrument_symbol"] == "UST10Y"] or None
+
+    await wait_until(bond_position_present)
+
+    response = await client.get(
+        f"/api/v1/portfolios/{ids['desk']}/valuation", headers=trader
+    )
+    assert response.status_code == 200, response.text
+    kpis = response.json()["kpis"]
+    ytm = kpis["bond_wtd_ytm_pct"]
+    duration = kpis["bond_wtd_mod_duration"]
+    assert ytm is not None and -99 < ytm < 100
+    assert duration is not None and 0 < duration < 20
 

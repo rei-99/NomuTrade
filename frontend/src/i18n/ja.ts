@@ -522,6 +522,12 @@ export const ja: Record<I18nKey, string> = {
   // ---- risk extras ----
   "risk.var": "VaR (95%, 1日)",
   "risk.varCaption": "対簿価",
+  "risk.es": "ES (95%, 1日)",
+  "risk.esCaption": "下落ワースト5%日の平均",
+  "risk.sharpe": "シャープ比（年率）",
+  "risk.sharpeCaption": "リスクあたり収益（rf=0）",
+  "risk.bondBook": "債券ブック",
+  "risk.bondBookLine": "利回り {ytm}・修正デュレーション {dur}年",
   "risk.maxDdCaption": "ピーク〜ボトム",
   "risk.assetMix": "資産構成",
 

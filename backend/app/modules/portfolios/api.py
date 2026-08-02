@@ -26,11 +26,15 @@ from app.core.security import (
 from app.core.timeutil import as_utc, utcnow
 from app.modules.orders.validation import trade_value
 from app.modules.portfolios.valuation import (
+    _daily_total_values,
     annualized_volatility_pct,
+    bond_book_metrics,
     compute_realized,
     compute_total_value,
+    expected_shortfall_95_1d_pct,
     max_drawdown_pct,
     previous_close_map,
+    sharpe_ratio,
     value_positions,
     var_95_1d_pct,
 )
@@ -239,9 +243,19 @@ async def get_valuation(
         for v in holdings[:5]
     ]
     concentration_pct = top_holdings[0]["pct"] if top_holdings else 0.0
-    volatility = await annualized_volatility_pct(db, portfolio.portfolio_id)
-    var_95 = await var_95_1d_pct(db, portfolio.portfolio_id)
-    max_dd = await max_drawdown_pct(db, portfolio.portfolio_id)
+    # One history fetch shared by all series-based KPIs (volatility, VaR, ES,
+    # Sharpe, drawdown) — each used to rescan the snapshots independently.
+    daily_values = await _daily_total_values(db, portfolio.portfolio_id)
+    volatility = await annualized_volatility_pct(
+        db, portfolio.portfolio_id, values=daily_values
+    )
+    var_95 = await var_95_1d_pct(db, portfolio.portfolio_id, values=daily_values)
+    es_95 = await expected_shortfall_95_1d_pct(
+        db, portfolio.portfolio_id, values=daily_values
+    )
+    sharpe = await sharpe_ratio(db, portfolio.portfolio_id, values=daily_values)
+    max_dd = await max_drawdown_pct(db, portfolio.portfolio_id, values=daily_values)
+    bond_metrics = bond_book_metrics(valuations)
 
     return {
         "portfolio_id": portfolio.portfolio_id,
@@ -258,7 +272,10 @@ async def get_valuation(
             "concentration_pct": concentration_pct,
             "volatility_annualized_pct": volatility,
             "var_95_1d_pct": var_95,
+            "es_95_1d_pct": es_95,
+            "sharpe_ratio": sharpe,
             "max_drawdown_pct": max_dd,
+            **bond_metrics,
         },
     }
 

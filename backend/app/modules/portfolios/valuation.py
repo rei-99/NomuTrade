@@ -34,6 +34,11 @@ from app.modules.marketdata.registry import (
     warm_from_db,
 )
 from app.modules.orders.validation import trade_value
+from app.modules.analytics.bonds import (
+    modified_duration as _bond_mod_duration,
+    payment_count as _bond_payment_count,
+    solve_ytm as _bond_solve_ytm,
+)
 
 STALE_PRICE_SECONDS = 60.0
 
@@ -168,7 +173,7 @@ async def previous_close_map(
 
 
 async def annualized_volatility_pct(
-    db: AsyncSession, portfolio_id: str
+    db: AsyncSession, portfolio_id: str, *, values: list[float] | None = None
 ) -> float | None:
     """Annualized volatility of daily total_value.
 
@@ -178,7 +183,7 @@ async def annualized_volatility_pct(
     source: ValuationSnapshots, falling back to the current book repriced
     through stored daily closes (see `_daily_total_values`).
     """
-    values = await _daily_total_values(db, portfolio_id)
+    values = values if values is not None else await _daily_total_values(db, portfolio_id)
     if len(values) < 10:
         return None
     mean = statistics.fmean(values)
@@ -281,7 +286,9 @@ async def _repriced_daily_values(db: AsyncSession, portfolio_id: str) -> list[fl
     return values
 
 
-async def var_95_1d_pct(db: AsyncSession, portfolio_id: str) -> float | None:
+async def var_95_1d_pct(
+    db: AsyncSession, portfolio_id: str, *, values: list[float] | None = None
+) -> float | None:
     """Historical 1-day 95% VaR as % of portfolio value (risk metric, A-feat).
 
     Percentile of daily total-value returns: VaR = -5th percentile x 100, so a
@@ -291,20 +298,62 @@ async def var_95_1d_pct(db: AsyncSession, portfolio_id: str) -> float | None:
     Series source: ValuationSnapshots, falling back to the current book
     repriced through stored daily closes (see `_daily_total_values`).
     """
-    values = await _daily_total_values(db, portfolio_id)
-    returns = [b / a - 1 for a, b in zip(values, values[1:]) if a]
+    values = values if values is not None else await _daily_total_values(db, portfolio_id)
+    returns = _returns(values)
     if len(returns) < 10:
         return None
     q5 = statistics.quantiles(returns, n=20)[0]  # 5th percentile
     return max(0.0, -q5 * 100)
 
 
-async def max_drawdown_pct(db: AsyncSession, portfolio_id: str) -> float | None:
+async def expected_shortfall_95_1d_pct(
+    db: AsyncSession, portfolio_id: str, *, values: list[float] | None = None
+) -> float | None:
+    """Historical 1-day 95% expected shortfall (CVaR) as % of portfolio value.
+
+    Mean of the daily returns at/below the 5th percentile — "when the worst
+    5% of days happen, this is the average loss". Always >= VaR-95 by
+    construction. Same series and minimum-history rules as VaR.
+    """
+    values = values if values is not None else await _daily_total_values(db, portfolio_id)
+    returns = _returns(values)
+    if len(returns) < 10:
+        return None
+    q5 = statistics.quantiles(returns, n=20)[0]
+    tail = [r for r in returns if r <= q5]
+    if not tail:
+        return 0.0
+    return max(0.0, -statistics.fmean(tail) * 100)
+
+
+async def sharpe_ratio(
+    db: AsyncSession, portfolio_id: str, *, values: list[float] | None = None
+) -> float | None:
+    """Annualized Sharpe ratio of daily total-value returns (rf = 0 —
+    training-environment simplification, documented). None with fewer than
+    10 observations or zero dispersion."""
+    values = values if values is not None else await _daily_total_values(db, portfolio_id)
+    returns = _returns(values)
+    if len(returns) < 10:
+        return None
+    sd = statistics.stdev(returns)
+    if sd == 0:
+        return None
+    return statistics.fmean(returns) / sd * (252**0.5)
+
+
+def _returns(values: list[float]) -> list[float]:
+    return [b / a - 1 for a, b in zip(values, values[1:]) if a]
+
+
+async def max_drawdown_pct(
+    db: AsyncSession, portfolio_id: str, *, values: list[float] | None = None
+) -> float | None:
     """Largest peak-to-trough decline of daily total_value, as % of the peak.
 
     None with fewer than 2 daily points.
     """
-    values = await _daily_total_values(db, portfolio_id)
+    values = values if values is not None else await _daily_total_values(db, portfolio_id)
     if len(values) < 2:
         return None
     peak = values[0]
@@ -324,3 +373,42 @@ async def compute_total_value(db: AsyncSession, portfolio: Portfolio) -> Decimal
         Decimal("0"),
     )
     return portfolio.cash_balance + market
+
+
+def bond_book_metrics(valuations: list[PositionValuation]) -> dict[str, float | None]:
+    """Market-value-weighted YTM % and modified duration of bond holdings.
+
+    Same conventions as GET /instruments/{symbol}/bond-analytics (design 24):
+    annual coupons, clean price, years measured on the sim clock (D-10).
+    Both keys are None when the book holds no priced bonds with
+    coupon/maturity data (e.g. equity-only books).
+    """
+    now = get_sim_now() or utcnow()
+    wtd_ytm = 0.0
+    wtd_dur = 0.0
+    total = 0.0
+    for v in valuations:
+        instrument = v.instrument
+        if (
+            instrument.asset_class != "BOND"
+            or instrument.coupon_rate is None
+            or instrument.maturity_date is None
+            or v.market_value is None
+            or v.latest_price is None
+        ):
+            continue
+        seconds = (as_utc(instrument.maturity_date) - as_utc(now)).total_seconds()
+        n = _bond_payment_count(max(0.0, seconds / (365.25 * 86_400)))
+        coupon = float(instrument.coupon_rate)
+        ytm = _bond_solve_ytm(float(v.latest_price), coupon, n)
+        duration = _bond_mod_duration(coupon, n, ytm)
+        weight = float(v.market_value)
+        wtd_ytm += ytm * weight
+        wtd_dur += duration * weight
+        total += weight
+    if total == 0.0:
+        return {"bond_wtd_ytm_pct": None, "bond_wtd_mod_duration": None}
+    return {
+        "bond_wtd_ytm_pct": wtd_ytm / total,
+        "bond_wtd_mod_duration": wtd_dur / total,
+    }

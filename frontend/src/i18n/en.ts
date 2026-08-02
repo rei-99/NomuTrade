@@ -520,6 +520,12 @@ export const en = {
   // ---- risk extras ----
   "risk.var": "VaR (95%, 1d)",
   "risk.varCaption": "of book",
+  "risk.es": "ES (95%, 1d)",
+  "risk.esCaption": "avg of worst 5% days",
+  "risk.sharpe": "Sharpe (ann.)",
+  "risk.sharpeCaption": "return per unit risk (rf=0)",
+  "risk.bondBook": "Bond book",
+  "risk.bondBookLine": "YTM {ytm} · mod. duration {dur}y",
   "risk.maxDdCaption": "peak-to-trough",
   "risk.assetMix": "Asset mix",
 

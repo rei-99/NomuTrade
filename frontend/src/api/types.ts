@@ -278,8 +278,16 @@ export interface Valuation {
     volatility_annualized_pct: number | null;
     /** Historical 95% 1-day VaR as % of book (new contract). */
     var_95_1d_pct: number | null;
+    /** Historical 95% 1-day expected shortfall (CVaR) as % of book. */
+    es_95_1d_pct: number | null;
+    /** Annualized Sharpe ratio of daily total-value returns (rf = 0). */
+    sharpe_ratio: number | null;
     /** Peak-to-trough max drawdown as % of book (new contract). */
     max_drawdown_pct: number | null;
+    /** Market-value-weighted YTM % of bond holdings (null: no bonds). */
+    bond_wtd_ytm_pct: number | null;
+    /** Market-value-weighted modified duration of bond holdings (null: no bonds). */
+    bond_wtd_mod_duration: number | null;
   };
 }
 
