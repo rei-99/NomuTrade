@@ -23,7 +23,7 @@ import asyncio
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -117,6 +117,42 @@ def _tick_payload(instrument: Instrument, snapshot, ts: datetime) -> dict:
     }
 
 
+# --- Replay fast-forward control (training/demo) ------------------------------
+
+_skip_days = 0
+_dataset_replay_active = False
+
+
+def request_replay_skip(days: int) -> bool:
+    """Ask the dataset replayer to fast-forward `days` market days. Returns
+    False when the fallback feed is running (nothing to skip)."""
+    global _skip_days
+    if not _dataset_replay_active:
+        return False
+    _skip_days += days
+    return True
+
+
+def _consume_skip() -> int:
+    global _skip_days
+    days, _skip_days = _skip_days, 0
+    return days
+
+
+def _skip_index(bars: list[tuple], i: int, days: int) -> int:
+    """First bar `days` calendar days after the current bar's date — lands on
+    that market day's first bar, skipping weekends/holidays. Clamps to the
+    last bar (the loop wrap takes it from there)."""
+    if days <= 0 or i >= len(bars):
+        return i
+    target = as_utc(bars[i][1]).date() + timedelta(days=days)
+    j = i
+    n = len(bars)
+    while j < n and as_utc(bars[j][1]).date() < target:
+        j += 1
+    return min(j, n - 1)
+
+
 async def _load_bars(sessionmaker) -> list[tuple]:
     """All minute bars of the live window, ordered by (ts, instrument).
 
@@ -177,6 +213,8 @@ def _replay_start_index(bars: list[tuple], replay_start: str) -> int:
 
 
 async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
+    global _dataset_replay_active
+    _dataset_replay_active = True
     by_id = {i.instrument_id: i for i in instruments}
     pause = 1.0 / max(settings.REPLAY_BARS_PER_SECOND, 0.1)
     bars = await _shielded(_load_bars(sessionmaker))
@@ -201,6 +239,14 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
         # overruns an interval we skip the sleep and catch up instead.
         next_emit = (int(time.time() / pause) + 1) * pause
         while i < n:
+            # Fast-forward control (training/demo): jump whole market days.
+            pending = _consume_skip()
+            if pending:
+                i = _skip_index(bars, i, pending)
+                logger.info(
+                    "tick replayer: fast-forward %d day(s) → %s",
+                    pending, as_utc(bars[i][1]).date(),
+                )
             # Publish all instruments' bars sharing this dataset timestamp,
             # then pace one unique timestamp per interval. Grouping compares
             # the raw (possibly naive) values; `ts` is normalized for use.

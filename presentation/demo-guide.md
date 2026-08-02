@@ -49,6 +49,9 @@ Honesty notes for Q&A:
 2. **Trade an untouched bond** — scope toggle **Bonds** → **MSFT31** → 1,000
    face → BUY. Point at the bond analytics card (coupon, YTM, mod. duration,
    yield → implied price) and the % of par est-cost note.
+   *Tip:* the **`» +1d`** button in the top bar fast-forwards the simulation
+   one market day per press — use it between beats to show settlement states
+   progressing and day-change resetting instead of waiting for the replay.
 3. **Portfolio management** — Portfolios → Desk Book 1: KPI cards, allocation
    donut (equity vs bond), P&L contribution per name, positions with day
    change; Transactions tab for the realized-P&L story (the TSLA sell).

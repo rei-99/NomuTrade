@@ -5,14 +5,17 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.core.db import get_db
-from app.core.errors import NotFound, ValidationError
+from app.core.errors import NotFound, StateConflict, ValidationError
 from app.core.models import Instrument, PriceTick
 from app.core.security import SessionData, get_current_user
 from app.core.timeutil import as_utc
+from app.modules.marketdata import worker as replay_worker
 from app.modules.marketdata.registry import (
     get_latest_price,
     get_sim_now,
@@ -191,3 +194,39 @@ async def get_prices(
         candles = daily
 
     return {"symbol": symbol, "timeframe": timeframe, "candles": candles}
+
+
+# ---------------------------------------------------------------------------
+# Replay fast-forward (training/demo control)
+# ---------------------------------------------------------------------------
+
+
+class ReplaySkipRequest(BaseModel):
+    days: int = Field(1, ge=1, le=10)
+
+
+@router.post("/marketdata/replay/skip")
+async def replay_skip(
+    body: ReplaySkipRequest,
+    session: SessionData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fast-forward the dataset replay by whole market days (lands on the
+    target day's first bar; prices, sim clock, news visibility and settlement
+    timing all follow on the next tick). Any authenticated user may use it —
+    training-environment control, audited. 409 when the fallback feed is
+    running (there is no replay to skip)."""
+    if not replay_worker.request_replay_skip(body.days):
+        raise StateConflict("replay skip is available only in dataset replay mode")
+    await write_audit(
+        db,
+        actor_id=session.user_id,
+        event_type="REPLAY_SKIP",
+        resource_type="SIMULATION",
+        resource_id="replay",
+        severity="INFO",
+        payload={"days": body.days},
+        flush_only=True,
+    )
+    await db.commit()
+    return {"skipped_days": body.days}

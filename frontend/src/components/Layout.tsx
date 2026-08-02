@@ -10,6 +10,7 @@ import { useT } from "../i18n";
 import { PERSONA_TABS, TABS } from "../personas";
 import { Badge } from "./Badge";
 import { NotificationBell } from "./NotificationBell";
+import { useToast } from "./Toast";
 
 /** Global symbol search: type-to-filter over instruments, Enter/click selects. */
 function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
@@ -120,11 +121,29 @@ function SymbolSearch({ instruments }: { instruments: Instrument[] }) {
 export function Layout() {
   const { me, logout, hasPerm, persona } = useAuth();
   const { t, lang, setLang } = useT();
+  const { toast } = useToast();
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [marketLive, setMarketLive] = useState(false);
   const prevPrices = useRef<Map<string, number>>(new Map());
   const [searchParams] = useSearchParams();
   const [simTs, setSimTs] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState(false);
+
+  // Replay fast-forward (training/demo): jump the sim clock one market day.
+  const skipDay = async () => {
+    setSkipping(true);
+    try {
+      await api("/marketdata/replay/skip", {
+        method: "POST",
+        body: JSON.stringify({ days: 1 }),
+      });
+      toast(t("topbar.skippedDay"), "success");
+    } catch {
+      /* global error toast already raised by the client */
+    } finally {
+      setSkipping(false);
+    }
+  };
 
   // Nav = exactly the persona's tab list (design 25 §U2); the per-permission
   // gates still filter underneath as the safety net.
@@ -234,6 +253,15 @@ export function Layout() {
             <span className="sim-clock muted num" title={t("topbar.simClockTitle")}>
               SIM {simTs ? `${simTs.slice(5, 10)} ${simTs.slice(11, 16)}` : "—"}
             </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm sim-skip"
+              disabled={skipping}
+              title={t("topbar.skipDayTitle")}
+              onClick={() => void skipDay()}
+            >
+              {t("topbar.skipDay")}
+            </button>
             <span
               className="market-status"
               title={wsState === "open" ? t("topbar.wsOnTitle") : t("topbar.wsOffTitle")}

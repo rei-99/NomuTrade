@@ -266,3 +266,26 @@ def test_replay_start_index():
     assert _replay_start_index(bars, "2026-08-24T09:32:00+00:00") == 2
     assert _replay_start_index(bars, "2026-09-01") == 0  # past the end → start
     assert _replay_start_index(bars, "not-a-date") == 0  # invalid → start
+
+
+def test_skip_index_fast_forward():
+    """Replay fast-forward: lands on the target market day's first bar,
+    skips weekends, clamps at the dataset end."""
+    from datetime import datetime, timedelta
+
+    from app.modules.marketdata.worker import _skip_index
+
+    # Fri 2026-08-28, then Mon 08-31 + Tue 09-01 (weekend gap), 2 bars/day.
+    days = [datetime(2026, 8, 28, 9, 30), datetime(2026, 8, 31, 9, 30), datetime(2026, 9, 1, 9, 30)]
+    bars = [
+        (f"id{d}-{s}", d + timedelta(minutes=m), None, None, None, None, None)
+        for d in days
+        for m, s in ((0, "a"), (1, "b"))
+    ]
+    assert _skip_index(bars, 0, 0) == 0
+    assert _skip_index(bars, 0, 1) == 2  # Fri + 1d = Sat → Mon's first bar
+    assert _skip_index(bars, 0, 2) == 2  # Fri + 2d = Sun → still Monday
+    assert _skip_index(bars, 0, 4) == 4  # Fri + 4d = Tue → Tue's first bar
+    assert _skip_index(bars, 2, 1) == 4  # Mon + 1d = Tue
+    assert _skip_index(bars, 4, 1) == 5  # past the end → clamp to last bar
+    assert _skip_index(bars, 99, 1) == 99  # out of range → unchanged

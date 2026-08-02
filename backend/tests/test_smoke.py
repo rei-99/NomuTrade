@@ -122,3 +122,42 @@ async def test_outbox_write_and_relay(app, client):
     finally:
         stop.set()
         await asyncio.wait_for(relay, timeout=2)
+
+
+async def test_replay_skip_endpoint(client, app):
+    """POST /marketdata/replay/skip: 401 unauthenticated; 409 on the fallback
+    feed (tests never run dataset replay); 200 + audit when a dataset replay
+    is active (flag simulated)."""
+    from sqlalchemy import select
+
+    from app.core.models import AuditEvent
+    from app.modules.marketdata import worker as replay_worker
+    from tests.conftest import login
+
+    assert (await client.post("/api/v1/marketdata/replay/skip", json={"days": 1})).status_code == 401
+
+    headers = await login(client, "trader@demo.nomura")
+    conflict = await client.post(
+        "/api/v1/marketdata/replay/skip", json={"days": 1}, headers=headers
+    )
+    assert conflict.status_code == 409
+
+    replay_worker._dataset_replay_active = True
+    replay_worker._skip_days = 0
+    try:
+        ok = await client.post(
+            "/api/v1/marketdata/replay/skip", json={"days": 2}, headers=headers
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json() == {"skipped_days": 2}
+        assert replay_worker._skip_days == 2
+        async with app.state.sessionmaker() as session:
+            row = (
+                await session.execute(
+                    select(AuditEvent).where(AuditEvent.event_type == "REPLAY_SKIP")
+                )
+            ).scalars().first()
+        assert row is not None and row.payload["days"] == 2
+    finally:
+        replay_worker._dataset_replay_active = False
+        replay_worker._skip_days = 0

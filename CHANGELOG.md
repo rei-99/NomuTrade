@@ -7,7 +7,27 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — News panel: one inline feed, one scrollbar
+## 2026-08-02 — Replay fast-forward: `» +1d` button
+
+**Driver:** owner ask — a button to jump a day so trade/settlement states
+change on demand instead of waiting for the replay (6.5 min/day at 1 bar/s).
+
+- **Backend**: `POST /api/v1/marketdata/replay/skip {days: 1..10}` — the
+  replayer consumes a skip counter between bar groups and jumps to the first
+  bar of the target calendar date (weekends skipped, clamps at the dataset
+  end, loop wrap unaffected). Any authenticated user (training-environment
+  control), audited as `REPLAY_SKIP`; 409 `STATE_CONFLICT` when the fallback
+  feed is running (no replay to skip). The registry's day handling resets
+  day-open/high/low on the date change, so day-change KPIs stay correct.
+- **Frontend**: `» +1d` ghost button next to the SIM clock in the top bar
+  (EN/JA), success toast, global error handling; the next tick carries the
+  new sim time to every panel (prices, news visibility, settlement timing).
+- Verified: backend **119/119** (2 new — `_skip_index` unit test incl.
+  weekend/clamp semantics; endpoint 401/409/200 + audit row); `npm run
+  build` clean; live — sim clock 08-25 09:44 → **08-26 09:31** → **08-27
+  09:31** across two presses; top-bar screenshot with the button.
+
+
 
 **Driver:** owner UX review — the summary's cited-3 headlines duplicated the
 feed but weren't clickable ("why not just keep them in line?"), and the panel
