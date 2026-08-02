@@ -187,7 +187,34 @@ export interface Trade {
   quantity: number;
   executed_at: string;
   portfolio_type: PortfolioType;
+  /** Lifecycle state of the linked settlement instruction, null when the
+   * STP worker has not booked one for this execution yet. */
+  settlement_state: string | null;
 }
+
+// ---------- settlements (FR-ORD-005 E1) ----------
+
+/** Settlement lifecycle (backend LifecycleState enum; no FAILED/EXCEPTION
+ * states — a dropped execution simply has no instruction until retried). */
+export type LifecycleState = "EXECUTED" | "AFFIRMED" | "SETTLED";
+
+/** GET /settlements item — value is bond-aware (bonds: face × price / 100). */
+export interface SettlementInstruction {
+  settlement_id: string;
+  execution_id: string;
+  portfolio_id: string;
+  portfolio_name: string;
+  instrument_symbol: string;
+  side: OrderSide;
+  quantity: number;
+  price: number;
+  value: number;
+  lifecycle_state: LifecycleState;
+  created_at: string;
+  settled_at: string | null;
+}
+
+export type SettlementListResponse = ListResponse<SettlementInstruction>;
 
 // ---------- portfolios ----------
 
@@ -551,10 +578,15 @@ export interface IntegrationHealth {
   detail: string | null;
 }
 
-// ASSUMPTION: STP exception item shape is not pinned down in the contract;
-// the governance UI renders the known-ish fields when present and falls back
-// to JSON for the rest.
+// GET /admin/health stp_exceptions item (backend admin module): settlement
+// instructions stuck in EXECUTED/AFFIRMED past the age threshold. The
+// execution_id feeds POST /settlements/exceptions/{execution_id}/retry.
+// Extra fields are tolerated defensively.
 export interface StpException {
+  settlement_id?: string;
+  execution_id?: string;
+  lifecycle_state?: string;
+  age_seconds?: number;
   exception_id?: string;
   order_id?: string;
   reason?: string;

@@ -15,7 +15,8 @@ Regenerate (from the repo root):
     backend/.venv/Scripts/python presentation/build_deck.py
 
 The script re-opens the generated file and verifies: 21 slides, non-empty speaker
-notes on every slide, and no empty text frames on content-sized shapes.
+notes on every slide, no empty text frames on content-sized shapes, and no
+off-canvas shapes.
 
 Edit guide:
 - Wording of a slide      -> the slide_XX functions below (one per slide).
@@ -252,7 +253,7 @@ def slide_01(prs):
                  15, BODY, False, True)]], align=PP_ALIGN.CENTER)
     add_text(s, MARGIN, Inches(5.15), CONTENT_W, Inches(0.35),
              [[R("[Team name]  —  [Member 1] · [Member 2] · [Member 3] · "
-                 "[Member 4] · [Member 5]", 12.5, NAVY, True)]],
+                 "[Member 4]", 12.5, NAVY, True)]],
              align=PP_ALIGN.CENTER)
     add_text(s, MARGIN, Inches(5.6), CONTENT_W, Inches(0.3),
              [[R("30 July 2026", 12, MUTED)]], align=PP_ALIGN.CENTER)
@@ -265,22 +266,21 @@ platform with straight-through processing — an order goes from ticket to
 settlement with zero manual steps. But we didn't start with technology. We
 started with four people.
 
-(Replace [Team name] / [Member …] placeholders; presenters P1–P5 per script §1:
-P1 corporate lead, P2/P4 technology, P3/P5 corporate.)
+(Replace [Team name] / [Member …] placeholders; presenters P1–P4 per script §1:
+P1 corporate lead, P2/P4 technology, P3 corporate.)
 """)
 
 
 def slide_02(prs):
-    s = base_slide(prs, 2, "Agenda", kicker="15 minutes + 5 minutes Q&A")
+    s = base_slide(prs, 2, "Agenda", kicker="10 minutes + 5 minutes Q&A")
     items = [
-        ("1", "The ask — four stakeholder voices", "P1 · 0:00–1:00"),
-        ("2", "What we built + live demo", "P2 · 1:00–5:00"),
-        ("3", "Operational processes", "P3 · 5:00–7:00"),
-        ("4", "How we worked", "P4 · 7:00–10:30"),
-        ("5", "What worked / what didn't", "P5 · 10:30–12:30"),
-        ("6", "What we learned", "P1 · 12:30–14:00"),
-        ("7", "Roadmap & close", "P3 · 14:00–15:00"),
-        ("8", "Q&A", "all · 15:00–20:00"),
+        ("1", "The ask — four stakeholder voices", "P1 · 0:00–0:45"),
+        ("2", "What we built + live demo", "P2 · 0:45–4:15"),
+        ("3", "Operational processes", "P3 · 4:15–5:45"),
+        ("4", "How we worked", "P4 · 5:45–7:45"),
+        ("5", "What worked / what didn't", "P1 · 7:45–9:00"),
+        ("6", "Learnings, roadmap & close", "P3 · 9:00–10:00"),
+        ("7", "Q&A", "all · 10:00–15:00"),
     ]
     y = Inches(1.55)
     for num, title, who in items:
@@ -293,11 +293,12 @@ def slide_02(prs):
                  [[R(who, 11, MUTED)]], align=PP_ALIGN.RIGHT)
         y += Inches(0.62)
     notes(s, """
-Quick roadmap of the next fifteen minutes: what we built, how it supports real
-operational workflows, how we worked as a cross-functional team, what worked
-and what didn't, and where this goes next.
+Quick roadmap of the next ten minutes: what we built — including a live
+90-second demo — how it supports real operational workflows, how we worked as
+a cross-functional team, what held up and what didn't, and where this goes
+next.
 
-Timing per script §1: demo section gets the biggest block (45%). Appendix
+Timing per script §1: the demo section gets the biggest block (35%). Appendix
 slides A1–A3 stay on standby for Q&A.
 """)
 
@@ -451,7 +452,7 @@ def slide_06(prs):
     # FastAPI container
     box = card(s, Inches(3.3), Inches(1.5), Inches(6.0), Inches(3.95),
                fill=PANEL, line=HAIR)
-    shape_text(box, [[R("FastAPI modular monolith — 16 modules · one deployable",
+    shape_text(box, [[R("FastAPI modular monolith — 17 modules · one deployable",
                         12.5, NAVY, True)]],
                anchor=MSO_ANCHOR.TOP, align=PP_ALIGN.CENTER, m=0.14)
     mods = ["orders", "portfolios", "marketdata", "+ 12 more"]
@@ -606,11 +607,13 @@ Ninety seconds, live. Watch three things: (1) I buy 50 TSLA from the workspace �
 one click, a confirmation card with full cost impact, second click. (2) The
 position marks live over the WebSocket push — no refresh — and the risk panel
 reacts. (3) With no manual step, the settlement instruction transitions to
-*settled* — that is straight-through processing.
+*settled* — that is straight-through processing. The settlement lifecycle is
+visible in the UI: the settlements list shows every state, and ops can retry
+exceptions.
 
 Demo path (script §10): workspace → select TSLA → size 50 → BUY → confirmation
 card → Confirm → fill toast → position marks live → risk panel reacts → order
-status FILLED → settlement instruction → SETTLED.
+status FILLED → settlement instruction → SETTLED in the settlements list.
 
 Handover: "A fill is where the technology story ends — but it's where the
 operations story begins. [P3]."
@@ -623,9 +626,10 @@ def slide_09(prs):
     cols = [
         ("Trade settlement", [
             ("Execution creates a settlement instruction — ",
-             "EXECUTED → AFFIRMED → SETTLED, automatically.", 0),
+             "EXECUTED → AFFIRMED → SETTLED, automatically — every state "
+             "visible in the settlements list.", 0),
             ("Exceptions are the job: ", "they surface on the operations "
-             "dashboard, with audit on every transition.", 0),
+             "dashboard — audited, and ops can retry them there.", 0),
             ("Same pipeline for client, house and paper books — ",
              "paper is the same code path with a portfolio-type flag.", 0),
         ]),
@@ -665,11 +669,11 @@ The corporate side of the team mapped three workflows, and the platform
 implements all three.
 
 Trade settlement: execution creates a settlement instruction that moves
-EXECUTED → AFFIRMED → SETTLED automatically. Exceptions surface on the
-operations dashboard for the Operations Analyst, with audit on every
-transition. The same pipeline serves client books, house books and paper
-accounts — paper trading isn't a toy mode, it's the same code path with a
-portfolio type flag.
+EXECUTED → AFFIRMED → SETTLED automatically — every state visible in the
+settlements list. Exceptions surface on the operations dashboard, with audit on
+every transition, and ops can retry an exception from the same dashboard. The
+same pipeline serves client, house and paper books — paper trading isn't a toy
+mode, it's the same code path with a portfolio type flag.
 
 Risk management: pre-trade, every order passes validation — cash, lot size, a
 configurable max notional, and a restricted-instrument list managed by our
@@ -750,10 +754,10 @@ def slide_11(prs):
     s = base_slide(prs, 11, "Engineering practices — verified, not asserted",
                    kicker="Section 4 · Process")
     add_bullets(s, MARGIN, Inches(1.5), Inches(6.55), Inches(4.7), [
-        ("Design before code: ", "24 numbered design documents, one per "
+        ("Design before code: ", "26 numbered design documents, one per "
          "module or major feature, each traced to SRS requirement IDs.", 0),
-        ("Git flow: ", "feature branches off an integration branch — 9 "
-         "merges, 7 feature branches in the history — plus a dated changelog "
+        ("Git flow: ", "feature branches off an integration branch — 13 "
+         "merges, 12 feature branches in the history — plus a dated changelog "
          "entry per milestone.", 0),
         ("Verification gates on every milestone: ", "full test suite, strict "
          "TypeScript build, an end-to-end walk of the real stack, and "
@@ -789,19 +793,18 @@ def slide_11(prs):
            "reviewed, but not executed — no cloud was available in the program "
            "environment. That stays on the roadmap.", 11.5, BODY)]])
     notes(s, """
-Design before code: twenty-four numbered design documents, one per module or
+Design before code: twenty-six numbered design documents, one per module or
 major feature, each traced to SRS requirement IDs. Git flow: feature branches
-off an integration branch — you can see nine merges and seven feature branches
-in the history — with a dated changelog entry per milestone. Every milestone
-was verified the same way: the full test suite, the strict TypeScript build,
-an end-to-end walk of the real stack, and headless-browser screenshots for UI
-changes — verified by a second pair of eyes, never trusted on the author's
-word. CI/CD is defined as a six-stage GitLab pipeline — lint, test, security
-scan, build, deploy-dev, deploy-demo — with Docker images for both tiers and
-Terraform for a single-VM cloud deployment. Honest caveat: the pipeline,
-containers and Terraform are written and statically reviewed, but no cloud was
-available in the program environment — they have not been executed. That stays
-on the roadmap slide.
+off an integration branch — you can see thirteen merges and twelve feature
+branches in the history — with a dated changelog entry per milestone. Every
+milestone was verified the same way: the full test suite, the strict TypeScript
+build, an end-to-end walk of the real stack, and headless-browser screenshots
+for UI changes — checked by a second pair of eyes, never trusted on the
+author's word. CI/CD is a defined six-stage GitLab pipeline — lint, test,
+security scan, build, deploy-dev, deploy-demo — with Docker images and
+Terraform for a single-VM cloud deployment. Honest caveat: written and
+statically reviewed, but not executed — no cloud in the program environment.
+That stays on the roadmap.
 """)
 
 
@@ -872,7 +875,7 @@ the full cost impact, one click to submit. Faster than a ticket, safer than a
 blind click.
 
 Handover: "That's how we worked. What actually held up — and what didn't —
-[P5]."
+[P1]."
 """)
 
 
@@ -913,7 +916,9 @@ def slide_13(prs):
                    m=0.14, line_spacing=1.05)
         y += Inches(1.82)
     notes(s, """
-Three war stories, all real.
+One story live — the dataset one, in forty seconds. The other two stay on the
+slide and in these notes as Q&A ammunition (script §9) for any "what was hard /
+what went wrong?" question.
 
 The dataset that silently didn't load: after switching to the real dataset,
 every stock showed "No price data." Root cause: legacy rows from an old dev
@@ -942,10 +947,10 @@ def slide_14(prs):
                anchor=MSO_ANCHOR.TOP, m=0.2)
     add_bullets(s, MARGIN + Inches(0.2), Inches(2.15), W - Inches(0.4),
                 Inches(4.3), [
-        ("Design-first: ", "24 design docs meant feedback rounds changed "
+        ("Design-first: ", "26 design docs meant feedback rounds changed "
          "documents before they changed code.", 0),
         ("The event pipeline: ", "the STP flow never needed a manual hack.", 0),
-        ("Verification discipline: ", "87 tests, a strict build, and "
+        ("Verification discipline: ", "~100 tests, a strict build, and "
          "screenshot-verified UI rounds.", 0),
     ], size=12, space_after=12)
     x2 = MARGIN + W + Inches(0.23)
@@ -963,9 +968,9 @@ def slide_14(prs):
          "ceiling is real, and that's a phase-2 decision, not a bug.", 0),
     ], size=12, space_after=12)
     notes(s, """
-Worked: design-first — 24 design docs meant feedback rounds changed documents
+Worked: design-first — 26 design docs meant feedback rounds changed documents
 before they changed code. The event pipeline — the STP flow never needed a
-manual hack. Verification discipline — 87 tests, a strict build, and
+manual hack. Verification discipline — ~100 tests, a strict build, and
 screenshot-verified UI rounds.
 
 What didn't: we have **no frontend tests** — UI quality rests on build
@@ -974,7 +979,8 @@ cloud in the program environment. And the GenAI reality check: a rule-based
 assistant is robust and honest, but it is not a language model — the summary
 quality ceiling is real, and that's a phase-2 decision, not a bug.
 
-Handover: "So what did three weeks teach us — [P1]."
+Handover: "So what did three weeks teach us, and where does it go next —
+[P3]."
 """)
 
 
@@ -1014,6 +1020,9 @@ def slide_15(prs):
         add_bullets(s, x + Inches(0.2), Inches(2.15), W - Inches(0.4),
                     Inches(4.0), items, size=11.5, space_after=11)
     notes(s, """
+(Compressed for the 10-minute slot: one line per category — the full text
+below is reference.)
+
 Technical: event-driven design pays for itself the first time a requirement
 changes mid-project — trailing stops and report scheduling both slotted into
 the existing pipeline. And GenAI in production is a guardrail problem before
@@ -1029,19 +1038,20 @@ feature traces to a person, and that made prioritization arguments short. And
 honest status beats impressive status: facilitators know what three weeks
 allows.
 
-Handover: "Which brings us back to the four people we started with — [P3]."
+Transition (same speaker continues): "Which brings us back to the four people
+we started with."
 """)
 
 
 def slide_16(prs):
-    s = base_slide(prs, 16, "Metrics — honest numbers", kicker="Section 7 · Roadmap & close")
+    s = base_slide(prs, 16, "Metrics — honest numbers", kicker="Section 6 · Roadmap & close")
     tiles = [
-        ("28", "commits on the integration branch", False),
-        ("9", "merges", False),
-        ("7", "feature branches", False),
-        ("87", "backend tests — all green", False),
-        ("16", "backend modules", False),
-        ("24", "design documents — SRS-traced", False),
+        ("42", "commits on the integration branch", False),
+        ("14", "merges", False),
+        ("12", "feature branches", False),
+        ("~100", "backend tests — all green", False),
+        ("17", "backend modules", False),
+        ("26", "design documents — SRS-traced", False),
         ("11", "instruments — 7 equities + 4 bonds", False),
         ("~190k", "price bars replayed on the sim clock", False),
         ("9.3k", "news items as reference data", False),
@@ -1062,8 +1072,8 @@ def slide_16(prs):
          R("the CI/CD is defined and reviewed, not yet executed (no cloud in "
            "the program environment).", 12, BODY)]])
     notes(s, """
-28 commits on the integration branch, 9 merges, 7 feature branches. 87
-backend tests, all green. 16 backend modules, 24 design documents, a dated
+42 commits on the integration branch, 14 merges, 12 feature branches. ~100
+backend tests, all green. 17 backend modules, 26 design documents, a dated
 changelog for every milestone. 11 instruments, ~190k price bars and 9.3k news
 items replayed on the simulation clock. Zero pipeline runs — the CI/CD is
 defined and reviewed, not yet executed. That zero is on the roadmap.
@@ -1072,7 +1082,7 @@ defined and reviewed, not yet executed. That zero is on the roadmap.
 
 def slide_17(prs):
     s = base_slide(prs, 17, "Future roadmap — answering the four voices",
-                   kicker="Section 7 · Roadmap & close")
+                   kicker="Section 6 · Roadmap & close")
     quads = [
         ("Roy", "scalability & DevSecOps", [
             "Run the pipeline for real; Alembic migrations",
@@ -1086,7 +1096,7 @@ def slide_17(prs):
         ]),
         ("Nora", "maintainability", [
             "The assistant's LLM seam lets a real model in without touching the guardrails",
-            "Batch-system knowledge preserved in 24 design docs and a runbook",
+            "Batch-system knowledge preserved in 26 design docs and a runbook",
             "Built with her skepticism, not against it",
         ]),
         ("Rohan", "cost/benefit for the CFO", [
@@ -1116,7 +1126,7 @@ for; live news via the provider seam the business already reviewed; change
 management is a feature, not an afterthought.
 
 Nora — maintainability: the assistant's LLM seam lets a real model in without
-touching the guardrails; the batch system's knowledge is preserved in 24
+touching the guardrails; the batch system's knowledge is preserved in 26
 design docs and a runbook — we built *with* her skepticism, not against it.
 
 Rohan — cost/benefit for the CFO: iceberg orders and per-desk limits are
@@ -1374,6 +1384,7 @@ def verify(path: Path) -> bool:
         ok = False
         print("  FAIL: unexpected slide count")
     min_dim = Inches(0.25)  # smaller shapes are decorative (bars, diamonds)
+    tol = Inches(0.02)      # rounding slack for the off-canvas bounds check
     for i, slide in enumerate(slides, 1):
         n_shapes = len(slide.shapes)
         has_notes = (slide.has_notes_slide
@@ -1381,7 +1392,14 @@ def verify(path: Path) -> bool:
         if not has_notes:
             ok = False
         empty = []
+        offcanvas = []
         for sh in slide.shapes:
+            # bounding box (connector widths/heights can be negative)
+            x0, x1 = sorted((sh.left, sh.left + sh.width))
+            y0, y1 = sorted((sh.top, sh.top + sh.height))
+            if x0 < -tol or y0 < -tol or x1 > SLIDE_W + tol or y1 > SLIDE_H + tol:
+                offcanvas.append(sh.shape_id)
+                ok = False
             if not getattr(sh, "has_text_frame", False):
                 continue
             if sh.width < min_dim or sh.height < min_dim:
@@ -1395,6 +1413,8 @@ def verify(path: Path) -> bool:
             flag += "  [NO NOTES]"
         if empty:
             flag += f"  [EMPTY TEXT shapes: {empty}]"
+        if offcanvas:
+            flag += f"  [OFF-CANVAS shapes: {offcanvas}]"
         print(f"  slide {i:>2}: shapes={n_shapes:>2} notes={'yes' if has_notes else 'NO '}"
               f"{flag}")
     print("  RESULT:", "PASS" if ok else "FAIL")

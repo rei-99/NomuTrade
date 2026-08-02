@@ -265,6 +265,9 @@ export const ja: Record<I18nKey, string> = {
   "status.pending_review": "レビュー待ち",
   "status.built_in": "組み込み",
   "status.execution": "約定",
+  "status.executed": "約定済",
+  "status.affirmed": "確認済",
+  "status.settled": "決済済",
 
   // ---- orders page ----
   "orders.title": "注文",
@@ -285,6 +288,7 @@ export const ja: Record<I18nKey, string> = {
   "trades.allPortfolios": "すべてのポートフォリオ",
   "trades.time": "約定日時",
   "trades.notional": "約定金額",
+  "trades.settlement": "決済",
   "trades.empty": "約定なし",
 
   // ---- alerts page ----
@@ -457,6 +461,13 @@ export const ja: Record<I18nKey, string> = {
   "gov.lastSuccess": "最終成功",
   "gov.exceptions": "STP 例外",
   "gov.noExceptions": "STP 例外なし — パイプラインは正常です。",
+  "gov.retry": "再試行",
+  "gov.retryTitle": "ドロップされた約定イベントを STP パイプラインに再配信します",
+  "gov.retryDone": "約定 {id} を決済キューに再送しました",
+  "gov.settlements": "直近の決済",
+  "gov.noSettlements": "決済インストラクションはまだありません。",
+  "gov.value": "金額",
+  "gov.settledAt": "決済日時",
   "gov.loading": "ガバナンスデータを読み込み中…",
 
   // ---- notifications page + bell ----
