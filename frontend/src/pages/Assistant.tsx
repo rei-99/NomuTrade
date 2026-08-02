@@ -21,23 +21,43 @@ interface ChatMessage {
   ts: string;
 }
 
-/** Chat history persists across tab switches / reloads within the browser
- * session (the page unmounts on navigation; state alone would be lost). */
+/** Chat history AND conversation id persist across tab switches / reloads
+ * within the browser session (the page unmounts on navigation; state alone
+ * would be lost). The conversation id keeps multi-turn memory (design 28)
+ * attached to the same server-side conversation. */
 const STORAGE_KEY = "stp_assistant_chat";
 
-function restoreMessages(): ChatMessage[] {
+interface StoredChat {
+  messages: ChatMessage[];
+  conversationId: string | null;
+}
+
+function restoreChat(): StoredChat {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!raw) return { messages: [], conversationId: null };
+    const parsed = JSON.parse(raw);
+    // Legacy entry: the bare messages array (no conversation id yet).
+    if (Array.isArray(parsed)) return { messages: parsed, conversationId: null };
+    return {
+      messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
+      conversationId:
+        typeof parsed?.conversationId === "string" ? parsed.conversationId : null,
+    };
   } catch {
-    return [];
+    return { messages: [], conversationId: null };
   }
 }
 
 export function Assistant() {
   const { t } = useT();
-  const [messages, setMessages] = useState<ChatMessage[]>(restoreMessages);
+  const [stored] = useState<StoredChat>(restoreChat);
+  const [messages, setMessages] = useState<ChatMessage[]>(stored.messages);
+  // Null until the first send — a fresh id is generated then (new
+  // conversation whenever storage was empty).
+  const [conversationId, setConversationId] = useState<string | null>(
+    stored.conversationId,
+  );
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   // True from send until the first streamed delta lands (or the answer is
@@ -56,11 +76,14 @@ export function Assistant() {
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ messages, conversationId }),
+      );
     } catch {
       // storage quota — chat keeps working, history just won't persist
     }
-  }, [messages]);
+  }, [messages, conversationId]);
 
   useEffect(() => {
     void (async () => {
@@ -88,6 +111,15 @@ export function Assistant() {
     setBusy(true);
     setThinking(true);
 
+    // Multi-turn memory (design 28): reuse the stored conversation id, or
+    // start a new conversation when storage was empty. The server echoes the
+    // id (SSE meta / one-shot body) — keep whichever it confirms.
+    let convId = conversationId;
+    if (!convId) {
+      convId = crypto.randomUUID();
+      setConversationId(convId);
+    }
+
     // The assistant bubble is created on the first delta and updated in place
     // as fragments arrive; the `final` event then settles it with the
     // authoritative full text + citations + suggested ticket.
@@ -108,7 +140,10 @@ export function Assistant() {
 
     let result: AssistantResponse | null = null;
     try {
-      result = await streamAssistantQuery(question, {
+      result = await streamAssistantQuery(question, convId, {
+        onMeta: (meta) => {
+          setConversationId(meta.conversation_id);
+        },
         onDelta: (text) => {
           setThinking(false);
           upsertBubble((m) => ({ ...m, text: m.text + text }));
@@ -130,7 +165,7 @@ export function Assistant() {
       try {
         result = await api<AssistantResponse>("/assistant/query", {
           method: "POST",
-          body: { question },
+          body: { question, conversation_id: convId },
         });
       } catch {
         // toast raised by client
@@ -139,6 +174,7 @@ export function Assistant() {
 
     if (result !== null) {
       const res = result;
+      if (res.conversation_id) setConversationId(res.conversation_id);
       upsertBubble((m) => ({
         ...m,
         text: res.answer,
@@ -149,7 +185,7 @@ export function Assistant() {
       upsertBubble((m) => ({ ...m, text: t("assistant.failed") }));
     }
     setBusy(false);
-  }, [input, busy, t]);
+  }, [input, busy, conversationId, t]);
 
   return (
     <div className="page page-chat">

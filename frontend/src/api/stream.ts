@@ -30,6 +30,7 @@ export interface AssistantStreamHandlers {
  */
 export async function streamAssistantQuery(
   question: string,
+  conversationId: string | null,
   handlers: AssistantStreamHandlers,
 ): Promise<AssistantResponse | null> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -39,7 +40,11 @@ export async function streamAssistantQuery(
   const res = await fetch(`${BASE}/assistant/query/stream`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({
+      question,
+      // undefined drops the key — the server starts a fresh conversation
+      conversation_id: conversationId ?? undefined,
+    }),
   });
   if (!res.ok || !res.body) {
     throw new Error(`assistant stream request failed (${res.status})`);

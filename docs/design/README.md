@@ -50,3 +50,4 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 | [25 — UX round 1](25-ux-round-1.md) | — | EN/JA i18n, 4 personas, bond/equity split, workspace layout v2, price-follow |
 | [26 — Role views & login](26-role-views-and-login.md) | — | Persona-faithful tabs/homes from role duties; PBKDF2 password login with lockout |
 | [27 — GenAI agent](27-genai-agent.md) | FR-AI | OpenAI-compatible seam + startup self-check with mock fallback; LLM news prose; RAG help over project docs; advisory trade review |
+| [28 — Agent workflow](28-agent-workflow.md) | FR-AI | LangGraph state graph (clarify→confirm→draft); conversation memory from interaction history + pending-action state; fuzzy symbols; pronoun resolution |
