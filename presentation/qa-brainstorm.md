@@ -33,10 +33,13 @@ makes the demo honest as a system exercise. Live connectivity is out of scope
 by requirement (SRS C-04).
 
 **B5. Is the AI assistant real AI?** **[honesty]**
-Today it's a rule-based engine grounded in real platform data, badged as a
-mock in the UI. The LLM provider seam and the tool whitelist exist; the point
-was proving the guardrails (advisory-only, never trades) before connecting a
-model.
+By default it's a rule-based engine grounded in real platform data, badged as
+a mock in the UI. The seam is now fully wired: point it at any
+OpenAI-compatible chat + embedding endpoint in one config file and a startup
+self-check takes it live — RAG answers from our own design docs, advisory
+reviews, LLM news prose — with automatic fallback to mock when unreachable.
+The guardrails (advisory-only, never trades) were proven before the model
+arrived.
 
 **B6. Can it handle our real instrument universe — multi-currency, more asset
 classes?**
@@ -165,10 +168,13 @@ Behind an adapter. The mock speaks the checkout/check-in contract and fails
 closed when "unavailable"; the real PVWA client swaps in at the seam. Same
 pattern for the secret provider, directory sync and SMTP.
 
-**T14. How would you wire a real LLM safely?**
-Provider-agnostic client behind the existing seam; the engine keeps a strict
-read-only tool whitelist, advisory-only answers, and no path from text to
-order execution (FR-AI-003).
+**T14. How did you wire a real LLM safely?**
+Provider-agnostic OpenAI-compatible client behind config; startup self-check
+with per-capability mock fallback (chat vs embeddings); the engine stays the
+data source — the LLM only rewords structured grounding, with a strict
+read-only scope, advisory-only answers, a fixed disclaimer on advice, and no
+path from text to order execution (FR-AI-003). RAG runs over our own design
+docs with content-hash-keyed embeddings so only changed chunks cost tokens.
 
 **T15. Why a simulation clock?**
 Determinism and honesty: charts, staleness, news visibility and scheduled

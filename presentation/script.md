@@ -83,19 +83,23 @@ Inside, an order flows through a transactional outbox to the execution engine,
 the STP worker, and the settlement sweeper — asynchronous, event-driven, and
 idempotent. Market data is the program's dataset — about 190,000 price bars and
 9,300 news items — replayed on a *simulation clock*, so the platform runs in
-market time, roughly a day every 78 seconds. Nothing in the system knows the
-data is simulated.
+market time, one clean minute-step per second — a market day in about six and
+a half minutes. Nothing in the system knows the data is simulated.
 
-**[Slide 7: GenAI — what it concretely does]** Two honest things. First, the
-assistant answers questions *grounded in your actual data* — positions, KPIs,
-news — with citations, and it refuses to invent figures it doesn't have.
-Second, the news panel summarizes real coverage for the selected instrument
-with a sentiment score and headline citations. And the guardrail: the assistant
-is **advisory only** — it can suggest a trade, but the suggestion always lands
-in the standard order ticket, with the same validation and the same two-click
-confirmation as any other order. Today it's a rule-based engine with a clean
-LLM seam — the interface is ready for a real model, and the responses are
-honestly marked `mock: true`.
+**[Slide 7: GenAI — what it concretely does]** Three honest things. First,
+the assistant answers questions *grounded in your actual data* — positions,
+KPIs, news — with citations, and it refuses to invent figures it doesn't
+have. Second, the news panel summarizes real coverage for the selected
+instrument with a sentiment score and headline citations. Third — new — it
+answers "how do I use this system" from the project's *own design docs* via
+RAG, and it reviews your book (concentration, VaR, drawdown) as advice with a
+fixed disclaimer. And the guardrail: the assistant is **advisory only** — it
+can suggest a trade, but the suggestion always lands in the standard order
+ticket, with the same validation and the same two-click confirmation as any
+other order. It runs rule-based by default, honestly marked `mock: true`;
+point it at any OpenAI-compatible endpoint in one config file and a startup
+self-check takes it live — unreachable model, it falls back to mock. That
+fallback is the resilience story, not a caveat.
 
 **[Slide 8: Demo framing]** Ninety seconds, live. Watch three things:
 **(1)** I buy 50 TSLA from the workspace — one click, a confirmation card with
@@ -352,7 +356,7 @@ live during Q&A.
 | Reporting & Charting | Full | ECharts candles + indicators; PDF/CSV on-demand + scheduled reports |
 | Technical Analytics | Full | SMA/EMA/RSI/MACD/Bollinger; price alerts with evaluator |
 | Paper Trading | Full | Same pipeline, `PAPER` portfolio type |
-| GenAI assistant | Partial (by design) | Rule-based, `mock: true`, LLM seam ready; advisory-only guardrail enforced |
+| GenAI assistant | Mock by default (by design) | Rule-based + RAG over project docs, `mock: true`; live OpenAI-compatible endpoint via config with startup self-check + mock fallback (design 27); advisory-only guardrail enforced |
 | CyberArk / LDAP / SMTP | Mocked adapters | Interfaces real; training stand-ins behind them |
 | SSO/OIDC | Not built | Password login (PBKDF2 + lockout) + dev-login flag today; D-04 seam documented |
 | CI/CD, Docker, Terraform | Written, unexecuted | Statically reviewed; zero runs (no cloud in program env) |

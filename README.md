@@ -175,8 +175,13 @@ Env-driven (pydantic-settings, see `backend/app/config.py`): `DATABASE_URL`
 dataset, resolved against the cwd, its parent and the repo root; missing dir
 → generated random-walk fallback feed), `REPLAY_BARS_PER_SECOND` (default
 1.0 ≈ 6.5 min per market day, emitted on wall-second boundaries), `REPLAY_START` (empty = first bar; set an ISO date like `2026-08-24` to start each pass in the dataset's final week) and `REPLAY_MODE` (`loop`|`hold` — loop re-bases
-the simulation clock and restarts from the first bar). A `.env` file in the
-working directory is read automatically and is git-ignored.
+the simulation clock and restarts from the first bar). GenAI agent settings
+(`LLM_PROVIDER`, `LLM_API_URL`/`LLM_API_KEY`, `LLM_CHAT_MODEL`,
+`LLM_EMBED_MODEL`, `EMBEDDING_API_URL`/`EMBEDDING_API_KEY`,
+`LLM_TIMEOUT_SECONDS`, `RAG_TOP_K`) are documented in `.env.example` — mock
+by default, live OpenAI-compatible models when set, with a startup
+connectivity check and mock fallback (design 27). A `.env` file in the
+backend working directory is read automatically and is git-ignored.
 
 ## Known limitations / deviations
 
@@ -200,8 +205,10 @@ working directory is read automatically and is git-ignored.
 - **CyberArk, LDAP/AD and SMTP** are mocked behind adapter interfaces
   (secret provider / directory sync / mailer) — swap in real clients at those
   seams only.
-- **GenAI assistant** is rule-based grounding over platform data with an
-  LLM-provider seam; no external LLM is called in this build.
+- **GenAI assistant** defaults to rule-based grounding (mock); point it at any
+  OpenAI-compatible chat + embedding endpoint via `LLM_*` settings (see
+  `.env.example`) and it goes live — the app checks connectivity at startup
+  and falls back to mock when unset or unreachable (design 27).
 - **Terraform and CI/CD are untested in this environment** — no Docker,
   Terraform or cloud access on the dev machine. `infra/terraform` and
   `.gitlab-ci.yml` are statically validated only; see the caveats section of

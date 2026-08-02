@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 import pkgutil
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -30,6 +31,8 @@ from app.core.models import User
 from app.core.secrets import get_secret_provider
 from app.core.security import get_session_store
 from app.seed import seed as seed_database
+
+logger = logging.getLogger(__name__)
 
 
 def _discover_modules(app: FastAPI, settings: Settings) -> list[Callable]:
@@ -89,6 +92,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.bus = bus
         app.state.session_store = get_session_store(settings)
         app.state.secret_provider = get_secret_provider(settings)
+
+        # GenAI agent (design 27): provider self-check -> assistant wiring ->
+        # RAG doc index. Never blocks boot: the self-check never raises and
+        # falls back to mock per capability; the RAG build is failure-isolated
+        # and skipped entirely (keyword retrieval) unless embeddings are live,
+        # so mock-mode boot does no embedding work at all.
+        from app.modules import assistant as assistant_module
+
+        llm_status = await assistant_module.validate_llm(settings)
+        app.state.llm_status = llm_status
+        assistant_module.configure(settings, llm_status)
+        if llm_status.get("embeddings") == "ok":
+            try:
+                counts = await assistant_module.build_rag_index(
+                    sessionmaker, settings, llm_status
+                )
+                logger.info("RAG doc index built: %s", counts)
+            except Exception:
+                logger.exception(
+                    "RAG doc index build failed; continuing with keyword retrieval"
+                )
 
         # Background workers: module workers + outbox relay.
         worker_task = None

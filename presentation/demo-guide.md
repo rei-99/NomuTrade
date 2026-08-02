@@ -90,3 +90,28 @@ The driver is `tools/demo-recorder/record-demo.js` (playwright-core against
 the installed Edge — no browser download; the 1 MiB ffmpeg for video lives in
 `tools/demo-recorder/.pw`, git-ignored). Edit the acts to add beats (e.g.
 access approval, break-glass) — selectors are pinned to the current UI.
+
+## 4. AI agent (design 27) — optional live-LLM beat
+
+Default is mock (honestly badged): rule-based news summary, keyword-RAG help,
+rules advisory review. To flip the agent live for the presentation:
+
+1. `cp .env.example backend/.env` and set `LLM_PROVIDER=openai`,
+   `LLM_API_URL`, `LLM_API_KEY` (+ model names if different). Restart the
+   backend — **no code change**.
+2. Prove the self-check on stage: Governance → integration health shows the
+   `llm` tile `live: <model>`; with a bad key/URL it shows
+   `down: <reason> — using mock` and everything keeps working.
+3. Beats that show the agent well:
+   - **News summary** (Trading panel): the badge flips from "Rule-based
+     summary (mock LLM)" to the live model — same grounding, real prose.
+   - **RAG help** (Assistant tab): "how do I approve an access request?" →
+     answer grounded in the project's own docs with `[doc]` citations.
+   - **Advisory review**: "should I trim my MSFT?" → KPI-grounded advice
+     with the fixed disclaimer; then a trade phrasing ("buy 10 IBM") → a
+     **prefill ticket the user must confirm** — the agent never decides.
+4. If no key: present the same three beats in mock mode — the honest line is
+   "the seams are real, the default is mock; one config file takes it live".
+
+Cost control: doc embeddings persist in `doc_embeddings` (content-hash keyed)
+— only changed chunks are re-embedded on boot.

@@ -7,7 +7,54 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — News panel de-duplicated: prose is the one-liner, structure carries the rest
+## 2026-08-02 — GenAI agent (design 27): live-LLM seam with startup self-check, RAG help, advisory review
+
+**Driver:** owner instruction set — a real AI agent behind config: (1) LLM
+news summary; (2) Assistant with RAG over the project's own docs plus
+advisory trade help (never deciding); (3) researched extras; (4) presentation
+plus-point. Keys are owner-configured later, so the default stays mock and
+startup must check connectivity and fall back. Design:
+`docs/design/27-genai-agent.md` (D-27.1…D-27.7, indexed).
+
+- **Provider config (D-27.1)**: `LLM_PROVIDER` (`mock`|`openai`),
+  `LLM_API_URL`/`LLM_API_KEY`, `LLM_CHAT_MODEL`/`LLM_EMBED_MODEL`,
+  `EMBEDDING_API_URL`/`EMBEDDING_API_KEY` (fall back to the chat endpoint),
+  `LLM_TIMEOUT_SECONDS`, `RAG_TOP_K`. `.env.example` is the documented place
+  to set them; `backend/.env` stays gitignored.
+- **Startup self-check (D-27.2)**: lifespan probes the chat (`GET /models`)
+  and embedding endpoints (5 s) → `app.state.llm_status`; any failure keeps
+  the app in mock mode (boot never fails). New `llm` tile in integration
+  health shows `live: <model>` / `mock: not configured` /
+  `down: <reason> — using mock`; per-call LLM errors fall back per request.
+- **News summary (D-27.3)**: structured grounding unchanged; when live, the
+  chat model rewords it (≤60 words, figures verbatim) → `mock: false,
+  model: <model>`; rules prose otherwise.
+- **RAG help intent (D-27.4)**: README/DESIGN/design docs chunked
+  heading-aware (fenced diagrams stripped at ingest), embedded once per
+  content hash into the new `doc_embeddings` table (cost control); cosine
+  retrieval when embeddings are live, keyword token-overlap otherwise.
+  Answers cite `[doc]` sources; citation cards render clean text (no raw
+  JSON).
+- **Advisory (D-27.5)**: trade answers gain position + news-sentiment
+  grounding and a fixed disclaimer; new review intent ("should I trim MSFT?")
+  returns a KPI-grounded advisory review (positions, concentration, VaR/ES,
+  drawdown, bond metrics) with the same disclaimer. Guardrails unchanged: no
+  order path, `suggested_ticket` stays rule-built and user-confirmed.
+  Assistant currency bug fixed (¥→USD via `Instrument.currency`).
+- **Presentation (D-27.7)**: demo-guide "AI agent" section (configure →
+  self-check tile → three beats); script slide 7 rewritten (RAG + review +
+  config-to-live arc, stale 78 s replay figure fixed); honesty-map and Q&A
+  (B5/T14) updated.
+- Verified: backend **117/117** (11 new — provider selection live/down/mock,
+  LLM news reword + error fallback, RAG chunking/keyword retrieval/index
+  reuse, help with doc citations, review disclaimer with zero Order rows,
+  USD currency, health tile); `npm run build` clean; live boots — mock tile
+  `mock: not configured`, stub-key boot tile **DOWN**
+  "All connection attempts failed — using mock" with everything still
+  working; headless screenshots of the tile and a RAG help answer
+  (mermaid-free after the ingest fix).
+
+
 
 **Driver:** owner UX report — the news summary "seemed not to work
 correctly". Diagnosis: not a bug — the backend's mock summarizer embedded
