@@ -174,7 +174,7 @@ Env-driven (pydantic-settings, see `backend/app/config.py`): `DATABASE_URL`
 `RUN_WORKERS`, `CORS_ORIGINS`, `DATA_DIR` (default `data` — the simulation
 dataset, resolved against the cwd, its parent and the repo root; missing dir
 → generated random-walk fallback feed), `REPLAY_BARS_PER_SECOND` (default
-1.0 ≈ 6.5 min per market day, emitted on wall-second boundaries) and `REPLAY_MODE` (`loop`|`hold` — loop re-bases
+1.0 ≈ 6.5 min per market day, emitted on wall-second boundaries), `REPLAY_START` (empty = first bar; set an ISO date like `2026-08-24` to start each pass in the dataset's final week) and `REPLAY_MODE` (`loop`|`hold` — loop re-bases
 the simulation clock and restarts from the first bar). A `.env` file in the
 working directory is read automatically and is git-ignored.
 

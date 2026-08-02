@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     DATA_DIR: str = "data"
     REPLAY_BARS_PER_SECOND: float = 1.0
     REPLAY_MODE: Literal["loop", "hold"] = "loop"
+    # Dataset-time start of each replay pass (ISO date/datetime, e.g.
+    # "2026-08-24"); empty = from the first bar. Loops restart here too.
+    REPLAY_START: str = ""
     # Order restrictions (A4, design 21): per-order notional cap in the
     # instrument's currency; 0 disables the check.
     ORDER_MAX_NOTIONAL: float = 1_000_000.0

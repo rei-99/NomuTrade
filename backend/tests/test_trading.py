@@ -964,3 +964,31 @@ async def test_risk_kpis_insufficient_history(client, ids):
     kpis = response.json()["kpis"]
     assert kpis["var_95_1d_pct"] is None
     assert kpis["max_drawdown_pct"] is None
+
+
+async def test_risk_kpis_repriced_history_fresh_book(client, app, trader, ids):
+    """Fresh book: risk KPIs come from the repriced-history fallback (the
+    current book marked through stored daily closes), not N/A — while the
+    cash-only client portfolio (no positions) still gets N/A."""
+    await wait_for_prices(client, trader)
+    order_id = await submit_market_buy(client, trader, ids["desk"])
+    await wait_order_status(client, trader, order_id, "FILLED")
+
+    async def positions_present():
+        response = await client.get(
+            f"/api/v1/portfolios/{ids['desk']}/positions", headers=trader
+        )
+        items = response.json()["items"]
+        return items or None
+
+    await wait_until(positions_present)
+
+    response = await client.get(
+        f"/api/v1/portfolios/{ids['desk']}/valuation", headers=trader
+    )
+    assert response.status_code == 200, response.text
+    kpis = response.json()["kpis"]
+    assert kpis["var_95_1d_pct"] is not None
+    assert kpis["max_drawdown_pct"] is not None
+    assert kpis["var_95_1d_pct"] >= 0
+

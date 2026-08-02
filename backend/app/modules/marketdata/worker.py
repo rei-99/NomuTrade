@@ -143,6 +143,39 @@ async def _load_bars(sessionmaker) -> list[tuple]:
     return [tuple(r) for r in rows]
 
 
+def _replay_start_index(bars: list[tuple], replay_start: str) -> int:
+    """Index of the first bar at/after `REPLAY_START` (dataset time).
+
+    Empty/invalid value, or a start past the dataset end → 0 (dataset start),
+    with a warning for the two operator-error cases.
+    """
+    if not replay_start:
+        return 0
+    try:
+        target = datetime.fromisoformat(replay_start)
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
+    except ValueError:
+        logger.warning(
+            "tick replayer: invalid REPLAY_START %r — starting at dataset start",
+            replay_start,
+        )
+        return 0
+    for idx, bar in enumerate(bars):
+        if as_utc(bar[1]) >= target:
+            if idx:
+                logger.info(
+                    "tick replayer: REPLAY_START=%s → starting at bar %d (%s)",
+                    replay_start, idx, as_utc(bar[1]).isoformat(),
+                )
+            return idx
+    logger.warning(
+        "tick replayer: REPLAY_START %r is past the dataset end — starting at dataset start",
+        replay_start,
+    )
+    return 0
+
+
 async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
     by_id = {i.instrument_id: i for i in instruments}
     pause = 1.0 / max(settings.REPLAY_BARS_PER_SECOND, 0.1)
@@ -151,6 +184,9 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
         logger.error("tick replayer: dataset has no live bars; going idle")
         while True:
             await asyncio.sleep(3600)
+    start_idx = _replay_start_index(bars, settings.REPLAY_START)
+    if start_idx:
+        bars = bars[start_idx:]
     logger.info("tick replayer: replaying %d minute bars (mode=%s, %.1f ts/s)",
                 len(bars), settings.REPLAY_MODE, settings.REPLAY_BARS_PER_SECOND)
     while True:

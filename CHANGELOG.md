@@ -7,7 +7,36 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Sim clock: 1 bar/s, wall-second aligned + Q&A brainstorm
+## 2026-08-02 — VaR for fresh books (repriced-history fallback) + REPLAY_START
+
+**Driver:** owner asks — fix the VaR `N/A` on the demo book, and let the
+replay start mid-dataset so the sim clock shows late-August dates on stage.
+
+- **Risk KPIs from day one**: `_daily_total_values` (shared by volatility,
+  VaR-95 and max drawdown) now falls back to **repricing the current book
+  through stored daily closes** when live snapshot history is < 10 days — the
+  standard "how would today's book have moved" approximation: one close per
+  instrument-day aggregated in SQL (minute bars never leave the DB),
+  bond-aware `trade_value()`, cash held constant, sim-clock capped (D-10).
+  Self-heals: snapshots take over once 10 days exist. A position-less
+  portfolio still correctly shows N/A. Debugging surfaced the documented
+  naive-vs-aware pitfall for real: SQLite **silently mis-compares tz-aware
+  bind params** (aware → 0 rows, naive → all rows), so the ts filter binds
+  per-dialect.
+- **`REPLAY_START`** (empty = first bar): ISO date/datetime selecting where
+  each replay pass starts — loops restart there too; invalid or past-the-end
+  falls back to the dataset start with a warning. The demo machine's
+  gitignored `backend/.env` sets `2026-08-24` (final dataset week).
+- Docs synced: README, AGENTS.md (config table), DESIGN.md D-11, design 01,
+  demo-guide (VaR honesty note rewritten; REPLAY_START documented).
+- Verified: backend **105/105** (2 new — `_replay_start_index` unit test;
+  repriced-history KPI test with an explicit STP wait); live — sim clock
+  starts at **2026-08-24 09:30** and steps 1 min/wall-second (reached
+  08-25 09:47 during the check); Desk Book 1 valuation shows
+  volatility 0.075 %, VaR 0.0032 %, drawdown 0.019 % instead of N/A (small
+  by construction — the book is ~99.9 % cash; the math is honest).
+
+
 
 **Driver:** owner asks — (a) slow the replay so the sim clock ticks one
 dataset row per wall second, flipping in clean one-minute steps

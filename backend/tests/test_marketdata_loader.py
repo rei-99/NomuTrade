@@ -247,3 +247,22 @@ async def test_load_dataset_with_foreign_ticks_present(tmp_path, session):
         "AAPL", "GOOG", "IBM", "MSFT", "TSLA", "UL", "WMT",
         "UST10Y", "UST2Y", "AAPL29", "MSFT31",  # generated bonds (§A2)
     }
+
+
+def test_replay_start_index():
+    """REPLAY_START selects the first bar at/after the dataset-time start."""
+    from datetime import datetime, timedelta
+
+    from app.modules.marketdata.worker import _replay_start_index
+
+    base = datetime(2026, 8, 24, 9, 30)
+    bars = [
+        (f"id{i}", base + timedelta(minutes=i), None, None, None, None, None)
+        for i in range(5)
+    ]
+    assert _replay_start_index(bars, "") == 0
+    assert _replay_start_index(bars, "2026-08-24") == 0  # date → same day open
+    assert _replay_start_index(bars, "2026-08-24T09:32:00") == 2
+    assert _replay_start_index(bars, "2026-08-24T09:32:00+00:00") == 2
+    assert _replay_start_index(bars, "2026-09-01") == 0  # past the end → start
+    assert _replay_start_index(bars, "not-a-date") == 0  # invalid → start

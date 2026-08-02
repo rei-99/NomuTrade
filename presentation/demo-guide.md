@@ -30,9 +30,15 @@ Client role has no `ORDER_SUBMIT`, so it can only ever hold seeded positions.
 
 Honesty notes for Q&A:
 - `STALE` marks appear when the replay **loops** (`REPLAY_MODE=loop` jumps the
-  sim clock back to the dataset start); marks refresh as new ticks arrive.
-- VaR / volatility show `N/A` until the valuation projector has accumulated
-  enough snapshot history (snapshots every 30 s) — expected on a fresh book.
+  sim clock back to the pass start); marks refresh as new ticks arrive.
+- VaR / volatility / max drawdown use the live snapshot history once 10+ days
+  exist; before that they **reprice the current book through stored daily
+  closes** (standard approximation, cash held constant) so the KPIs show real
+  numbers from day one instead of N/A. A portfolio with no positions still
+  shows N/A — correctly.
+- The local `backend/.env` (gitignored) sets `REPLAY_START=2026-08-24` so each
+  replay pass starts in the dataset's final week — late-August sim dates on
+  stage. Delete that line to replay from the beginning.
 
 ## 2. Recommended live run-of-show (~4 min, fits the deck's 90-s demo beat if trimmed)
 

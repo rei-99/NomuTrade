@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import (
@@ -170,11 +170,13 @@ async def previous_close_map(
 async def annualized_volatility_pct(
     db: AsyncSession, portfolio_id: str
 ) -> float | None:
-    """Annualized volatility of daily total_value from ValuationSnapshots.
+    """Annualized volatility of daily total_value.
 
     Per the contract: stdev of the daily total_value series, annualized with
     sqrt(252), expressed as a percentage of the mean total_value. None when
-    fewer than 10 daily points exist (FR-PFM-003 minimum history).
+    fewer than 10 daily points exist (FR-PFM-003 minimum history). Series
+    source: ValuationSnapshots, falling back to the current book repriced
+    through stored daily closes (see `_daily_total_values`).
     """
     values = await _daily_total_values(db, portfolio_id)
     if len(values) < 10:
@@ -186,8 +188,12 @@ async def annualized_volatility_pct(
 
 
 async def _daily_total_values(db: AsyncSession, portfolio_id: str) -> list[float]:
-    """Daily total_value (market value + cash) series from ValuationSnapshots,
-    one point per day, chronological."""
+    """Daily total_value (market value + cash) series, one point per day,
+    chronological. Primary source: ValuationSnapshots. When live snapshot
+    history is too short (< 10 days, e.g. a fresh book), falls back to
+    repricing the CURRENT book through stored daily closes — the standard
+    "how would today's book have moved" approximation — so risk KPIs are
+    meaningful from day one instead of N/A."""
     rows = (
         (
             await db.execute(
@@ -202,7 +208,77 @@ async def _daily_total_values(db: AsyncSession, portfolio_id: str) -> list[float
     daily: dict[object, Decimal] = {}
     for row in rows:
         daily[as_utc(row.ts).date()] = row.market_value + row.cash
-    return [float(v) for v in daily.values()]
+    values = [float(v) for v in daily.values()]
+    if len(values) >= 10:
+        return values
+    fallback = await _repriced_daily_values(db, portfolio_id)
+    return fallback if len(fallback) > len(values) else values
+
+
+async def _repriced_daily_values(db: AsyncSession, portfolio_id: str) -> list[float]:
+    """Current positions repriced through stored daily closes + current cash
+    (held constant), sim-clock capped (D-10). Days missing any held
+    instrument's close are skipped. Empty when the book has no positions."""
+    rows = (
+        await db.execute(
+            select(Position, Instrument)
+            .join(Instrument, Instrument.instrument_id == Position.instrument_id)
+            .where(Position.portfolio_id == portfolio_id, Position.quantity != 0)
+        )
+    ).all()
+    if not rows:
+        return []
+    portfolio = await db.get(Portfolio, portfolio_id)
+    if portfolio is None:
+        return []
+    now = get_sim_now() or utcnow()
+    # SQLite stores naive datetimes and silently mis-compares tz-aware bind
+    # params (AGENTS.md pitfall); Postgres needs the aware value for
+    # timestamptz. Bind per dialect.
+    if db.get_bind().dialect.name == "sqlite":
+        now = now.replace(tzinfo=None)
+    ids = [instrument.instrument_id for _, instrument in rows]
+    # One close per (instrument, day) = the close of that day's last tick,
+    # aggregated in SQL so minute bars never leave the database.
+    day_col = func.date(PriceTick.ts)
+    last_ts = (
+        select(
+            PriceTick.instrument_id.label("iid"),
+            day_col.label("day"),
+            func.max(PriceTick.ts).label("last_ts"),
+        )
+        .where(PriceTick.instrument_id.in_(ids), PriceTick.ts <= now)
+        .group_by(PriceTick.instrument_id, day_col)
+        .subquery()
+    )
+    closes = (
+        await db.execute(
+            select(last_ts.c.iid, last_ts.c.day, PriceTick.close).join(
+                PriceTick,
+                and_(
+                    PriceTick.instrument_id == last_ts.c.iid,
+                    PriceTick.ts == last_ts.c.last_ts,
+                ),
+            )
+        )
+    ).all()
+    by_day: dict[object, dict[str, Decimal]] = {}
+    for iid, day, close in closes:
+        by_day.setdefault(day, {})[iid] = close
+    values: list[float] = []
+    for day in sorted(by_day):
+        priced = by_day[day]
+        total = portfolio.cash_balance
+        complete = True
+        for position, instrument in rows:
+            close = priced.get(instrument.instrument_id)
+            if close is None:
+                complete = False
+                break
+            total += trade_value(instrument, position.quantity, close)
+        if complete:
+            values.append(float(total))
+    return values
 
 
 async def var_95_1d_pct(db: AsyncSession, portfolio_id: str) -> float | None:
@@ -212,6 +288,8 @@ async def var_95_1d_pct(db: AsyncSession, portfolio_id: str) -> float | None:
     positive number means "5% of days lost more than this". 0 when the 5th
     percentile is non-negative (no observed losses at that confidence).
     None with fewer than 10 return observations (same minimum as volatility).
+    Series source: ValuationSnapshots, falling back to the current book
+    repriced through stored daily closes (see `_daily_total_values`).
     """
     values = await _daily_total_values(db, portfolio_id)
     returns = [b / a - 1 for a, b in zip(values, values[1:]) if a]
