@@ -361,18 +361,15 @@ async def get_news_summary(db: AsyncSession, instrument: Instrument) -> dict:
     if article_count == 0:
         return empty
 
+    # Prose is deliberately the one-line coverage summary only: themes and
+    # notable headlines ship in the structured `top_topics` / `headlines`
+    # fields, which the panel renders as chips and a citation list. Embedding
+    # them in the prose too made every item appear three times in the UI.
     parts = [
         f"{ticker} coverage this week is {tone}"
         + (f" (mean sentiment {mean:+.2f} across {article_count} articles)."
            if mean is not None else f" across {article_count} articles."),
     ]
-    if top_topics:
-        parts.append("Recurring themes: " + ", ".join(top_topics) + ".")
-    if headlines:
-        drivers = "; ".join(
-            f"'{h['title']}' ({h['label'] or 'unlabeled'})" for h in headlines
-        )
-        parts.append(f"Notable headlines: {drivers}.")
     return {
         "symbol": ticker,
         "as_of": as_utc(latest_ts).isoformat(),

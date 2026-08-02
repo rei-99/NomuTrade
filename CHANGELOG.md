@@ -7,7 +7,28 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Risk panel: four donut gauges
+## 2026-08-02 — News panel de-duplicated: prose is the one-liner, structure carries the rest
+
+**Driver:** owner UX report — the news summary "seemed not to work
+correctly". Diagnosis: not a bug — the backend's mock summarizer embedded
+"Recurring themes: …" and "Notable headlines: 'A' (L); 'B' (L); 'C' (L)"
+verbatim in the prose, and the frontend *also* rendered the same topics as
+chips and the same 3 headlines as citations, then 8 more in the feed — every
+item appeared three times and the prose read like a data dump.
+
+- **Backend** (`/assistant/news-summary`): the prose is now the coverage
+  one-liner only ("TSLA coverage this week is mildly bullish (mean sentiment
+  +0.14 across 98 articles)."); themes and notable headlines ship only via
+  the structured `top_topics` / `headlines` fields they already had. The
+  endpoint is the sole consumer of `get_news_summary` (chat answers build
+  prose separately), so nothing else changes; no frontend edit was needed —
+  the panel was already structured for this.
+- Panel now reads: mock badge → sentiment badge + strip → coverage one-liner
+  → topic chips → 3 cited headlines → divider → full feed.
+- Verified: backend **106/106**; live API check (prose trimmed, structured
+  fields intact); headless screenshot of the TSLA panel before/after.
+
+
 
 **Driver:** owner ask — convert percentage metrics into ring gauges so the
 panel reads as a proper gauge row.
