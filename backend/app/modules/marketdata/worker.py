@@ -140,9 +140,10 @@ def _consume_skip() -> int:
 
 
 def _skip_index(bars: list[tuple], i: int, days: int) -> int:
-    """First bar `days` calendar days after the current bar's date — lands on
-    that market day's first bar, skipping weekends/holidays. Clamps to the
-    last bar (the loop wrap takes it from there)."""
+    """Flush target: index of the first bar `days` calendar days after the
+    current bar's date — the replayer publishes every bar up to this index at
+    full speed, then resumes normal pacing there. Weekends/holidays skipped;
+    clamps to the last bar (the loop wrap takes it from there)."""
     if days <= 0 or i >= len(bars):
         return i
     target = as_utc(bars[i][1]).date() + timedelta(days=days)
@@ -238,14 +239,18 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
         # with the wall clock, with no cumulative drift; if publishing ever
         # overruns an interval we skip the sleep and catch up instead.
         next_emit = (int(time.time() / pause) + 1) * pause
+        flush_until = -1  # bar index where a full-speed flush ends (exclusive)
         while i < n:
-            # Fast-forward control (training/demo): jump whole market days.
+            # Fast-forward control (training/demo): replay the next `days`
+            # calendar days at FULL SPEED — every bar is published and
+            # processed (fills, triggers, snapshots), just without the pacing
+            # sleep. Normal pacing resumes at the target day's first bar.
             pending = _consume_skip()
             if pending:
-                i = _skip_index(bars, i, pending)
+                flush_until = _skip_index(bars, i, pending)
                 logger.info(
-                    "tick replayer: fast-forward %d day(s) → %s",
-                    pending, as_utc(bars[i][1]).date(),
+                    "tick replayer: flushing %d day(s) through %s — every bar processed",
+                    pending, as_utc(bars[flush_until][1]).date(),
                 )
             # Publish all instruments' bars sharing this dataset timestamp,
             # then pace one unique timestamp per interval. Grouping compares
@@ -265,8 +270,14 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
                     )
                 j += 1
             i = j
+            if 0 <= flush_until <= i:
+                flush_until = -1
+                # Re-base the pacing grid after a full-speed burst, else the
+                # elapsed flush time would be slept off bar by bar.
+                next_emit = (int(time.time() / pause) + 1) * pause
             next_emit += pause
-            await asyncio.sleep(max(0.0, next_emit - time.time()))
+            if flush_until < 0:
+                await asyncio.sleep(max(0.0, next_emit - time.time()))
         if settings.REPLAY_MODE == "hold":
             logger.info("tick replayer: dataset exhausted, holding last prices")
             while True:

@@ -211,11 +211,12 @@ async def replay_skip(
     session: SessionData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fast-forward the dataset replay by whole market days (lands on the
-    target day's first bar; prices, sim clock, news visibility and settlement
-    timing all follow on the next tick). Any authenticated user may use it —
-    training-environment control, audited. 409 when the fallback feed is
-    running (there is no replay to skip)."""
+    """Flush the replay forward by whole market days at full speed: every bar
+    up to the target day's first bar is published and processed (fills,
+    triggers, snapshots), then normal pacing resumes. Prices, sim clock, news
+    visibility and settlement timing all follow the tick stream. Any
+    authenticated user may use it — training-environment control, audited.
+    409 when the fallback feed is running (there is no replay to flush)."""
     if not replay_worker.request_replay_skip(body.days):
         raise StateConflict("replay skip is available only in dataset replay mode")
     await write_audit(
@@ -225,7 +226,7 @@ async def replay_skip(
         resource_type="SIMULATION",
         resource_id="replay",
         severity="INFO",
-        payload={"days": body.days},
+        payload={"days": body.days, "mode": "flush"},
         flush_only=True,
     )
     await db.commit()

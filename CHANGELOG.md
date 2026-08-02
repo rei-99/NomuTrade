@@ -7,25 +7,30 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Replay fast-forward: `» +1d` button
+## 2026-08-02 — Replay fast-forward (flush): `» +1d` button
 
-**Driver:** owner ask — a button to jump a day so trade/settlement states
-change on demand instead of waiting for the replay (6.5 min/day at 1 bar/s).
+**Driver:** owner ask — a button to advance a day so trade/settlement states
+change on demand; clarified to **flush** semantics: every bar is read and
+processed, not skipped.
 
 - **Backend**: `POST /api/v1/marketdata/replay/skip {days: 1..10}` — the
-  replayer consumes a skip counter between bar groups and jumps to the first
-  bar of the target calendar date (weekends skipped, clamps at the dataset
-  end, loop wrap unaffected). Any authenticated user (training-environment
-  control), audited as `REPLAY_SKIP`; 409 `STATE_CONFLICT` when the fallback
-  feed is running (no replay to skip). The registry's day handling resets
-  day-open/high/low on the date change, so day-change KPIs stay correct.
-- **Frontend**: `» +1d` ghost button next to the SIM clock in the top bar
-  (EN/JA), success toast, global error handling; the next tick carries the
-  new sim time to every panel (prices, news visibility, settlement timing).
-- Verified: backend **119/119** (2 new — `_skip_index` unit test incl.
-  weekend/clamp semantics; endpoint 401/409/200 + audit row); `npm run
-  build` clean; live — sim clock 08-25 09:44 → **08-26 09:31** → **08-27
-  09:31** across two presses; top-bar screenshot with the button.
+  replayer replays the next `days` calendar days at **full speed** (no pacing
+  sleep): every bar is published to the tick stream, so the execution engine
+  (fills, stop/trailing triggers), valuation projector, alerts and the WS
+  broadcast all process the day as if it really passed; normal wall-aligned
+  pacing resumes at the target day's first bar (pacing grid re-based after
+  the burst so elapsed flush time isn't slept off). Any authenticated user
+  (training-environment control), audited as `REPLAY_SKIP` with
+  `mode: "flush"`; 409 `STATE_CONFLICT` when the fallback feed is running.
+- **Frontend**: `» +1d` ghost button next to the SIM clock (EN/JA tooltips
+  say "every tick processed"), toast on press.
+- Verified: backend **119/119** (skip-target unit test incl. weekend/clamp;
+  endpoint 401/409/200 + audit row); `npm run build` clean; live — a full
+  market day flushed in ~2 s (sim 10:39 → 15:59 → next day 09:31, then
+  pacing resumes at 1 bar/s); a marketable LIMIT order **filled at the live
+  tick price mid-flush**; the one earlier "no-fill" was correct model
+  behavior (engine matches on bar *closes*; the bar low dipped below the
+  limit but no close did).
 
 
 
