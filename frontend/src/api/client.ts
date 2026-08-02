@@ -1,6 +1,6 @@
 import type { ErrorBody } from "./types";
 
-const BASE = "/api/v1";
+export const BASE = "/api/v1";
 const TOKEN_KEY = "stp_token";
 
 export function getToken(): string | null {

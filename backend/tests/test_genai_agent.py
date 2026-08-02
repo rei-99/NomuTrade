@@ -45,6 +45,9 @@ def _settings(**overrides) -> Settings:
         "DEV_AUTH": True,
         "DATA_DIR": "/nonexistent",
         "LLM_PROVIDER": "mock",
+        # Pin the model name: Settings() also reads a local .env, and tests
+        # asserting "live: gpt-4o-mini" must be hermetic against it.
+        "LLM_CHAT_MODEL": "gpt-4o-mini",
     }
     base.update(overrides)
     return Settings(**base)

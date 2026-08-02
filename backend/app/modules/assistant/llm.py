@@ -15,7 +15,9 @@ boot.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -92,6 +94,40 @@ class LLMClient:
         data = response.json()
         return (data["choices"][0]["message"]["content"] or "").strip()
 
+    async def chat_stream(
+        self, messages: list[dict], *, max_tokens: int = 320
+    ) -> AsyncIterator[str]:
+        """Streaming chat completion (SSE): yields `delta.content` fragments.
+
+        Same endpoint/payload as `chat` plus `"stream": true`. Raises
+        `httpx.HTTPStatusError` on a non-2xx status — the caller degrades to
+        the rule-based answer. Non-data lines, blank/comment lines and
+        unparseable payloads are skipped; `data: [DONE]` ends the stream.
+        """
+        payload = {
+            "model": self.chat_model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": 0.2,
+            "stream": True,
+        }
+        url = f"{self.chat_url}/chat/completions"
+        if self._client is not None:
+            async with self._client.stream(
+                "POST", url, json=payload, headers=_headers(self.chat_key)
+            ) as response:
+                response.raise_for_status()
+                async for token in _iter_sse_deltas(response):
+                    yield token
+        else:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream(
+                    "POST", url, json=payload, headers=_headers(self.chat_key)
+                ) as response:
+                    response.raise_for_status()
+                    async for token in _iter_sse_deltas(response):
+                        yield token
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Embedding vectors for `texts`, aligned with the input order."""
         payload = {"model": self.embed_model, "input": texts}
@@ -100,6 +136,27 @@ class LLMClient:
         )
         data = response.json()
         return [item["embedding"] for item in data["data"]]
+
+
+async def _iter_sse_deltas(response: httpx.Response) -> AsyncIterator[str]:
+    """Yield `choices[0].delta.content` fragments from an SSE chat stream."""
+    async for line in response.aiter_lines():
+        line = line.strip()
+        if not line or line.startswith(":") or not line.startswith("data:"):
+            continue
+        data = line[len("data:") :].strip()
+        if data == "[DONE]":
+            return
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue  # keepalive / vendor-specific payloads: skip, never die
+        choices = chunk.get("choices") if isinstance(chunk, dict) else None
+        for choice in choices or []:
+            delta = choice.get("delta") or {}
+            content = delta.get("content")
+            if content:
+                yield content
 
 
 async def validate_llm(

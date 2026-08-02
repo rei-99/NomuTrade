@@ -23,14 +23,16 @@ is denied by default and logged as a security event (DESIGN 09/17).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -501,9 +503,16 @@ class AssistantEngine:
                 return instrument
         return None
 
-    async def answer(
+    async def ground(
         self, db: AsyncSession, session: SessionData, question: str
-    ) -> dict:
+    ) -> tuple[str, dict]:
+        """Intent routing + rule-based grounding — NO LLM prose drafting.
+
+        Returns ``(intent, result)`` where result carries the rule answer,
+        citations and suggested_ticket. The streaming route calls this so all
+        DB work finishes before the first byte goes out; ``answer()`` adds
+        the optional LLM reword on top for the one-shot route.
+        """
         lowered = question.lower()
         instrument = await self._resolve_instrument(db, question)
 
@@ -553,6 +562,12 @@ class AssistantEngine:
             intent = "out_of_scope"
             result = {"answer": DECLINE_TEXT, "citations": [], "suggested_ticket": None}
 
+        return intent, result
+
+    async def answer(
+        self, db: AsyncSession, session: SessionData, question: str
+    ) -> dict:
+        intent, result = await self.ground(db, session, question)
         if self._llm is not None:  # prose only; data and citations stay ours
             drafted = await self._llm(intent, result, question)
             if drafted:
@@ -1195,16 +1210,15 @@ _SYSTEM_PROMPT = (
 )
 
 
-async def _llm_prose(intent: str, result: dict, question: str) -> str | None:
-    """Engine prose seam (design 27): the LLM rewords our grounded answer.
+def _prose_messages(intent: str, result: dict, question: str) -> list[dict] | None:
+    """The strict prompt pair the LLM prose seam drafts from (design 27).
 
-    Data, citations and tickets stay ours; the model only drafts prose.
-    Returns None for intents that manage their own prose (help) or must stay
-    verbatim (out_of_scope), and on any LLM error — the caller then keeps the
-    rule-based answer (per-call resilience, D-27.2).
+    Shared by the one-shot seam (`_llm_prose`) and the streaming route, so
+    both draft from the exact same system/user prompts. Returns None for
+    intents that manage their own prose (help) or must stay verbatim
+    (out_of_scope) — the caller keeps the rule-based answer for those.
     """
-    client = _RUNTIME.llm_client
-    if client is None or intent in ("help", "out_of_scope"):
+    if intent in ("help", "out_of_scope"):
         return None
     user = (
         f"Intent: {intent}\nUser question: {question}\n"
@@ -1215,14 +1229,26 @@ async def _llm_prose(intent: str, result: dict, question: str) -> str | None:
     )
     if intent in ("trade", "review"):
         user += f' End the reply with exactly this sentence: "{DISCLAIMER_TEXT}"'
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+
+async def _llm_prose(intent: str, result: dict, question: str) -> str | None:
+    """Engine prose seam (design 27): the LLM rewords our grounded answer.
+
+    Data, citations and tickets stay ours; the model only drafts prose.
+    Returns None for intents that manage their own prose (help) or must stay
+    verbatim (out_of_scope), and on any LLM error — the caller then keeps the
+    rule-based answer (per-call resilience, D-27.2).
+    """
+    client = _RUNTIME.llm_client
+    messages = _prose_messages(intent, result, question)
+    if client is None or messages is None:
+        return None
     try:
-        prose = await client.chat(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            max_tokens=320,
-        )
+        prose = await client.chat(messages, max_tokens=320)
     except Exception as exc:  # noqa: BLE001 — per-call mock fallback
         logger.warning("LLM prose drafting failed (%s); keeping rules answer", exc)
         return None
@@ -1231,6 +1257,24 @@ async def _llm_prose(intent: str, result: dict, question: str) -> str | None:
     if intent in ("trade", "review") and DISCLAIMER_TEXT not in prose:
         prose = f"{prose} {DISCLAIMER_TEXT}"
     return prose
+
+
+async def _llm_prose_stream(
+    intent: str, result: dict, question: str
+) -> AsyncIterator[str]:
+    """Streaming variant of `_llm_prose`: yields the LLM's prose deltas.
+
+    Drafts from the same strict prompts (`_prose_messages`). Unlike the
+    one-shot seam, exceptions propagate — the stream route decides how to
+    degrade (silent rules fallback before the first delta, honest error
+    event mid-stream). Intents that keep rule prose yield nothing.
+    """
+    client = _RUNTIME.llm_client
+    messages = _prose_messages(intent, result, question)
+    if client is None or messages is None:
+        return
+    async for delta in client.chat_stream(messages, max_tokens=320):
+        yield delta
 
 
 def configure(
@@ -1342,6 +1386,167 @@ async def query_assistant(
         "citations": result["citations"],
         "suggested_ticket": result["suggested_ticket"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Streaming variant (SSE)
+# ---------------------------------------------------------------------------
+
+# Mock-mode pacing: the rules answer goes out in ~40-char chunks with a short
+# delay so the UI animates like the live token stream (consistent UX).
+STREAM_CHUNK_SIZE = 40
+STREAM_CHUNK_DELAY_SECONDS = 0.015
+
+
+def _sse(event: str, data: dict) -> str:
+    """One SSE frame: a named event with a single-line JSON payload."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+async def _rule_chunks(text: str) -> AsyncIterator[str]:
+    """Mock-mode delivery: the rules answer in paced fixed-size chunks."""
+    for i in range(0, len(text), STREAM_CHUNK_SIZE):
+        yield text[i : i + STREAM_CHUNK_SIZE]
+        await asyncio.sleep(STREAM_CHUNK_DELAY_SECONDS)
+
+
+async def _persist_streamed_interaction(
+    sessionmaker,
+    user_id: str,
+    question: str,
+    conversation_id: str,
+    answer: str,
+    result: dict,
+) -> None:
+    """AssistantInteraction row + ASSISTANT_QUERY audit for a streamed reply —
+    the same trail the one-shot route writes, with the full assembled text.
+    Runs on a fresh session: the request-scoped one may already be closed by
+    the time the stream finishes."""
+    async with sessionmaker() as db:
+        interaction = AssistantInteraction(
+            user_id=user_id,
+            prompt=question,
+            response=answer,
+            grounded_refs={
+                "conversation_id": conversation_id,
+                "citations": result["citations"],
+                "suggested_ticket": result["suggested_ticket"],
+            },
+        )
+        db.add(interaction)
+        await db.flush()
+        await write_audit(
+            db,
+            actor_id=user_id,
+            event_type=ASSISTANT_QUERY,
+            resource_type="assistant_interaction",
+            resource_id=interaction.interaction_id,
+            payload={"conversation_id": conversation_id},
+            flush_only=True,  # same as the one-shot route: one commit
+        )
+        await db.commit()
+
+
+@router.post("/assistant/query/stream")
+async def query_assistant_stream(
+    body: AssistantQueryRequest,
+    request: Request,
+    session: SessionData = Depends(require_permission("ASSISTANT_USE")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Server-sent-events variant of POST /assistant/query.
+
+    Same grounding pipeline as the one-shot route (`engine.ground` runs up
+    front, so all DB reads finish before the first byte); only the reply
+    delivery differs. Event contract:
+      meta  {"conversation_id", "intent"}                    — always first
+      delta {"text"}                                         — reply fragments:
+        live LLM token deltas, or paced ~40-char chunks of the rules answer
+      error {"code": "LLM_STREAM_FAILED"}                    — only when the
+        LLM dies MID-reply; the rules answer follows as deltas
+      final {"answer", "citations", "suggested_ticket"}      — always last;
+        `answer` is the authoritative full text (and what gets persisted)
+    """
+    question = body.question.strip()
+    if not question:
+        raise ValidationError("question must not be empty")
+    conversation_id = body.conversation_id or uuid.uuid4().hex
+
+    intent, result = await engine.ground(db, session, question)
+    sessionmaker = request.app.state.sessionmaker
+
+    async def event_stream() -> AsyncIterator[str]:
+        rule_answer: str = result["answer"]
+        assembled = ""
+        try:
+            yield _sse(
+                "meta", {"conversation_id": conversation_id, "intent": intent}
+            )
+            if _RUNTIME.llm_client is not None and _prose_messages(
+                intent, result, question
+            ):
+                try:
+                    async for delta in _llm_prose_stream(intent, result, question):
+                        assembled += delta
+                        yield _sse("delta", {"text": delta})
+                except Exception as exc:  # noqa: BLE001 — honest degrade
+                    logger.warning(
+                        "LLM stream failed (%s); falling back to rules answer", exc
+                    )
+                    if assembled:
+                        # Died mid-reply: the partial prose is incomplete, so
+                        # flag it and deliver the grounded rules answer instead
+                        # of leaving the user hanging on a cut-off sentence.
+                        yield _sse("error", {"code": "LLM_STREAM_FAILED"})
+                    assembled = ""
+                if not assembled:
+                    # Setup failure / empty completion: same silent per-call
+                    # rules fallback the one-shot route applies.
+                    async for chunk in _rule_chunks(rule_answer):
+                        assembled += chunk
+                        yield _sse("delta", {"text": chunk})
+                elif (
+                    intent in ("trade", "review")
+                    and DISCLAIMER_TEXT not in assembled
+                ):
+                    suffix = f" {DISCLAIMER_TEXT}"
+                    assembled += suffix
+                    yield _sse("delta", {"text": suffix})
+            else:
+                async for chunk in _rule_chunks(rule_answer):
+                    assembled += chunk
+                    yield _sse("delta", {"text": chunk})
+            yield _sse(
+                "final",
+                {
+                    "answer": assembled,
+                    "citations": result["citations"],
+                    "suggested_ticket": result["suggested_ticket"],
+                },
+            )
+        except (asyncio.CancelledError, GeneratorExit):
+            logger.info("assistant stream closed before completion (client away?)")
+            raise
+        finally:
+            # Best-effort: when the client disconnected mid-stream the cancel
+            # scope may block this write — log and move on, never crash.
+            try:
+                await _persist_streamed_interaction(
+                    sessionmaker,
+                    session.user_id,
+                    question,
+                    conversation_id,
+                    assembled or rule_answer,
+                    result,
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort persist
+                logger.warning("streamed assistant interaction persist failed: %s", exc)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/assistant/news-summary")

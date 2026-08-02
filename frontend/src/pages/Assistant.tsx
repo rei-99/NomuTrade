@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { streamAssistantQuery } from "../api/stream";
 import type {
   AssistantResponse,
   Citation,
@@ -39,6 +40,9 @@ export function Assistant() {
   const [messages, setMessages] = useState<ChatMessage[]>(restoreMessages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  // True from send until the first streamed delta lands (or the answer is
+  // otherwise resolved) — drives the "thinking" indicator.
+  const [thinking, setThinking] = useState(false);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [ticket, setTicket] = useState<SuggestedTicket | null>(null);
   const nextId = useRef(0);
@@ -71,7 +75,7 @@ export function Assistant() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
+  }, [messages, busy, thinking]);
 
   const send = useCallback(async () => {
     const question = input.trim();
@@ -82,35 +86,69 @@ export function Assistant() {
       { id: ++nextId.current, role: "user", text: question, ts: new Date().toISOString() },
     ]);
     setBusy(true);
+    setThinking(true);
+
+    // The assistant bubble is created on the first delta and updated in place
+    // as fragments arrive; the `final` event then settles it with the
+    // authoritative full text + citations + suggested ticket.
+    let bubbleId: number | null = null;
+    const upsertBubble = (patch: (m: ChatMessage) => ChatMessage) => {
+      if (bubbleId === null) {
+        bubbleId = ++nextId.current;
+        const id = bubbleId;
+        setMessages((ms) => [
+          ...ms,
+          patch({ id, role: "assistant", text: "", ts: new Date().toISOString() }),
+        ]);
+      } else {
+        const id = bubbleId;
+        setMessages((ms) => ms.map((m) => (m.id === id ? patch(m) : m)));
+      }
+    };
+
+    let result: AssistantResponse | null = null;
     try {
-      const res = await api<AssistantResponse>("/assistant/query", {
-        method: "POST",
-        body: { question },
+      result = await streamAssistantQuery(question, {
+        onDelta: (text) => {
+          setThinking(false);
+          upsertBubble((m) => ({ ...m, text: m.text + text }));
+        },
+        onError: () => {
+          // Mid-stream LLM failure: drop the cut-off prose; the rules answer
+          // streams in right after, and `final` settles the text either way.
+          if (bubbleId !== null) upsertBubble((m) => ({ ...m, text: "" }));
+        },
       });
-      setMessages((ms) => [
-        ...ms,
-        {
-          id: ++nextId.current,
-          role: "assistant",
-          text: res.answer,
-          citations: res.citations,
-          ticket: res.suggested_ticket,
-          ts: new Date().toISOString(),
-        },
-      ]);
     } catch {
-      setMessages((ms) => [
-        ...ms,
-        {
-          id: ++nextId.current,
-          role: "assistant",
-          text: t("assistant.failed"),
-          ts: new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setBusy(false);
+      result = null; // HTTP/network failure — one-shot fallback below
     }
+    setThinking(false);
+
+    if (result === null) {
+      // Stream unavailable or incomplete: fall back to the one-shot JSON
+      // endpoint so the chat keeps working no matter what.
+      try {
+        result = await api<AssistantResponse>("/assistant/query", {
+          method: "POST",
+          body: { question },
+        });
+      } catch {
+        // toast raised by client
+      }
+    }
+
+    if (result !== null) {
+      const res = result;
+      upsertBubble((m) => ({
+        ...m,
+        text: res.answer,
+        citations: res.citations,
+        ticket: res.suggested_ticket,
+      }));
+    } else {
+      upsertBubble((m) => ({ ...m, text: t("assistant.failed") }));
+    }
+    setBusy(false);
   }, [input, busy, t]);
 
   return (
@@ -162,7 +200,7 @@ export function Assistant() {
               </div>
             </div>
           ))}
-          {busy && <div className="muted chat-thinking">{t("assistant.thinking")}</div>}
+          {thinking && <div className="muted chat-thinking">{t("assistant.thinking")}</div>}
           <div ref={bottomRef} />
         </div>
         <div className="chat-input-row">

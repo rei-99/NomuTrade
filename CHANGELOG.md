@@ -7,7 +7,36 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Fix: assistant chat survives tab switches
+## 2026-08-02 — Assistant streaming replies (SSE)
+
+**Driver:** owner ask — replies should appear progressively instead of all at
+once.
+
+- **Backend**: new `POST /api/v1/assistant/query/stream` (`text/event-stream`).
+  Contract: `meta` (conversation id + intent) → `delta` tokens → `final`
+  (authoritative full answer + citations + suggested ticket, persisted to
+  AssistantInteraction + audit exactly like the one-shot route, which is
+  unchanged). Live mode streams real tokens from the chat model
+  (`LLMClient.chat_stream`, OpenAI SSE `stream: true`); mock mode paces the
+  rules answer in ~40-char chunks — same UX either way. Failure design:
+  LLM dead before the first delta → silent fallback to the rules answer;
+  dead mid-stream → an `error` event, partial prose discarded, rules answer
+  completes the stream. The generator can never hang. `AssistantEngine.answer`
+  was split into `ground()` + reword so one-shot and stream share the exact
+  same prompts.
+- **Frontend**: the Assistant page reads the SSE stream (`api/stream.ts`),
+  renders tokens into the bubble as they arrive ("thinking" until the first
+  delta), settles on `final`, and falls back to the old one-shot endpoint on
+  any HTTP/network failure. Session-storage persistence unchanged.
+- Verified: backend **126/126** (7 new — SSE parse, mock parity with
+  one-shot incl. persisted interaction, live-token path, setup + mid-stream
+  failure degradation; plus a hermetic pin so the gitignored local `.env`
+  can't leak into test settings); `npm run build` clean; **live against the
+  real proxy** — token-by-token deltas from claude-haiku (`"**"`, `"MSFT
+  Position"`, `" Review"`…); headless UI capture of a bubble at 268 chars
+  mid-stream growing to 431.
+
+
 
 **Driver:** owner bug report — leaving the Assistant tab and returning wiped
 the conversation. Cause: chat history lived in page component state, which
