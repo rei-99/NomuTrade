@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Simulation dataset (INT-04, D-10..D-12). DATA_DIR is resolved against the
     # cwd, its parent, and the repo root; missing dir -> generated fallback feed.
     DATA_DIR: str = "data"
-    REPLAY_BARS_PER_SECOND: float = 5.0
+    REPLAY_BARS_PER_SECOND: float = 1.0
     REPLAY_MODE: Literal["loop", "hold"] = "loop"
     # Order restrictions (A4, design 21): per-order notional cap in the
     # instrument's currency; 0 disables the check.

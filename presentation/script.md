@@ -271,7 +271,9 @@ went wrong?" question. Appendix slides A1–A3 stay on standby.
 ## 9. Q&A prep — 10 likely questions
 
 *Backup material for the 5-minute Q&A (§8): expect 2–3 questions live; prepare
-all ten so any presenter can back up the topic owner.*
+all ten so any presenter can back up the topic owner. Wider net, grouped by
+audience with one-line answers: [qa-brainstorm.md](qa-brainstorm.md) (15
+business + 20 tech).*
 
 1. **"What's the ROI of rebuilding?"** The batch system costs manual touches
    per trade and spreadsheet reconciliation; the demo showed zero manual steps

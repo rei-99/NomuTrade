@@ -2,10 +2,12 @@
 
 Dataset mode (D-10/D-11): after `load_dataset` has populated PriceTick, the
 replayer walks the stored 1-minute bars in dataset-time order at
-`REPLAY_BARS_PER_SECOND` unique timestamps per second (~78 s per market day
-at the default 5/s), publishing each bar as a `market.ticks` event with the
-bar's dataset timestamp. At the end of the dataset it loops to the start
-(`REPLAY_MODE=loop`) or goes idle (`hold`).
+`REPLAY_BARS_PER_SECOND` unique timestamps per second (~6.5 min per market
+day at the default 1/s), publishing each bar as a `market.ticks` event with
+the bar's dataset timestamp. Emissions are paced on a wall-clock-aligned
+grid so the sim clock flips once per interval in step with the wall clock
+(one clean minute-step per second at the default). At the end of the
+dataset it loops to the start (`REPLAY_MODE=loop`) or goes idle (`hold`).
 
 Fallback mode (no `data/` directory): deterministic daily history is
 generated on an empty PriceTick table and live prices are random-walked at
@@ -157,6 +159,11 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
         set_sim_now(as_utc(bars[0][1]))
         i = 0
         n = len(bars)
+        # Pace emissions on a wall-clock-aligned grid (next whole multiple of
+        # `pause`) so the sim clock flips exactly once per interval in step
+        # with the wall clock, with no cumulative drift; if publishing ever
+        # overruns an interval we skip the sleep and catch up instead.
+        next_emit = (int(time.time() / pause) + 1) * pause
         while i < n:
             # Publish all instruments' bars sharing this dataset timestamp,
             # then pace one unique timestamp per interval. Grouping compares
@@ -176,7 +183,8 @@ async def _replay_dataset(bus, sessionmaker, settings, instruments) -> None:
                     )
                 j += 1
             i = j
-            await asyncio.sleep(pause)
+            next_emit += pause
+            await asyncio.sleep(max(0.0, next_emit - time.time()))
         if settings.REPLAY_MODE == "hold":
             logger.info("tick replayer: dataset exhausted, holding last prices")
             while True:

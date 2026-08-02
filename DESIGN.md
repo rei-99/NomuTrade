@@ -184,7 +184,7 @@ The audit path is deliberately **synchronous for security-critical actions** (ch
 
 **Decision D-10:** Market data uses a **single store** (`PriceTick`, dailies and minute bars together) plus a **simulation clock** (`registry.get_sim_now()`): chart ranges, stale-price flags and news visibility are measured against it, never `utcnow()`; while a replay runs, data beyond the sim clock is withheld.
 
-**Decision D-11:** The replay **loops the dataset**: minute bars are replayed in dataset-time order at `REPLAY_BARS_PER_SECOND` (default 5.0 ≈ 78 s per market day); `REPLAY_MODE=loop|hold` (default `loop`).
+**Decision D-11:** The replay **loops the dataset**: minute bars are replayed in dataset-time order at `REPLAY_BARS_PER_SECOND` (default 1.0 ≈ 6.5 min per market day, emitted on wall-second boundaries); `REPLAY_MODE=loop|hold` (default `loop`).
 
 **Decision D-12:** Instruments come from the **dataset loader** (7 US equities + 4 generated-price bonds; USD; equities lot 1/tick 0.01, bonds lot 1000/tick 0.01 quoted % of par); the seed keeps users/roles/portfolios (USD cash 1M/500k); a missing data dir falls back to a generated random-walk feed with the same symbols.
 

@@ -31,7 +31,8 @@ skipped — the minute bars (pack 2) win from that date on.
 (FR-RPT-002 E1).
 
 This is the replayer's source: bars are walked in dataset-time order at
-`REPLAY_BARS_PER_SECOND` (default 5 ≈ 78 s per market day), looping at the
+`REPLAY_BARS_PER_SECOND` (default 1 ≈ 6.5 min per market day, wall-second
+aligned), looping at the
 end (`REPLAY_MODE=loop|hold`). While replaying, the platform's simulation
 clock is the replay position; nothing past it is visible (D-10/D-11).
 

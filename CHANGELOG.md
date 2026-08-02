@@ -7,7 +7,28 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-02 — Demo data pack + automated recorded walkthrough
+## 2026-08-02 — Sim clock: 1 bar/s, wall-second aligned + Q&A brainstorm
+
+**Driver:** owner asks — (a) slow the replay so the sim clock ticks one
+dataset row per wall second, flipping in clean one-minute steps
+(13:23→13:24→13:25) in step with the wall clock; (b) a wider Q&A net for a
+mixed business/tech audience.
+
+- **Replay pacing**: `REPLAY_BARS_PER_SECOND` default 5.0 → **1.0** (~6.5 min
+  per market day); the replayer now paces emissions on a wall-clock-aligned
+  grid (`next whole multiple of the interval`, catch-up instead of drift)
+  instead of a naive sleep — the sim clock flips exactly once per second.
+  Docs synced: README, AGENTS.md, DESIGN.md D-11, data/README, design 01.
+- **`presentation/qa-brainstorm.md`**: 35 likely questions (15 business /
+  20 tech) with short suggested answers, honesty flags on the candid ones
+  (unexecuted pipeline, no reservation accounting, audit-chain fork risk,
+  unmeasured perf targets) and a pointer from script §9.
+- Verified: backend **103/103**; live WS probe — tick groups arrive at mean
+  interval **1.000 s** (min 0.998 / max 1.001), first tick of each group
+  within 4 ms of the whole-second boundary, sim ts stepping one clean
+  minute per second.
+
+
 
 **Driver:** owner asks — (a) seed realistic trade history so risk/portfolio
 pages demo well, keeping at least one equity and one bond untouched for live

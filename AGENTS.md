@@ -279,7 +279,7 @@ git-ignored):
 | `SETTLEMENT_DELAY_SECONDS` | `5.0` | settlement sweeper timing |
 | `TICK_INTERVAL_MS` | `500` | random-walk fallback cadence (used when no dataset) |
 | `DATA_DIR` | `data` | simulation dataset; resolved vs cwd/parent/repo root; missing → generated fallback feed |
-| `REPLAY_BARS_PER_SECOND` | `5.0` | dataset replay speed (≈78 s per market day) |
+| `REPLAY_BARS_PER_SECOND` | `1.0` | dataset replay speed (≈6.5 min per market day, wall-second aligned) |
 | `REPLAY_MODE` | `loop` | `loop` \| `hold` at dataset end |
 | `WS_PUSH_ENABLED` | `true` | WS push channel kill-switch (design 22) |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
