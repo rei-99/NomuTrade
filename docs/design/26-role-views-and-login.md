@@ -13,7 +13,7 @@ design time — provider outage; SRS is the better source here anyway.)
 
 | Persona | Their actual business (SRS §2.3) | Home | Tabs (only these) |
 |---|---|---|---|
-| **Trader** (front office) | executes orders, monitors executions, manages positions & P&L, strategy work | `/` Trading | Trading, Orders, Trades, Alerts, Reports, Paper Trading, Assistant, Notifications |
+| **Trader** (front office) | executes orders, monitors executions, manages positions & P&L, strategy work | `/` Trading | Trading, Portfolios (own books only — `PORTFOLIO_VIEW`), Orders, Trades, Alerts, Reports, Paper Trading, Assistant, Notifications |
 | **Operation** (middle office) | keeps STP flowing: watches the trade flow, resolves settlement exceptions, watches integration health | first permitted tab (`/trades`) | Trades, Governance, Access Requests, Notifications |
 | **Risk** (risk & compliance) | oversees trading/access risk: reviews books, trades, audit trail, SoD, break-glass | first permitted tab (`/portfolios`) | Portfolios, Trades, Audit, Governance, Reports, Assistant*, Access Requests, Notifications |
 | **Admin** (system & security admin) | runs the platform: access governance, roles, integrations, break-glass, config | first permitted tab (`/admin`) | Admin, Governance, Audit, Approvals, Access Requests, Notifications |

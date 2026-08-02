@@ -101,6 +101,7 @@ export const TABS: Record<TabId, TabDef> = {
 export const PERSONA_TABS: Record<Persona, TabId[]> = {
   TRADER: [
     "trading",
+    "portfolios",
     "orders",
     "trades",
     "alerts",

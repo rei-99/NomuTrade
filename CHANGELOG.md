@@ -7,6 +7,25 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-01 — Trader gains the Portfolios tab (own books only)
+
+**Driver:** owner instruction — portfolio management belongs in the Trader's
+view too, scoped to their own books.
+
+- `portfolios` added to the Trader persona tab list (`personas.ts`), between
+  Trading and Orders. Backend scoping already does the right thing:
+  `GET /portfolios` filters to `owner_id == caller` without
+  `PORTFOLIO_VIEW_ALL`, and `_require_portfolio_access` 403s other people's
+  books — so no backend change; the permission model (`PORTFOLIO_VIEW` vs
+  `PORTFOLIO_VIEW_ALL`) drives the own-vs-all split for Trader vs Risk/Ops.
+  Design 26 table updated.
+- Verified: `npm run build` clean; live — trader `GET /portfolios` returns
+  exactly Desk Book 1 (HOUSE) + Paper — Demo Trader (PAPER), no Client
+  Portfolio A; headless screenshot of the trader Portfolios page with the
+  new nav.
+
+---
+
 ## 2026-08-01 — Demo-critical fixes: 4-persona mapping, reports correctness, UX quick wins, docs reconciliation
 
 **Driver:** owner-commissioned deep improvement review of the whole repo. The
