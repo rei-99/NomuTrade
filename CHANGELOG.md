@@ -7,7 +7,39 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-01 — Settlement visibility + ops retry (Pass 2); presentation pack reworked for 4 presenters / 10+5
+## 2026-08-02 — Demo data pack + automated recorded walkthrough
+
+**Driver:** owner asks — (a) seed realistic trade history so risk/portfolio
+pages demo well, keeping at least one equity and one bond untouched for live
+trading on stage; (b) a recommended demo flow; (c) an automated, recorded
+browser demo with a step script.
+
+- **Seeded trades (Desk Book 1, via the real order pipeline, all SETTLED)**:
+  MSFT 100, TSLA 30→sell 10 (realized P&L), GOOG 25, UST10Y 2,000 face,
+  AAPL29 1,000 face (AAPL 50→50→5 from earlier sessions). Live KPIs: total
+  value ≈ $50.0M, realized +$244, allocation ≈ 94/6 equity/bond,
+  concentration ≈ 74% MSFT. **IBM, UL and MSFT31 stay untouched** — the live
+  demo trade targets (WMT/UST2Y were spent on the recording). Client
+  Portfolio A stays cash-only (Client has no `ORDER_SUBMIT` by design).
+- **`presentation/demo-guide.md`**: the seeded-data table, a 6-beat
+  run-of-show (trade IBM → trade MSFT31 → portfolio/risk → settlement column
+  → ops governance → governance extras), honesty notes (STALE on replay
+  loop, VaR N/A until snapshot history accumulates), and the video step
+  script with timestamps.
+- **Automated recorder** (`tools/demo-recorder/`, playwright-core against the
+  installed Edge — no browser download; 1 MiB ffmpeg in `.pw/`, git-ignored):
+  drives the real UI at human pace (visible typing, two-click confirm) and
+  records the page as video. Captured
+  `recordings/demo-….webm` (40 s): trader login → WMT 25 BUY filled → UST2Y
+  1,000 BUY filled (bond analytics card) → Desk Book 1 KPIs/allocation/P&L →
+  blotter settlement column → ops Governance settlements lane — plus 6
+  per-beat screenshots and a beats log. Re-runnable; serves as the
+  presentation's video fallback.
+- Verified: video + screenshots inspected beat by beat (fills, toasts,
+  KPIs, SETTLED badges all genuine); positions/valuation/settlements
+  cross-checked via the API.
+
+
 
 **Driver:** owner direction — (a) Pass 2 of the improvement review: make the
 "S" in STP visible and give the dead `STP_EXCEPTION_HANDLE` permission a

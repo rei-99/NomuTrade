@@ -1,0 +1,6 @@
+[  8.9s] login-trader-workspace
+[ 14.9s] buy-wmt-25-filled
+[ 21.7s] buy-ust2y-1000-filled
+[ 26.9s] portfolio-detail-risk-kpis
+[ 31.0s] trades-settlement-column
+[ 40.1s] ops-governance-settlements

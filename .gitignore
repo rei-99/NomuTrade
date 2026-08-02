@@ -25,3 +25,6 @@ backend/var/
 *.tfstate.*
 infra/terraform/env/*.tfvars
 !infra/terraform/env/*.tfvars.example
+
+# demo recorder tooling (ffmpeg + local playwright cache)
+tools/demo-recorder/.pw/
