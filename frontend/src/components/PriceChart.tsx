@@ -20,6 +20,13 @@ function axisLabel(ts: string, tf: Timeframe): string {
   return tf === "1D" ? ts.slice(11, 16) : ts.slice(0, 10);
 }
 
+/** Touch devices get a finger-sized zoom slider (iOS HIG-ish). Evaluated once
+ * at load — a device doesn't change pointer type mid-session. */
+const COARSE_POINTER =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+
 interface ToggleState {
   SMA: boolean;
   EMA: boolean;
@@ -269,7 +276,7 @@ function buildPriceOption(
         type: "slider",
         xAxisIndex: gridDefs.map((_, i) => i),
         bottom: 0,
-        height: 18,
+        height: COARSE_POINTER ? 28 : 18,
         start: zoom?.start ?? 0,
         end: zoom?.end ?? 100,
         borderColor: CHART_COLORS.axis,

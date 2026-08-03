@@ -15,6 +15,8 @@ export const tooltipBase = {
   backgroundColor: CHART_COLORS.panel,
   borderColor: CHART_COLORS.axis,
   textStyle: { color: CHART_COLORS.fg, fontSize: 12 },
+  // Never let the tooltip clip outside the chart (small screens, touch).
+  confine: true,
 };
 
 export function categoryAxis(extra?: Record<string, unknown>): Record<string, unknown> {
