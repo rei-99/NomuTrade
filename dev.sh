@@ -54,16 +54,31 @@ else
   export DATABASE_URL="postgresql+asyncpg://$USER@localhost:5432/stp"
 fi
 
+# Detect the LAN IP for sharing the UI on the local network (macOS → Linux →
+# Windows/Git Bash); empty when undetectable.
+lan_ip() {
+  local ip
+  ip=$(ipconfig getifaddr en0 2>/dev/null) && [ -n "$ip" ] && { echo "$ip"; return; }
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}') && [ -n "$ip" ] && { echo "$ip"; return; }
+  ipconfig 2>/dev/null | grep -a "IPv4" | head -1 | sed 's/.*: //' | tr -d '\r'
+}
+LAN_IP=$(lan_ip)
+
 echo "STP dev stack starting:"
 echo "  backend   http://localhost:8000  (API docs: http://localhost:8000/docs)"
 echo "  frontend  http://localhost:5173  (login: trader@demo.nomura / demo1234 — dev-login also available under DEV_AUTH for tooling)"
+if [ -n "$LAN_IP" ]; then
+  echo "  LAN       http://$LAN_IP:5173  (other devices on the same network; firewall must allow 5173)"
+fi
 echo "  database  $DATABASE_URL"
 echo "Ctrl+C to stop both."
 echo
 
 (cd backend && exec "../$UVICORN" app.main:app --reload --port 8000) &
 BACK_PID=$!
-(cd frontend && exec npm run dev) &
+# --host exposes the UI on the LAN (the printed URL works); the backend stays
+# loopback-only since the vite proxy fronts all API/WS traffic.
+(cd frontend && exec npm run dev -- --host) &
 FRONT_PID=$!
 
 cleanup() {
