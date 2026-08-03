@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-03 — Audience demo accounts (trader_1..100) + login prefill
+
+**Driver:** owner ask — 100 trader accounts with empty trade records for
+hands-on audience demo, synced at initiation (not a local DB write) so a
+remote machine gets them automatically; and a login page that prefills a
+*different* account per visitor so nobody types credentials.
+
+- **Idempotent startup patch** `ensure_demo_traders` (same pattern as the
+  design-26 password patch, runs on every boot after it): each
+  `trader_N@demo.nomura` gets the shared demo password, an ACTIVE Trader
+  grant, and an empty funded HOUSE book ("Trader N Book", 100k USD). Skips
+  existing accounts — existing dev DBs and fresh remote machines converge.
+- **`GET /api/v1/auth/demo-credential`** (DEV_AUTH-gated, like dev-login):
+  hands out the next trader_N credential in process-local round-robin.
+- **Login page prefill**: each fresh browser session fetches one credential
+  and fills email+password (kept in sessionStorage so a reload keeps the
+  same identity); silently absent when the endpoint is unavailable.
+- Verified: backend **136/136** (2 new — accounts seeded + idempotent rerun
+  + password login + book/permissions/empty positions; round-robin differs
+  per call, format, gate); `npm run build` clean; live — dev DB shows 100
+  users + 100 books, round-robin hands out trader_1/2/3, password login as
+  trader_55 works; headless two-visitor probe — prefilled trader_4 vs
+  trader_6 (dev StrictMode double-mount burns one extra number per visitor;
+  harmless, wraps at 100).
+
+---
+
 ## 2026-08-03 — Trader-created portfolios (POST /portfolios) + hermetic tests vs .env
 
 **Driver:** owner request — a trader should be able to open a new portfolio

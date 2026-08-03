@@ -161,3 +161,61 @@ async def test_replay_skip_endpoint(client, app):
     finally:
         replay_worker._dataset_replay_active = False
         replay_worker._skip_days = 0
+
+
+async def test_demo_traders_seeded_and_idempotent(client, app):
+    """Audience accounts (owner ask): trader_1..100@demo.nomura exist with the
+    demo password, a Trader grant and an empty funded book; the startup patch
+    is idempotent (second run creates nothing)."""
+    from app.seed import DEMO_TRADER_COUNT, ensure_demo_traders
+
+    # Password login as trader_7 works (demo password, no dev-login).
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "trader_7@demo.nomura", "password": "demo1234"},
+    )
+    assert response.status_code == 200, response.text
+
+    headers = await login(client, "trader_42@demo.nomura")
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert "ORDER_SUBMIT" in me.json()["permissions"]
+
+    portfolios = await client.get("/api/v1/portfolios", headers=headers)
+    books = portfolios.json()["items"]
+    assert len(books) == 1
+    assert books[0]["name"] == "Trader 42 Book"
+    assert books[0]["cash_balance"] == 100000.0
+    positions = await client.get(
+        f"/api/v1/portfolios/{books[0]['portfolio_id']}/positions", headers=headers
+    )
+    assert positions.json()["items"] == []
+
+    # Idempotent: every trader_1..100 exists and a re-run creates none.
+    async with app.state.sessionmaker() as session:
+        from sqlalchemy import func, select
+
+        from app.core.models import User
+
+        count = await session.scalar(
+            select(func.count(User.user_id)).where(
+                User.email.startswith("trader_"), User.email.endswith("@demo.nomura")
+            )
+        )
+    assert count >= DEMO_TRADER_COUNT
+    assert await ensure_demo_traders(app.state.sessionmaker) == 0
+
+
+async def test_demo_credential_round_robin(client):
+    """Each call hands out the next trader_N credential (different visitors
+    get different accounts); DEV_AUTH-gated like dev-login."""
+    first = await client.get("/api/v1/auth/demo-credential")
+    second = await client.get("/api/v1/auth/demo-credential")
+    assert first.status_code == 200 and second.status_code == 200
+    a, b = first.json(), second.json()
+    assert a["password"] == b["password"] == "demo1234"
+    assert a["email"] != b["email"]
+    for cred in (a, b):
+        name, domain = cred["email"].split("@")
+        assert domain == "demo.nomura"
+        assert name.startswith("trader_") and 1 <= int(name.split("_")[1]) <= 100
