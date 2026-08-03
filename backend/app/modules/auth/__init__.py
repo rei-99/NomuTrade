@@ -18,6 +18,7 @@ password `demo1234` (see passwords.py; documented in README + login hint
 box). Failures/successes audit AUTH_LOGIN_FAILURE / AUTH_LOGIN_SUCCESS.
 """
 
+import itertools
 import time
 from math import ceil
 
@@ -38,9 +39,17 @@ from app.core.security import (
     get_current_user,
     get_effective_permissions,
 )
-from app.modules.auth.passwords import demo_password_hash, verify_password
+from app.modules.auth.passwords import (
+    DEMO_PASSWORD,
+    demo_password_hash,
+    verify_password,
+)
 
 router = APIRouter(tags=["auth"])
+
+# Round-robin over the trader_1..trader_100 audience accounts for the
+# demo-credential endpoint (process-local; wraps past 100).
+_demo_credential_cycle = itertools.cycle(range(1, 101))
 
 
 class DevLoginRequest(BaseModel):
@@ -181,6 +190,25 @@ async def dev_login(
         flush_only=False,
     )
     return {"token": token, "user": _user_json(user)}
+
+
+@router.get("/auth/demo-credential")
+async def demo_credential(request: Request):
+    """Audience-demo convenience: the next trader_N credential in round-robin.
+
+    Lets the login page prefill a *different* demo account per visitor so
+    audience members can sign in with one tap. Training-environment only —
+    gated behind DEV_AUTH exactly like dev-login (never enabled in real
+    deployments). The counter is process-local; it simply wraps past 100.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.DEV_AUTH:
+        raise Unauthenticated("demo credential issuance is disabled")
+    n = next(_demo_credential_cycle)
+    return {
+        "email": f"trader_{n}@demo.nomura",
+        "password": DEMO_PASSWORD,
+    }
 
 
 @router.get("/auth/me")

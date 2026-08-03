@@ -83,6 +83,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         await ensure_demo_passwords(sessionmaker)
 
+        # Audience demo accounts (trader_1..trader_100, empty funded books) —
+        # same idempotent-patch pattern; converges fresh remote machines too.
+        from app.seed import ensure_demo_traders
+
+        await ensure_demo_traders(sessionmaker)
+
         # Infrastructure components.
         bus = (
             RedisBus(settings.REDIS_URL)

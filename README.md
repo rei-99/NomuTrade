@@ -110,7 +110,12 @@ The login screen takes email + password — every seeded user's password is
 **`demo1234`** (PBKDF2-hashed; training environment only, applied by an
 idempotent startup patch so existing dev DBs get it too). `DEV_AUTH` mode
 (the default) additionally exposes passwordless
-`POST /api/v1/auth/dev-login` for tests and tooling.
+`POST /api/v1/auth/dev-login` for tests and tooling. A second startup patch
+creates **100 audience accounts** `trader_1…trader_100@demo.nomura` (same
+password, Trader role, each with an empty funded 100k USD book) — created on
+every boot where missing, so a fresh machine gets them automatically; the
+login page prefills the next unused one per visitor via
+`GET /api/v1/auth/demo-credential` (DEV_AUTH-gated).
 
 | Email | Role | Persona |
 |---|---|---|

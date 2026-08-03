@@ -42,6 +42,31 @@ export function Login() {
   const [error, setError] = useState<{ message: string; traceId?: string } | null>(null);
   const [retryAfter, setRetryAfter] = useState<number | null>(null);
 
+  // Demo prefill (training environment): each fresh browser session asks the
+  // backend for the next trader_N credential and prefills the form, so an
+  // audience member just taps Sign in. The assignment is kept in
+  // sessionStorage so a reload keeps the same identity; silently skipped when
+  // the endpoint is unavailable (DEV_AUTH off).
+  useEffect(() => {
+    const KEY = "stp_demo_credential";
+    void (async () => {
+      try {
+        const stored = sessionStorage.getItem(KEY);
+        const cred = stored
+          ? (JSON.parse(stored) as { email: string; password: string })
+          : await fetch("/api/v1/auth/demo-credential").then((r) => {
+              if (!r.ok) throw new Error(String(r.status));
+              return r.json() as Promise<{ email: string; password: string }>;
+            });
+        if (!stored) sessionStorage.setItem(KEY, JSON.stringify(cred));
+        setEmail((e) => e || cred.email);
+        setPassword((p) => p || cred.password);
+      } catch {
+        // no demo prefill available — fields stay empty
+      }
+    })();
+  }, []);
+
   // Live lockout countdown; hitting zero re-enables the form.
   useEffect(() => {
     if (retryAfter === null) return;

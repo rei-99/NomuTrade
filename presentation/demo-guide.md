@@ -5,6 +5,13 @@ and login `trader@demo.nomura` / `demo1234` (or the persona named in the step).
 
 ## 1. Seeded trade history (Desk Book 1)
 
+**Audience accounts**: 100 demo traders (`trader_1…trader_100@demo.nomura`,
+password `demo1234`, each with an empty funded 100k book) are created by an
+idempotent startup patch — a fresh machine gets them on first boot. Every
+new browser session's login page is **prefilled with the next unused
+account** (round-robin via `GET /auth/demo-credential`), so audience members
+on phones just tap Sign in.
+
 Seeded 2026-08-02 via the ordinary order pipeline (MARKET orders → fills →
 positions/cash → settlement instructions, all SETTLED):
 

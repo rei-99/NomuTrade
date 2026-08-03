@@ -6,6 +6,7 @@ Usage:
 """
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -26,6 +27,77 @@ from app.core.models import (
     User,
 )
 from app.core.timeutil import utcnow
+from app.modules.auth.passwords import demo_password_hash
+
+logger = logging.getLogger(__name__)
+
+# Audience demo accounts (owner ask, 2026-08): trader_1..trader_100 share the
+# demo password, hold the Trader role, and each gets an empty funded HOUSE
+# book — every demo participant can log in and trade as their own trader.
+DEMO_TRADER_COUNT = 100
+DEMO_TRADER_BOOK_CASH = Decimal("100000")  # 100k USD per audience book
+
+
+async def ensure_demo_traders(sessionmaker, count: int = DEMO_TRADER_COUNT) -> int:
+    """Idempotent startup patch: trader_1..trader_N@demo.nomura accounts.
+
+    Missing accounts are created with an ACTIVE Trader grant, the shared demo
+    password (same patch mechanism as design 26 §R2), and an empty funded
+    HOUSE book. Existing accounts are skipped, so it runs on every boot and
+    converges dev DBs and fresh remote machines alike (the once-only seed
+    cannot). Returns the number of accounts created.
+    """
+    async with sessionmaker() as session:
+        role = (
+            await session.execute(select(Role).where(Role.name == "Trader"))
+        ).scalar_one_or_none()
+        if role is None:
+            return 0  # unseeded DB — the seed itself creates the catalog first
+        emails = [f"trader_{i}@demo.nomura" for i in range(1, count + 1)]
+        existing = set(
+            (
+                await session.execute(select(User.email).where(User.email.in_(emails)))
+            ).scalars().all()
+        )
+        now = utcnow()
+        created = 0
+        for email in emails:
+            if email in existing:
+                continue
+            user = User(
+                upn=email,
+                display_name=f"Demo Trader {email.split('@')[0].split('_')[1]}",
+                email=email,
+                status="ACTIVE",
+                synced_at=now,
+                password_hash=demo_password_hash(),
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                AccessGrant(
+                    user_id=user.user_id,
+                    role_id=role.role_id,
+                    request_id=None,
+                    start_at=now - timedelta(days=1),
+                    end_at=now + timedelta(days=3650),
+                    status=GrantStatus.ACTIVE,
+                )
+            )
+            session.add(
+                Portfolio(
+                    name=f"Trader {user.display_name.rsplit(' ', 1)[1]} Book",
+                    type=PortfolioType.HOUSE,
+                    owner_id=user.user_id,
+                    cash_balance=DEMO_TRADER_BOOK_CASH,
+                )
+            )
+            created += 1
+        if created:
+            await session.commit()
+    if created:
+        logger.info("demo traders ensured: %d new account(s) (trader_N@demo.nomura)", created)
+    return created
 
 # (action, resource_type) — action names are globally unique and double as the
 # permission strings used with require_permission().
