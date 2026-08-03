@@ -128,6 +128,7 @@ export function Layout() {
   const [searchParams] = useSearchParams();
   const [simTs, setSimTs] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   // Replay fast-forward (training/demo): jump the sim clock one market day.
   const skipDay = async () => {
@@ -223,12 +224,19 @@ export function Layout() {
   );
 
   return (
-    <div className="shell">
+    <div className={`shell${navOpen ? " nav-open" : ""}`}>
+      {navOpen && (
+        <div
+          className="nav-backdrop"
+          onClick={() => setNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <aside className="sidebar">
         <div className="sidebar-brand">
           <span className="brand-mark">▮▶</span> STP Platform
         </div>
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" onClick={() => setNavOpen(false)}>
           {navTabs.map((n) => (
             <NavLink
               key={n.to}
@@ -246,6 +254,15 @@ export function Layout() {
       <div className="main">
         <header className="topbar">
           <div className="topbar-left">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm burger"
+              aria-label={t("topbar.menu")}
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen((v) => !v)}
+            >
+              ≡
+            </button>
             <span className="market-status" title={dotTitle()}>
               <span className={`market-dot${marketLive ? " live" : ""}`} />
               {marketLive ? t("topbar.marketLive") : t("topbar.marketIdle")}

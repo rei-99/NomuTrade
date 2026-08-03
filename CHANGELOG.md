@@ -7,6 +7,49 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-03 — Mobile tier 2 (part B): chart touch tuning
+
+**Driver:** owner approved Part B of the mobile tier-2 plan (chart touch);
+Part A (PWA-lite) deferred by owner decision.
+
+- **Finger-sized zoom slider**: the candle chart's slider dataZoom renders
+  28px tall under `@media (pointer: coarse)` (was 18px; desktop pointer:fine
+  unchanged) via a once-per-load `matchMedia` check in `PriceChart.tsx`.
+- **Tooltips confined**: `tooltipBase` gains `confine: true` — shared by all
+  charts, so no tooltip clips off-screen on narrow viewports (harmless on
+  desktop).
+- Verified: `npm run build` clean; headless 390×844 touch-context run —
+  `pointer: coarse` matches, chunky slider visible with handles; desktop
+  1680×1000 keeps the 18px slider. Real-device scroll pass-through check
+  (vertical page scroll over the chart) deferred to the owner's on-device
+  pass, as planned.
+
+
+
+**Driver:** owner ask — make the phone visit genuinely usable (via hotspot or
+LAN). All changes are gated behind width/pointer media queries — desktop
+renders byte-identical.
+
+- **Burger drawer nav (≤1000px)**: the fixed 172px sidebar becomes an
+  overlay drawer (≡ in the top bar, backdrop tap or nav tap closes, slide-in
+  transition, `prefers-reduced-motion` respected) — reclaims the full screen
+  width on phones.
+- **Top bar wraps (≤1000px)**: rows reflow instead of cramming (the
+  `flex: 0 0 46px` basis pinned the height and caused overlap — fixed with
+  `flex: 0 0 auto`); the user name/roles block hides on small screens.
+- **Tables**: `.table-wrap` gets `overflow-x: auto` — blotter/positions scroll
+  sideways inside their container instead of breaking the page (verified: no
+  page-level horizontal overflow at 390px).
+- **Touch targets ≈44px** (iOS HIG) under `@media (pointer: coarse)`:
+  buttons, chips, tape symbols, seg/stepper controls, nav links.
+- **Safe areas**: `viewport-fit=cover`, `100dvh`, `env(safe-area-inset-*)`
+  padding — no notch/home-bar clipping on iPhone.
+- Verified: `npm run build` clean; headless 390×844 run — trading workspace
+  compact flow, drawer opens/closes, blotter scrolls in-container; desktop
+  1680×1000 screenshot unchanged (no burger, single-row top bar).
+
+---
+
 ## 2026-08-03 — Trader-created portfolios (POST /portfolios) + hermetic tests vs .env
 
 **Driver:** owner request — a trader should be able to open a new portfolio

@@ -1811,3 +1811,71 @@ textarea:focus-visible,
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- mobile / coarse-pointer tier (design: owner ask 2026-08-03) ----
+   Everything is gated behind width/pointer media queries; desktop renders
+   byte-identical. */
+
+/* Modern viewport unit (Safari chrome) + notch/home-bar safe areas. */
+.shell {
+  height: 100vh; /* fallback */
+  height: 100dvh;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Wide tables scroll horizontally instead of breaking the page; harmless on
+   desktop (no overflow → no scrollbar). */
+.table-wrap { overflow-x: auto; }
+
+/* Burger is desktop-hidden; it appears in the ≤1000px block below. */
+.burger { display: none; font-size: 16px; line-height: 1; }
+.nav-backdrop { display: none; }
+
+@media (max-width: 1000px) {
+  .burger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+  }
+  /* Sidebar becomes an overlay drawer. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 70;
+    transform: translateX(-105%);
+    transition: transform 200ms ease;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.4);
+  }
+  .shell.nav-open .sidebar { transform: none; }
+  .shell.nav-open .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  /* Top bar wraps; the user name/roles block yields space to the tools. */
+  .topbar { height: auto; min-height: 46px; flex: 0 0 auto; flex-wrap: wrap; row-gap: 4px; padding: 4px 12px; }
+  .topbar-left, .topbar-right { flex-wrap: wrap; row-gap: 4px; gap: 8px; }
+  .topbar-user { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
+}
+
+/* Touch targets ≈ iOS HIG 44px on coarse pointers. */
+@media (pointer: coarse) {
+  .btn, .btn-sm, .chip, .chip-symbol, .seg-btn, .stepper-btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .nav-link { padding-top: 10px; padding-bottom: 10px; }
+}

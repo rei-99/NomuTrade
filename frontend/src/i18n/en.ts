@@ -61,6 +61,7 @@ export const en = {
   "topbar.skipDayTitle": "Replay the next market day at full speed — every tick processed",
   "topbar.skippedDay": "Replaying one market day at full speed",
   "topbar.searchPlaceholder": "Search symbol…",
+  "topbar.menu": "Menu",
   "topbar.searchEmpty": "No instruments match “{q}”.",
   "topbar.signOut": "Sign out",
   "topbar.brandTag": "Next-Generation Trading Platform — STP",
