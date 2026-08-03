@@ -63,6 +63,7 @@ export const ja: Record<I18nKey, string> = {
   "topbar.skipDayTitle": "次の営業日を全ティック処理しながら高速再生",
   "topbar.skippedDay": "1営業日を高速再生しています",
   "topbar.searchPlaceholder": "銘柄を検索…",
+  "topbar.menu": "メニュー",
   "topbar.searchEmpty": "「{q}」に一致する銘柄がありません。",
   "topbar.signOut": "サインアウト",
   "topbar.brandTag": "次世代トレーディングプラットフォーム — STP",
