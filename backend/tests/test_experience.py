@@ -1119,3 +1119,72 @@ async def test_news_summary_endpoint(client, app):
         headers=auditor,
     )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 8 — Trader-created portfolios (POST /portfolios)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_portfolio(client, app):
+    """A trader (ORDER_SUBMIT) can open a HOUSE book; idempotent by
+    (owner, name); validation and permission denials hold."""
+    trader = await login(client, TRADER)
+
+    response = await client.post(
+        "/api/v1/portfolios",
+        json={"name": "Alpha Book", "initial_cash": 250000},
+        headers=trader,
+    )
+    assert response.status_code == 201, response.text
+    book = response.json()
+    assert book["type"] == "HOUSE"
+    assert book["cash_balance"] == 250000
+    assert book["total_value"] == 250000
+
+    # Shows up in the caller's list, owned by the caller.
+    response = await client.get("/api/v1/portfolios", headers=trader)
+    mine = [p for p in response.json()["items"] if p["name"] == "Alpha Book"]
+    assert len(mine) == 1
+    assert mine[0]["portfolio_id"] == book["portfolio_id"]
+
+    # Idempotent by (owner, name): a repeat returns 200 and the same book.
+    response = await client.post(
+        "/api/v1/portfolios", json={"name": "Alpha Book"}, headers=trader
+    )
+    assert response.status_code == 200
+    assert response.json()["portfolio_id"] == book["portfolio_id"]
+
+    # Default cash applies when omitted.
+    response = await client.post(
+        "/api/v1/portfolios", json={"name": "Default Book"}, headers=trader
+    )
+    assert response.status_code == 201
+    assert response.json()["cash_balance"] == 1000000
+
+    # Validation: blank name / non-positive cash -> 400 (app ValidationError).
+    response = await client.post(
+        "/api/v1/portfolios", json={"name": "   "}, headers=trader
+    )
+    assert response.status_code == 400
+    response = await client.post(
+        "/api/v1/portfolios",
+        json={"name": "Bad", "initial_cash": -5},
+        headers=trader,
+    )
+    assert response.status_code == 400
+
+    # client@ lacks ORDER_SUBMIT -> 403.
+    other = await login(client, CLIENT)
+    response = await client.post(
+        "/api/v1/portfolios", json={"name": "Client Book"}, headers=other
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+    # The new book is usable end-to-end: positions endpoint serves it.
+    response = await client.get(
+        f"/api/v1/portfolios/{book['portfolio_id']}/positions", headers=trader
+    )
+    assert response.status_code == 200
+    assert response.json()["items"] == []

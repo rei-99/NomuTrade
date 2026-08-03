@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-03 — Trader-created portfolios (POST /portfolios) + hermetic tests vs .env
+
+**Driver:** owner request — a trader should be able to open a new portfolio
+from the UI, not just use the seeded books.
+
+- **Backend**: `POST /portfolios` — creates a HOUSE trading book owned by
+  the caller; gated on the existing `ORDER_SUBMIT` permission (any role that
+  can trade can open a book — no seed change needed on live DBs); idempotent
+  by (owner, name) returning 200 + the existing book on a repeat; validated
+  (blank name / non-positive cash / $1T cap); audited `PORTFOLIO_CREATED`;
+  design doc 03 updated.
+- **Frontend**: "New portfolio" button on the Portfolios page
+  (ORDER_SUBMIT-gated) opening a Modal (name + starting cash, blank =
+  $1,000,000, Enter submits); EN/JA i18n keys; the new book appears in the
+  list and in the workspace portfolio selector via the same `/portfolios`
+  endpoint.
+- **Test hermeticity fix (found during verification)**: `backend/.env` with
+  `LLM_PROVIDER=openai` made every test app hang in the live-LLM startup
+  self-check (blocks past asgi-lifespan's 5 s startup timeout on machines
+  without a route to the endpoint) — the whole suite errored. conftest now
+  pins `LLM_PROVIDER=mock` + empty LLM URL/key via init args, which outrank
+  `.env`, so tests are hermetic against a developer's local config.
+- Verified: `test_create_portfolio` (create → 201, list ownership, dedup →
+  200 same id, default cash, blank/negative validation, client 403, positions
+  usable) plus the full suite; `npm run build` clean; live curl against the
+  running stack: create 201, dedup 200, list shows Alpha Book, client 403.
+
 ## 2026-08-02 — Agent workflow (design 28): LangGraph + conversation memory
 
 **Driver:** owner report — the assistant failed multi-turn conversations

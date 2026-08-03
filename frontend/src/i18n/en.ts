@@ -489,6 +489,10 @@ export const en = {
   "portfolios.empty": "No portfolios",
   "portfolios.cash": "Cash",
   "portfolios.totalValue": "Total value",
+  "portfolios.new": "New portfolio",
+  "portfolios.createTitle": "Open a new trading book",
+  "portfolios.namePh": "e.g. Alpha Book",
+  "portfolios.initialCash": "Starting cash (USD, blank = 1,000,000)",
 
   "pd.loading": "Loading portfolio…",
   "pd.asOf": "as of {ts}",

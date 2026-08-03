@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import audit as audit_log
 from app.core.db import get_db
 from app.core.errors import Forbidden, NotFound, ValidationError
 from app.core.models import (
@@ -16,12 +18,14 @@ from app.core.models import (
     Instrument,
     Order,
     Portfolio,
+    PortfolioType,
     ValuationSnapshot,
 )
 from app.core.security import (
     SessionData,
     get_current_user,
     get_effective_permissions,
+    require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
 from app.modules.orders.validation import trade_value
@@ -119,6 +123,95 @@ async def list_portfolios(
             }
         )
     return {"items": items, "next_cursor": None}
+
+
+# ---------------------------------------------------------------------------
+# POST /portfolios — open a new trading book
+# ---------------------------------------------------------------------------
+
+PORTFOLIO_CREATED = "PORTFOLIO_CREATED"
+DEFAULT_BOOK_CASH = Decimal("1000000")
+MAX_BOOK_CASH = Decimal("1000000000000")
+
+
+class PortfolioCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    initial_cash: Decimal | None = None
+
+
+@router.post("/portfolios", status_code=201)
+async def create_portfolio(
+    body: PortfolioCreateRequest,
+    response: Response,
+    user: SessionData = Depends(require_permission("ORDER_SUBMIT")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Open a new HOUSE trading book owned by the caller.
+
+    Any role that can trade (ORDER_SUBMIT) may open a book to trade from —
+    reuses an existing permission so no seed change is needed on live DBs
+    (the once-only-seed pitfall). PAPER accounts stay with the paper module;
+    CLIENT books remain seeded. Idempotent by (owner, name): a repeat with an
+    existing name returns 200 and the existing book instead of duplicating.
+    """
+    name = body.name.strip()
+    if not name:
+        raise ValidationError("name must not be blank")
+    initial = body.initial_cash if body.initial_cash is not None else DEFAULT_BOOK_CASH
+    if initial <= 0:
+        raise ValidationError("initial_cash must be positive")
+    if initial > MAX_BOOK_CASH:
+        raise ValidationError(f"initial_cash must not exceed {MAX_BOOK_CASH}")
+
+    existing = (
+        (
+            await db.execute(
+                select(Portfolio).where(
+                    Portfolio.owner_id == user.user_id,
+                    Portfolio.name == name,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        response.status_code = 200
+        return {
+            "portfolio_id": existing.portfolio_id,
+            "name": existing.name,
+            "type": existing.type,
+            "owner_id": existing.owner_id,
+            "cash_balance": float(existing.cash_balance),
+            "total_value": float(await compute_total_value(db, existing)),
+        }
+
+    portfolio = Portfolio(
+        name=name,
+        type=PortfolioType.HOUSE.value,
+        owner_id=user.user_id,
+        cash_balance=initial,
+    )
+    db.add(portfolio)
+    await db.flush()
+    await audit_log.write_audit(
+        db,
+        actor_id=user.user_id,
+        event_type=PORTFOLIO_CREATED,
+        resource_type="portfolio",
+        resource_id=portfolio.portfolio_id,
+        payload={"name": name, "type": portfolio.type, "initial_cash": str(initial)},
+        flush_only=True,
+    )
+    await db.commit()
+    return {
+        "portfolio_id": portfolio.portfolio_id,
+        "name": portfolio.name,
+        "type": portfolio.type,
+        "owner_id": portfolio.owner_id,
+        "cash_balance": float(portfolio.cash_balance),
+        "total_value": float(portfolio.cash_balance),
+    }
 
 
 @router.get("/portfolios/{portfolio_id}/positions")

@@ -34,6 +34,7 @@ No dedicated flow diagram exists in the source design. The valuation projector c
 ## API endpoints used
 
 - Positions, valuation, paged transaction history (cursor-based, FR-PFM-004) — concrete paths per the module's OpenAPI fragment under the standard conventions (base `/api/v1`, JSON, cursor pagination, error envelope with `traceId`; former DESIGN.md §9).
+- `POST /portfolios` (added 2026-08-03): open a HOUSE trading book owned by the caller; gated on the existing `ORDER_SUBMIT` permission (any role that can trade can open a book — no seed change on live DBs); idempotent by (owner, name); audited `PORTFOLIO_CREATED`.
 - WebSocket `/ws` (authenticated): topic `portfolio.{id}` for valuation deltas (NFR-PER-004).
 
 ## Error / edge cases

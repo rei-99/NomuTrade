@@ -491,6 +491,10 @@ export const ja: Record<I18nKey, string> = {
   "portfolios.empty": "ポートフォリオなし",
   "portfolios.cash": "現金",
   "portfolios.totalValue": "評価額合計",
+  "portfolios.new": "新規ポートフォリオ",
+  "portfolios.createTitle": "新しいトレーディングブックを開く",
+  "portfolios.namePh": "例: Alpha Book",
+  "portfolios.initialCash": "初期現金 (USD、空欄 = 1,000,000)",
 
   "pd.loading": "ポートフォリオを読み込み中…",
   "pd.asOf": "{ts} 時点",

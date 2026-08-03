@@ -14,6 +14,18 @@ from asgi_lifespan import LifespanManager
 from app.config import Settings
 from app.main import create_app
 
+# Hermetic vs the developer's backend/.env BEFORE any fixture builds Settings:
+# process env outranks .env in pydantic-settings, so no test app can leak into
+# a live LLM config (the design-27 startup self-check then blocks past the
+# 5 s lifespan timeout on machines without a route to the endpoint).
+import os
+
+os.environ.setdefault("LLM_PROVIDER", "mock")
+os.environ.setdefault("LLM_API_URL", "")
+os.environ.setdefault("LLM_API_KEY", "")
+os.environ.setdefault("EMBEDDING_API_URL", "")
+os.environ.setdefault("EMBEDDING_API_KEY", "")
+
 
 @pytest.fixture
 def settings(tmp_path):
@@ -27,6 +39,12 @@ def settings(tmp_path):
         # contention); the marketdata fallback feed is used instead. Loader
         # behavior is covered by test_marketdata_loader with a mini fixture.
         DATA_DIR=str(tmp_path / "no-such-data-dir"),
+        # Hermetic vs the developer's backend/.env: never run the live-LLM
+        # startup self-check in tests (it blocks past the 5 s lifespan
+        # timeout on machines without a route to the endpoint).
+        LLM_PROVIDER="mock",
+        LLM_API_URL="",
+        LLM_API_KEY="",
     )
 
 
