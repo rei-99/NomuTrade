@@ -162,7 +162,7 @@ export function Connect() {
         ) : (
           <>
             <div className="connect-section">
-              <div className="connect-label">{t("connect.wifi")}</div>
+              <div className="connect-label connect-label-lg">{t("connect.wifi")}</div>
               <div className="connect-wifi num">
                 <span className="connect-ssid">{cfg.wifi_ssid || t("common.na")}</span>
                 <span className="connect-password">

@@ -489,7 +489,7 @@ export const en = {
   // ---- connect guide page (demo) ----
   "connect.title": "Connect",
   "connect.wifi": "WiFi",
-  "connect.password": "Password",
+  "connect.password": "WiFi password",
   "connect.scan": "Scan to open the app",
   "connect.message": "Message",
   "connect.edit": "Edit",

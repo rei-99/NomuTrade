@@ -1886,8 +1886,9 @@ textarea:focus-visible,
   letter-spacing: 0.08em;
   color: var(--muted);
   font-weight: 600;
-  margin-bottom: 8px;
-}
+  margin-bottom: 8px;}
+
+.connect-label-lg { font-size: 22px; }
 
 .connect-wifi {
   display: flex;

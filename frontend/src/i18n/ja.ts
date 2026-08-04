@@ -491,7 +491,7 @@ export const ja: Record<I18nKey, string> = {
   // ---- connect guide page (demo) ----
   "connect.title": "接続ガイド",
   "connect.wifi": "WiFi",
-  "connect.password": "パスワード",
+  "connect.password": "WiFi パスワード",
   "connect.scan": "スキャンしてアプリを開く",
   "connect.message": "メッセージ",
   "connect.edit": "編集",
