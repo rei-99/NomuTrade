@@ -7,6 +7,15 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-04 — Connect guide: QR self-refreshes on network change
+
+- The `/connect` page now re-fetches the config every 15 s (paused while the
+  edit form is open): the server re-detects the LAN IP per request, so when
+  the host laptop changes WiFi networks, the on-screen QR and URL update
+  within seconds — no manual refresh needed on the projector. (The QR was
+  always regenerated per page load; this closes the page-already-open case.)
+- Verified: `npm run build` clean.
+
 ## 2026-08-04 — Connect guide page (WiFi + QR + host-editable message)
 
 **Driver:** owner ask — a projector-friendly page for the audience demo:

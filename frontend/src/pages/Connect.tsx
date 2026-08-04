@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toDataURL } from "qrcode";
 import { api } from "../api/client";
 import type { ConnectConfig } from "../api/types";
+import { usePoll } from "../hooks";
 import { useT } from "../i18n";
 
 /**
@@ -11,7 +12,9 @@ import { useT } from "../i18n";
  * demo_config) — any logged-in user may edit, and edits are visible to every
  * viewer of the page. The QR encodes the effective URL: url_override →
  * server-detected lan_url → window.location.origin. Generated offline in the
- * browser (qrcode), so the demo works on an isolated LAN.
+ * browser (qrcode), so the demo works on an isolated LAN. The config is
+ * re-fetched every 15 s (paused while editing), so the QR tracks a network
+ * change without a manual refresh.
  */
 export function Connect() {
   const { t } = useT();
@@ -32,9 +35,17 @@ export function Connect() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Re-fetch lightly so the QR tracks the actual network: the server
+  // re-detects the LAN IP per request, so a WiFi change updates the QR within
+  // ~15 s without a manual refresh. Paused while editing so an in-flight form
+  // is never clobbered by a poll.
+  usePoll(
+    () => {
+      if (!editing) void load();
+    },
+    15_000,
+    [load, editing],
+  );
 
   const effectiveUrl =
     (cfg?.url_override?.trim() || cfg?.lan_url || window.location.origin) ?? "";
