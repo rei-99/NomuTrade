@@ -18,11 +18,13 @@ case "$DB_MODE" in
     ;;
 esac
 
-# venv layout: bin/ on POSIX, Scripts/ on Windows
-if [ -x backend/.venv/bin/uvicorn ]; then
-  UVICORN=backend/.venv/bin/uvicorn
-elif [ -x backend/.venv/Scripts/uvicorn.exe ]; then
-  UVICORN=backend/.venv/Scripts/uvicorn.exe
+# venv layout: bin/ on POSIX, Scripts/ on Windows. Launch uvicorn via the
+# venv's python (-m uvicorn): the Scripts/*.exe entry-point shims can lose
+# their Windows execute ACL (pip rewrites them), while python.exe always runs.
+if [ -x backend/.venv/bin/python ]; then
+  PY=backend/.venv/bin/python
+elif [ -x backend/.venv/Scripts/python.exe ]; then
+  PY=backend/.venv/Scripts/python.exe
 else
   echo "backend/.venv not found — run: make setup" >&2
   exit 1
@@ -74,7 +76,7 @@ echo "  database  $DATABASE_URL"
 echo "Ctrl+C to stop both."
 echo
 
-(cd backend && exec "../$UVICORN" app.main:app --reload --port 8000) &
+(cd backend && exec "../$PY" -m uvicorn app.main:app --reload --port 8000) &
 BACK_PID=$!
 # --host exposes the UI on the LAN (the printed URL works); the backend stays
 # loopback-only since the vite proxy fronts all API/WS traffic.
