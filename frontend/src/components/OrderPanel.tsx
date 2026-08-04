@@ -14,6 +14,7 @@ import { useAnchoredPriceFields } from "../hooks";
 import { useT } from "../i18n";
 import type { I18nKey } from "../i18n/en";
 import { Badge, statusKeyOf } from "./Badge";
+import { Modal } from "./Modal";
 import { useToast } from "./Toast";
 import { detailsToList, postOrder, tradeValue } from "./orderUtils";
 
@@ -49,8 +50,9 @@ interface OrderPanelProps {
  * selector (DAY/GTC/IOC, default GTC), size chips + custom input with −/+
  * stepper, est. cost vs cash (bond-aware). TRAIL replaces the stop/limit
  * inputs with trail amount / trail % (exactly one, mirroring the server).
- * BUY/SELL opens an in-panel confirmation card (§A1); Confirm submits with
- * a freshly minted idempotency key, Enter confirms, Esc cancels. MARKET
+ * BUY/SELL opens a confirmation modal popup (§A1; the shared Modal — overlay,
+ * backdrop/Esc dismiss); Confirm submits with a freshly minted idempotency
+ * key, Enter confirms, Esc cancels. MARKET
  * accepts are polled briefly for the fill price; resting types report
  * "working".
  */
@@ -506,8 +508,31 @@ export function OrderPanel({
       </div>
 
       {confirming !== null && (
-        <div className={`confirm-card ${confirming === "BUY" ? "buy" : "sell"}`}>
-          <div className="confirm-title">{t("order.confirmTitle", { side: sideLabel(confirming) })}</div>
+        <Modal
+          title={t("order.confirmTitle", { side: sideLabel(confirming) })}
+          onClose={() => !inFlight && setConfirming(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={inFlight}
+                onClick={() => setConfirming(null)}
+              >
+                {t("order.cancelEsc")}
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm active ${confirming === "BUY" ? "btn-buy" : "btn-sell"}`}
+                disabled={inFlight || issues.length > 0}
+                onClick={() => confirmRef.current()}
+                autoFocus
+              >
+                {inFlight ? t("order.submitting") : t("order.confirmAction", { side: sideLabel(confirming) })}
+              </button>
+            </>
+          }
+        >
           <div className="confirm-grid">
             <span className="muted">{t("common.instrument")}</span>
             <span className="num">
@@ -544,25 +569,7 @@ export function OrderPanel({
               ))}
             </ul>
           )}
-          <div className="confirm-actions">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={inFlight}
-              onClick={() => setConfirming(null)}
-            >
-              {t("order.cancelEsc")}
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm active ${confirming === "BUY" ? "btn-buy" : "btn-sell"}`}
-              disabled={inFlight || issues.length > 0}
-              onClick={() => confirmRef.current()}
-            >
-              {inFlight ? t("order.submitting") : t("order.confirmAction", { side: sideLabel(confirming) })}
-            </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {feedback && (

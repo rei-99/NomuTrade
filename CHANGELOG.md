@@ -7,6 +7,22 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-04 — Order confirmation is now a modal popup (not an in-panel card)
+
+**Driver:** owner request — the two-click flow's second click should pop up,
+not expand inline ("drop down") inside the order panel.
+
+- `OrderPanel` confirm step now uses the shared `Modal` (centered overlay,
+  dimmed backdrop, backdrop-tap/Esc dismiss, close button) instead of the
+  inline `confirm-card`; same content (instrument, side, type, TIF, qty,
+  est. cost, cash before/after), same keyboard flow (Enter confirms, Esc
+  cancels), same idempotency-key-at-Confirm semantics; Confirm autofocused.
+- Dead CSS removed (`.confirm-card`, `.confirm-title`, `.confirm-actions`);
+  `.confirm-grid`/`.confirm-issues` kept (shared with BondAnalyticsCard).
+- Verified: `npm run build` clean; CDP-driven headless Chrome (navigate →
+  click BUY → assert `.modal` present → screenshot) shows the popup over
+  the dimmed workspace at 1680×1000.
+
 ## 2026-08-03 — Mobile tier 2 (part B): chart touch tuning
 
 **Driver:** owner approved Part B of the mobile tier-2 plan (chart touch);
