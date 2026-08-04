@@ -44,6 +44,7 @@ export const ja: Record<I18nKey, string> = {
   "nav.assistant": "アシスタント",
   "nav.access": "権限リクエスト",
   "nav.notifications": "通知",
+  "nav.connect": "接続ガイド",
   "nav.portfolios": "ポートフォリオ",
   "nav.approvals": "承認",
   "nav.admin": "管理",
@@ -486,6 +487,21 @@ export const ja: Record<I18nKey, string> = {
   "notif.categories": "カテゴリ",
   "notif.lockedTip": "セキュリティ上重要 — 無効化できません",
   "notif.prefsNote": "ブレークグラス・付与・PAM のアラートはセキュリティ上重要なため無効化できません。設定はサーバーのメモリに保存され、再起動時にリセットされます。",
+
+  // ---- connect guide page (demo) ----
+  "connect.title": "接続ガイド",
+  "connect.wifi": "WiFi",
+  "connect.password": "パスワード",
+  "connect.scan": "スキャンしてアプリを開く",
+  "connect.message": "メッセージ",
+  "connect.edit": "編集",
+  "connect.urlOverride": "URL オーバーライド",
+  "connect.urlOverrideHint": "設定すると、QR コードの URL が自動検出の代わりにこの URL になります。",
+  "connect.sharedNote": "変更はこのページを見ている全員に表示されます。",
+  "connect.ssidPh": "例: NomuraDemo",
+  "connect.passwordPh": "WiFi パスワード",
+  "connect.urlPh": "http://192.168.x.x:5173",
+  "connect.messagePh": "デモへようこそ…",
 
   // ---- portfolios pages ----
   "portfolios.title": "ポートフォリオ",

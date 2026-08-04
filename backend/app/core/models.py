@@ -674,6 +674,28 @@ class DocEmbedding(Base):
     )
 
 
+class DemoConfig(Base):
+    """Single-row config for the /connect demo page (connect module).
+
+    Always id=1: one row holds the WiFi details, an optional app-URL override
+    and the host message shown on the projector page during live demos. The
+    table starts empty (no seed); the first read creates the row with blanks,
+    which are valid — the page falls back to placeholders / auto-detected URLs.
+    """
+
+    __tablename__ = "demo_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    wifi_ssid: Mapped[str] = mapped_column(String(64), default="")
+    wifi_password: Mapped[str] = mapped_column(String(128), default="")
+    message: Mapped[str] = mapped_column(String(1000), default="")
+    url_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+
 # ---------------------------------------------------------------------------
 # Audit + outbox (infrastructure tables)
 # ---------------------------------------------------------------------------
