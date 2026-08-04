@@ -136,7 +136,7 @@ export function Layout() {
     try {
       await api("/marketdata/replay/skip", {
         method: "POST",
-        body: JSON.stringify({ days: 1 }),
+        body: { days: 1 },
       });
       toast(t("topbar.skippedDay"), "success");
     } catch {

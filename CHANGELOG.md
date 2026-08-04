@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-04 — Frontend test suite from zero: 324 tests, 89.5% statement coverage
+
+**Driver:** owner ask — frontend tests with high coverage (previously zero;
+called out in the presentation retrospective as the weakest quality gap).
+
+- **Stack**: Vitest 4 + React Testing Library + jsdom (Vite-native), v8
+  coverage; tests live in `__tests__/` beside their subjects; explicit
+  `vitest` imports (no globals, so `tsc -b` type-checks tests too).
+  Documented mock seams in `src/test/setup.ts`: api client mock, fetch stub,
+  MockWebSocket, `vi.mock("echarts")` (charts assert on the option builder),
+  `vi.mock("qrcode")`; shared render helpers + fixtures in `src/test/utils`.
+- **Coverage** (`npm run test:coverage`): **89.5% statements / 80.2%
+  branches / 85.5% functions / 90.8% lines** over `src/**`. Pure logic at
+  ~100% (format, orderUtils, personas, chartTheme); hooks 94%; api client/
+  ws/stream 80–97%; every page 78–97% (Trading 96, Login 96, Admin 78);
+  components 79% overall (OrderPanel 91, PositionsTable 96, DataTable 100
+  incl. the sorting cycle; Layout smoke-tested at 84 after starting at 0).
+- **Behavior covered, not snapshots**: order validation + confirm modal,
+  two-click keyboard flow, bond cash math, Connect URL precedence + edit
+  pause, i18n EN/JA switching, RBAC guards/persona routing, WS reconnect
+  backoff + 4401 terminal, 401 bounce, DataTable tri-state sort.
+- **CI**: the `frontend-build` job now runs `npm test` before `npm run build`.
+- Fixed while verifying: two tsc errors in Assistant.test (unused import,
+  non-exported type) and a CPU-contention race in PriceChart.test (now
+  `waitFor`-retried) — the suite is green standalone and under full load.
+- Verified: `npm test` 324/324 in ~22 s; `npm run build` zero type errors.
+
 ## 2026-08-04 — Connect guide: QR self-refreshes on network change
 
 - The `/connect` page now re-fetches the config every 15 s (paused while the

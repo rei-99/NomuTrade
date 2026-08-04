@@ -49,7 +49,7 @@ export function Portfolios() {
       const body: { name: string; initial_cash?: number } = { name: name.trim() };
       const parsed = Number(cash);
       if (cash.trim() !== "" && Number.isFinite(parsed)) body.initial_cash = parsed;
-      await api<Portfolio>("/portfolios", { method: "POST", body: JSON.stringify(body) });
+      await api<Portfolio>("/portfolios", { method: "POST", body });
       setShowCreate(false);
       setName("");
       setCash("");
