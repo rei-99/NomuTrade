@@ -676,3 +676,16 @@ export interface NewsSummary {
   mock: boolean;
   model: string;
 }
+
+// ---------- connect guide (demo config) ----------
+
+/** GET /connect-config — shared demo page config + server-detected LAN URL. */
+export interface ConnectConfig {
+  wifi_ssid: string;
+  wifi_password: string;
+  message: string;
+  url_override: string | null;
+  lan_url: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}

@@ -113,7 +113,7 @@ the docs and code comments for traceability — keep them intact when editing.
 │   │   │               audit.py (hash-chained audit), secrets.py, models.py (all
 │   │   │               SQLAlchemy entities), errors.py (error envelope + trace id),
 │   │   │               timeutil.py
-│   │   └── modules/    17 auto-discovered feature packages (see below)
+│   │   └── modules/    18 auto-discovered feature packages (see below)
 │   ├── tests/          pytest, asyncio_mode=auto (see pytest.ini)
 │   ├── requirements.txt  pinned deps; there is no pyproject.toml
 │   └── Dockerfile      python:3.13-slim → uvicorn app.main:app
@@ -143,7 +143,8 @@ replay, simulation clock), `notifications`,
 valuation/KPIs + valuation projector), `push` (WebSocket push channel,
 design 22), `reports` (PDF/CSV via reportlab), `restricted` (admin-managed
 restricted-instrument list, enforced in order validation), `settlements`
-(settlement-instruction list + STP-exception retry, `STP_EXCEPTION_HANDLE`).
+(settlement-instruction list + STP-exception retry, `STP_EXCEPTION_HANDLE`),
+`connect` (demo connect-guide config: WiFi/URL/message for the projector page).
 
 ## Build and test commands
 

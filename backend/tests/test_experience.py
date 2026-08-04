@@ -1188,3 +1188,90 @@ async def test_create_portfolio(client, app):
     )
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# 9 — Connect guide (demo config)
+# ---------------------------------------------------------------------------
+
+
+async def test_connect_config_requires_login(client):
+    response = await client.get("/api/v1/connect-config")
+    assert response.status_code == 401
+    response = await client.put(
+        "/api/v1/connect-config",
+        json={"wifi_ssid": "x", "wifi_password": "", "message": ""},
+    )
+    assert response.status_code == 401
+
+
+async def test_connect_config_defaults(client):
+    """First GET creates the row with blanks; lan_url is always present."""
+    headers = await login(client, TRADER)
+    response = await client.get("/api/v1/connect-config", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["wifi_ssid"] == ""
+    assert body["wifi_password"] == ""
+    assert body["message"] == ""
+    assert body["url_override"] is None
+    assert "lan_url" in body
+    assert body["updated_at"] is not None
+
+
+async def test_connect_config_roundtrip(client, app):
+    """PUT replaces all four fields; a re-read returns the persisted values."""
+    headers = await login(client, TRADER)
+    trader_id = await _user_id(client, headers)
+    payload = {
+        "wifi_ssid": "NomuraDemo",
+        "wifi_password": "s3cret-pass",
+        "message": "Welcome to the demo!\nScan the QR code to join.",
+        "url_override": "http://192.168.10.5:5173",
+    }
+    response = await client.put(
+        "/api/v1/connect-config", json=payload, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    for key, value in payload.items():
+        assert body[key] == value
+    assert body["updated_by"] == trader_id
+
+    # Re-read: persisted values come back (survives a second GET).
+    response = await client.get("/api/v1/connect-config", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    for key, value in payload.items():
+        assert body[key] == value
+    assert body["updated_by"] == trader_id
+
+    # The edit was audited with the business transaction.
+    async with app.state.sessionmaker() as session:
+        event_type = (
+            await session.execute(
+                select(AuditEvent.event_type).where(
+                    AuditEvent.event_type == "DEMO_CONFIG_UPDATED"
+                )
+            )
+        ).scalar_one_or_none()
+    assert event_type == "DEMO_CONFIG_UPDATED"
+
+
+async def test_connect_config_validation(client):
+    """Over-length fields are rejected with the 400 validation envelope."""
+    headers = await login(client, TRADER)
+    base = {"wifi_ssid": "", "wifi_password": "", "message": "", "url_override": None}
+    for field, limit in (
+        ("wifi_ssid", 64),
+        ("wifi_password", 128),
+        ("message", 1000),
+        ("url_override", 255),
+    ):
+        response = await client.put(
+            "/api/v1/connect-config",
+            json={**base, field: "x" * (limit + 1)},
+            headers=headers,
+        )
+        assert response.status_code == 400, field
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"

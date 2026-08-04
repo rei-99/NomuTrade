@@ -42,6 +42,7 @@ export const en = {
   "nav.assistant": "Assistant",
   "nav.access": "Access Requests",
   "nav.notifications": "Notifications",
+  "nav.connect": "Connect",
   "nav.portfolios": "Portfolios",
   "nav.approvals": "Approvals",
   "nav.admin": "Admin",
@@ -484,6 +485,21 @@ export const en = {
   "notif.categories": "Categories",
   "notif.lockedTip": "Security-critical — cannot be disabled",
   "notif.prefsNote": "Break glass, grant and PAM alerts are security-critical and cannot be disabled. Preferences are stored in memory on the server and reset on restart.",
+
+  // ---- connect guide page (demo) ----
+  "connect.title": "Connect",
+  "connect.wifi": "WiFi",
+  "connect.password": "Password",
+  "connect.scan": "Scan to open the app",
+  "connect.message": "Message",
+  "connect.edit": "Edit",
+  "connect.urlOverride": "URL override",
+  "connect.urlOverrideHint": "When set, this URL replaces the auto-detected one in the QR code.",
+  "connect.sharedNote": "Changes are visible to everyone viewing this page.",
+  "connect.ssidPh": "e.g. NomuraDemo",
+  "connect.passwordPh": "WiFi password",
+  "connect.urlPh": "http://192.168.x.x:5173",
+  "connect.messagePh": "Welcome to the demo…",
 
   // ---- portfolios pages ----
   "portfolios.title": "Portfolios",

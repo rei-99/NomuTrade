@@ -12,6 +12,7 @@ import { Alerts } from "./pages/Alerts";
 import { Approvals } from "./pages/Approvals";
 import { Assistant } from "./pages/Assistant";
 import { Audit } from "./pages/Audit";
+import { Connect } from "./pages/Connect";
 import { Governance } from "./pages/Governance";
 import { Login } from "./pages/Login";
 import { Notifications } from "./pages/Notifications";
@@ -179,6 +180,14 @@ export default function App() {
           element={
             <Guard tab="notifications">
               <Notifications />
+            </Guard>
+          }
+        />
+        <Route
+          path="connect"
+          element={
+            <Guard tab="connect">
+              <Connect />
             </Guard>
           }
         />

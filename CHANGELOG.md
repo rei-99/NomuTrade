@@ -7,6 +7,26 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-04 — Connect guide page (WiFi + QR + host-editable message)
+
+**Driver:** owner ask — a projector-friendly page for the audience demo:
+WiFi details, the app URL as a QR code, and messages editable from the UI.
+
+- **Backend**: new `connect` module (18th) + single-row `DemoConfig` table
+  (create_all picks it up; no seed change): `GET/PUT /connect-config`,
+  login-gated; `lan_url` auto-detected server-side (UDP socket trick, no
+  traffic sent); edits audited `DEMO_CONFIG_UPDATED`.
+- **Frontend**: `/connect` page — big-type WiFi SSID/password, offline QR
+  (new dep `qrcode`, generated in-browser — works without internet),
+  effective URL precedence url_override → lan_url → origin shown as a link,
+  multi-line message; Edit mode swaps to inputs with Save/Cancel (visible
+  to all viewers note); EN/JA keys; nav entry in all personas.
+- Verified: backend **140/140** (4 new: unauth 401, defaults, PUT
+  round-trip + audit row, over-length 400); `npm run build` clean; CDP
+  headless live check — QR data-URL present, lan_url
+  `http://192.168.15.76:5173` matches the host, PUT → GET persists, page
+  shows the saved values (screenshot reviewed).
+
 ## 2026-08-04 — Order confirmation is now a modal popup (not an in-panel card)
 
 **Driver:** owner request — the two-click flow's second click should pop up,

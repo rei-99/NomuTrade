@@ -43,6 +43,7 @@ export type TabId =
   | "assistant"
   | "access"
   | "notifications"
+  | "connect"
   | "approvals"
   | "admin"
   | "audit"
@@ -66,6 +67,8 @@ export const TABS: Record<TabId, TabDef> = {
   assistant: { id: "assistant", to: "/assistant", labelKey: "nav.assistant", perms: ["ASSISTANT_USE"] },
   access: { id: "access", to: "/access", labelKey: "nav.access" },
   notifications: { id: "notifications", to: "/notifications", labelKey: "nav.notifications" },
+  // Login-only demo page: no perms gate, in every persona list below.
+  connect: { id: "connect", to: "/connect", labelKey: "nav.connect" },
   approvals: { id: "approvals", to: "/approvals", labelKey: "nav.approvals", perms: ["APPROVE_ACCESS"] },
   admin: {
     id: "admin",
@@ -109,13 +112,14 @@ export const PERSONA_TABS: Record<Persona, TabId[]> = {
     "paper",
     "assistant",
     "notifications",
+    "connect",
   ],
-  ADMIN: ["admin", "governance", "audit", "approvals", "access", "notifications"],
+  ADMIN: ["admin", "governance", "audit", "approvals", "access", "notifications", "connect"],
   // "assistant" sits after "reports": perm-gated by ASSISTANT_USE, so risk@
   // (no ASSISTANT_USE) never sees it while client@ does.
-  RISK: ["portfolios", "trades", "audit", "governance", "reports", "assistant", "access", "notifications"],
-  OPERATION: ["trades", "governance", "access", "notifications"],
-  NONE: ["access", "notifications"],
+  RISK: ["portfolios", "trades", "audit", "governance", "reports", "assistant", "access", "notifications", "connect"],
+  OPERATION: ["trades", "governance", "access", "notifications", "connect"],
+  NONE: ["access", "notifications", "connect"],
 };
 
 /**
