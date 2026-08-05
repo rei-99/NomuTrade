@@ -143,16 +143,19 @@ class PortfolioCreateRequest(BaseModel):
 async def create_portfolio(
     body: PortfolioCreateRequest,
     response: Response,
-    user: SessionData = Depends(require_permission("ORDER_SUBMIT")),
+    user: SessionData = Depends(require_permission("ROLE_MANAGE")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Open a new HOUSE trading book owned by the caller.
+    """Open a new HOUSE trading book owned by the caller — admin only.
 
-    Any role that can trade (ORDER_SUBMIT) may open a book to trade from —
-    reuses an existing permission so no seed change is needed on live DBs
-    (the once-only-seed pitfall). PAPER accounts stay with the paper module;
-    CLIENT books remain seeded. Idempotent by (owner, name): a repeat with an
-    existing name returns 200 and the existing book instead of duplicating.
+    Gated on ROLE_MANAGE (Security Administrator, the role/grant provisioning
+    owner — same convention as the restricted-instruments admin): portfolio
+    provisioning is an administrative action, not a trader one (owner decision
+    2026-08-04; previously ORDER_SUBMIT). Reuses an existing permission so no
+    seed change is needed on live DBs (the once-only-seed pitfall). PAPER
+    accounts stay with the paper module; CLIENT books remain seeded.
+    Idempotent by (owner, name): a repeat with an existing name returns 200
+    and the existing book instead of duplicating.
     """
     name = body.name.strip()
     if not name:
