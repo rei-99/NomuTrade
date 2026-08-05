@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import type { AccessRequest, Role } from "../../api/types";
@@ -68,8 +68,7 @@ describe("Access page", () => {
   it("validates justification before submitting", async () => {
     renderUI(<Access />);
     await screen.findByText("Trader");
-    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
-    await screen.findByText("Justification is required", { selector: ".toast" });
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));    await screen.findByText("Justification is required", { selector: ".toast" });
     expect(vi.mocked(api).mock.calls.some((c) => c[1]?.method === "POST")).toBe(false);
   });
 
@@ -97,5 +96,30 @@ describe("Access page", () => {
     await screen.findByText("L1: PENDING");
     fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
     expect(api).toHaveBeenCalledWith("/access-requests/ar-1/withdraw", { method: "POST" });
+  });
+
+  it("privileged admin roles are not offered in the request picker", async () => {
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/roles") {
+        return [
+          ...ROLES,
+          {
+            role_id: "role-9",
+            name: "Security Administrator",
+            description: "Privileged",
+            built_in: true,
+            version: 1,
+            permission_actions: ["ROLE_MANAGE"],
+          },
+        ] as never;
+      }
+      if (path === "/access-requests") return { items: [], next_cursor: null } as never;
+      throw new Error(`unexpected api call ${path}`);
+    });
+    renderUI(<Access />);
+    await screen.findByText("Trader");
+    const picker = screen.getByRole("combobox");
+    expect(within(picker).queryByText("Security Administrator")).not.toBeInTheDocument();
+    expect(within(picker).getByText("Trader")).toBeInTheDocument();
   });
 });

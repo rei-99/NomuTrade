@@ -10,3 +10,19 @@
  * module with SHOW_PAM=true to keep the PAM tab flow covered.
  */
 export const SHOW_PAM = false;
+
+/**
+ * Roles a user may self-request in the Access Request form. The privileged
+ * administrator roles (System Administrator, Security Administrator) are
+ * excluded — those are provisioned through privileged flows (break-glass /
+ * security admin), never self-service (owner decision 2026-08-05: "keep the
+ * dropdown in line"). Set to null to offer the full catalog again.
+ */
+export const REQUESTABLE_ROLES: string[] | null = [
+  "Trader",
+  "Client",
+  "Operations Analyst",
+  "Risk & Compliance",
+  "Approver",
+  "Auditor",
+];

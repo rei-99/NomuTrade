@@ -4,6 +4,7 @@ import type { AccessRequest, AccessRequestCreated, ListResponse, Role } from "..
 import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
+import { REQUESTABLE_ROLES } from "../features";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
 import { useT } from "../i18n";
@@ -37,8 +38,15 @@ export function Access() {
   const loadRoles = useCallback(async () => {
     try {
       const roleRes = await api<Role[]>("/roles");
-      setRoles(roleRes);
-      setRoleId((cur) => cur || roleRes[0]?.role_id || "");
+      // Self-service only: privileged admin roles never appear in the
+      // request picker (features.ts REQUESTABLE_ROLES).
+      const allowlist = REQUESTABLE_ROLES;
+      const requestable =
+        allowlist === null
+          ? roleRes
+          : roleRes.filter((r) => allowlist.includes(r.name));
+      setRoles(requestable);
+      setRoleId((cur) => cur || requestable[0]?.role_id || "");
     } catch {
       // toast raised by client
     }

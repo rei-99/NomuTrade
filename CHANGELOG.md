@@ -7,6 +7,20 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Access request form: role picker limited to requestable roles
+
+**Driver:** owner review — the Access Request role dropdown offered the full
+catalog, including the privileged System/Security Administrator roles that
+must never be self-service.
+
+- `features.ts` gains `REQUESTABLE_ROLES` (Trader, Client, Operations
+  Analyst, Risk & Compliance, Approver, Auditor); the Access form filters
+  `/roles` through it. Set to `null` to restore the full catalog. Admin role
+  management views are unaffected (they read `/roles` unfiltered).
+- New test: privileged roles are absent from the picker while business
+  roles remain.
+- Verified: frontend **331/331**, `npm run build` clean.
+
 ## 2026-08-05 — Trader regains the Access Requests tab (design 26 §R1 amended)
 
 **Driver:** owner review — with the tab hidden, the request → approval →
