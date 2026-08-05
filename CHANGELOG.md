@@ -7,7 +7,24 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — All UI timestamps render in UTC
+## 2026-08-05 — Fix: chart indicators were silently invisible (alignment key mismatch)
+
+**Driver:** owner report — SMA/EMA/RSI/MACD/BB chips toggle but "the candles
+don't change". True root cause: candle timestamps and indicator timestamps
+never string-matched, so every overlay aligned to all-nulls. Daily candles
+arrive as `"2026-05-28"` (date-only) while indicator points carry
+`"…T00:00:00+00:00"`; intraday candles are suffix-less while indicator points
+are zone-suffixed — so alignment failed on **every** timeframe (the dashed
+line visible before was the last-price markLine, not an indicator).
+
+- `PriceChart.buildPriceOption` aligns via a zone-stripped key with a
+  date-only fallback (`normTs`); regression tests cover both production
+  formats (intraday zone-suffixed, date-only daily).
+- Verified: frontend **333/333** (2 new alignment tests), build clean;
+  headless live chart — BB envelope, SMA/EMA lines and the RSI sub-pane with
+  70/30 levels all render on 3M.
+
+
 
 **Driver:** owner report — an order submitted at sim 11:10 displayed as
 19:10: the backend now stores sim (UTC) business times, but the frontend

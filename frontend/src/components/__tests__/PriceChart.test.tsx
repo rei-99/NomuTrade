@@ -174,6 +174,61 @@ describe("PriceChart", () => {
     expect(seriesNames()).toEqual(["OHLC", "Volume"]);
   });
 
+  it("aligns indicator points to intraday candles when indicator ts carries a zone suffix", async () => {
+    // Production mismatch: candle ts is suffix-less ("2026-08-01T09:32:00")
+    // while indicator points are zone-suffixed ("2026-08-01T09:32:00+00:00").
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/instruments/AAPL/prices") {
+        return { symbol: "AAPL", timeframe: "1D", candles: CANDLES };
+      }
+      if (path === "/instruments/AAPL/indicators") {
+        return { indicators: { SMA: [{ ts: "2026-08-01T09:32:00+00:00", value: 191 }] } };
+      }
+      throw new Error(`unexpected api call ${path}`);
+    });
+    renderChart();
+    await waitFor(() => expect(seriesNames()).toContain("SMA"));
+    const sma = (lastOption().series as { name: string; data: (number | null)[] }[]).find(
+      (s) => s.name === "SMA",
+    )!;
+    expect(sma.data).toEqual([null, null, 191]);
+  });
+
+  it("aligns indicator points to date-only daily candles", async () => {
+    // Daily timeframe: candle ts is date-only ("2026-08-01"); indicator
+    // points are full ISO with zone ("2026-08-01T00:00:00+00:00").
+    const daily: Candle[] = [
+      { ts: "2026-08-01", open: 190, high: 191, low: 189.5, close: 190.5, volume: 1000 },
+      { ts: "2026-08-04", open: 191, high: 192, low: 190, close: 191.5, volume: 1200 },
+    ];
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/instruments/AAPL/prices") {
+        return { symbol: "AAPL", timeframe: "3M", candles: daily };
+      }
+      if (path === "/instruments/AAPL/indicators") {
+        return {
+          indicators: {
+            SMA: [
+              { ts: "2026-08-01T00:00:00+00:00", value: 190.25 },
+              { ts: "2026-08-04T00:00:00+00:00", value: 191.25 },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected api call ${path}`);
+    });
+    render(
+      <I18nProvider>
+        <PriceChart symbol="AAPL" timeframe="3M" showIndicators height={400} />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(seriesNames()).toContain("SMA"));
+    const sma = (lastOption().series as { name: string; data: (number | null)[] }[]).find(
+      (s) => s.name === "SMA",
+    )!;
+    expect(sma.data).toEqual([190.25, 191.25]);
+  });
+
   it("a tracked dataZoom window survives option rebuilds", async () => {
     renderChart();
     await screen.findByText("+0.26%");

@@ -48,6 +48,11 @@ interface ZoomWindow {
  * overlays), volume grid, optional RSI / MACD companion grids, linked axis
  * pointers and data zoom. Extracted from the old Charts page.
  */
+/** Zone-stripped ts key for candle↔indicator alignment (see `align`). */
+function normTs(ts: string): string {
+  return ts.replace(/(Z|[+-]\d{2}:\d{2})$/, "");
+}
+
 function buildPriceOption(
   candles: Candle[],
   indicators: IndicatorData,
@@ -56,13 +61,18 @@ function buildPriceOption(
   zoom: ZoomWindow | null,
 ): echarts.EChartsOption {
   const times = candles.map((c) => axisLabel(c.ts, tf));
-  const byTs = new Map(candles.map((c, i) => [c.ts, i]));
+  const byTs = new Map(candles.map((c, i) => [normTs(c.ts), i]));
 
-  /** Align an indicator series to the candle time axis (nulls where missing). */
+  /** Align an indicator series to the candle time axis (nulls where missing).
+   * Keys are normalized: candle ts arrive as "2026-05-28" (daily) or
+   * "2026-08-26T09:30:00" (intraday, no zone) while indicator points carry a
+   * zone suffix ("…T00:00:00+00:00") — an exact-string match silently yields
+   * all-nulls, so compare zone-stripped, then date-only as fallback. */
   const align = <T,>(pts: T[] | undefined, pick: (p: T) => number, tsOf: (p: T) => string) => {
     const out: (number | null)[] = new Array<number | null>(candles.length).fill(null);
     for (const p of pts ?? []) {
-      const idx = byTs.get(tsOf(p));
+      const key = normTs(tsOf(p));
+      const idx = byTs.get(key) ?? byTs.get(key.slice(0, 10));
       if (idx !== undefined) out[idx] = pick(p);
     }
     return out;
