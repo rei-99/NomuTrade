@@ -551,7 +551,7 @@ def _build_graph(engine: AssistantEngine, db: AsyncSession, session: SessionData
             f"({candidate.name})? If so I'll prepare a suggested ticket — "
             f"{bits} — for you to review and confirm in the order ticket; I "
             f"never place orders myself. "
-            f'Reply "yes" to continue or "no" to cancel. {pkg.DISCLAIMER_TEXT}'
+            f'Reply "yes" to continue or "no" to cancel.'
         )
         return {
             "route": "trade",
@@ -611,7 +611,7 @@ def _build_graph(engine: AssistantEngine, db: AsyncSession, session: SessionData
                 f"{_describe_ticket(ticket)} is ready as a prefill in the "
                 f"order ticket. Review it there and hit submit to send the "
                 f"order; I never place orders myself, so nothing is booked "
-                f"until you do. {pkg.DISCLAIMER_TEXT}"
+                f"until you do."
             )
             return {
                 "route": "trade",
@@ -637,8 +637,7 @@ def _build_graph(engine: AssistantEngine, db: AsyncSession, session: SessionData
         """Negative to a pending state: clear it politely, no ticket."""
         answer = (
             "Understood — I've discarded the pending trade idea; nothing was "
-            "prepared or submitted. Just tell me what you'd like to do next. "
-            f"{pkg.DISCLAIMER_TEXT}"
+            "prepared or submitted. Just tell me what you'd like to do next."
         )
         return {
             "route": "trade",

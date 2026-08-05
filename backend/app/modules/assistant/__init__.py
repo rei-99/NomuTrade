@@ -75,8 +75,12 @@ ASSISTANT_QUERY = "ASSISTANT_QUERY"
 
 RECENT_TRANSACTIONS_LIMIT = 10
 
-# Fixed advisory disclaimer (design 27, D-27.5/D-27.6 compliance guard): every
-# trade or review answer — mock or LLM-drafted — ends with this sentence.
+# Advisory disclaimer (design 27, D-27.5/D-27.6 compliance guard): attached
+# inline ONLY to advice-shaped "review" answers (owner decision 2026-08-05 —
+# per-message hedging on every reply was noisy; the ambient disclaimer now
+# lives as a static line in the Assistant UI). The behavioral guardrail is
+# unchanged: the assistant never places orders; suggestions land as ticket
+# prefills the user confirms (FR-AI-003).
 DISCLAIMER_TEXT = (
     "This is advisory only, not investment advice — the decision to trade is "
     "always yours."
@@ -670,18 +674,17 @@ class AssistantEngine:
             qty_text = f"{quantity:g} " if quantity is not None else ""
             order_type_text = f" at {order_type}" if order_type else ""
             answer = (
-                f"I can't place trades — I'm advisory only, and orders are yours "
-                f"to confirm. Based on the latest data I've prepared a suggested "
-                f"ticket: {side} {qty_text}{instrument.symbol} "
-                f"({instrument.name}){order_type_text}.{price_note} Review it in "
-                f"the order ticket and confirm to submit. {DISCLAIMER_TEXT}"
+                f"I've prepared a suggested ticket: {side} {qty_text}"
+                f"{instrument.symbol} ({instrument.name}){order_type_text}."
+                f"{price_note} Review it in the order ticket and confirm to "
+                f"submit — nothing is booked until you do."
             )
         else:
             answer = (
-                f"I can't place trades — I'm advisory only. Tell me which "
-                f"instrument you want to {side.lower()} (symbol or name) and I'll "
-                f"prepare a suggested ticket for you to confirm in the order "
-                f"ticket. {DISCLAIMER_TEXT}"
+                f"Sure — tell me which instrument you want to "
+                f"{side.lower()} (symbol or name) and I'll prepare a "
+                f"suggested ticket for you to review and confirm in the "
+                f"order ticket."
             )
         return {"answer": answer, "citations": citations, "suggested_ticket": ticket}
 
@@ -1197,12 +1200,14 @@ class _Runtime:
 _RUNTIME = _Runtime()
 
 _SYSTEM_PROMPT = (
-    "You are the STP trading platform's assistant. Strict rules: you are "
-    "advisory-only — never tell the user to buy or sell and never place "
-    "orders; never invent figures, prices, dates or events — use only the "
-    "facts in the supplied grounding; never promise returns or give price "
-    "targets; answer in the language of the user's question (English or "
-    "Japanese)."
+    "You are the STP trading platform's assistant — a sharp desk assistant. "
+    "Answer directly and confidently, in the language of the user's question "
+    "(English or Japanese). Strict rules: use only the facts in the supplied "
+    "grounding — never invent figures, prices, dates or events; never "
+    "promise returns or give price targets; never claim to have placed an "
+    "order — suggestions are always drafted as an order-ticket prefill the "
+    "user confirms. Do not add disclaimers and do not refer to yourself as "
+    "an AI model."
 )
 
 
@@ -1223,7 +1228,7 @@ def _prose_messages(intent: str, result: dict, question: str) -> list[dict] | No
         "Rewrite the grounding's 'answer' into a natural, concise reply "
         "(at most 80 words)."
     )
-    if intent in ("trade", "review"):
+    if intent == "review":
         user += f' End the reply with exactly this sentence: "{DISCLAIMER_TEXT}"'
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -1250,7 +1255,7 @@ async def _llm_prose(intent: str, result: dict, question: str) -> str | None:
         return None
     if not prose:
         return None
-    if intent in ("trade", "review") and DISCLAIMER_TEXT not in prose:
+    if intent == "review" and DISCLAIMER_TEXT not in prose:
         prose = f"{prose} {DISCLAIMER_TEXT}"
     return prose
 
@@ -1502,7 +1507,7 @@ async def query_assistant_stream(
                         assembled += chunk
                         yield _sse("delta", {"text": chunk})
                 elif (
-                    intent in ("trade", "review")
+                    intent == "review"
                     and DISCLAIMER_TEXT not in assembled
                 ):
                     suffix = f" {DISCLAIMER_TEXT}"

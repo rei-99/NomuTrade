@@ -425,7 +425,10 @@ async def test_trade_answer_uses_instrument_currency(client, app):
     answer = response.json()["answer"]
     assert "$2,600.00" in answer
     assert "¥" not in answer
-    assert assistant_module.DISCLAIMER_TEXT in answer
+    # Trade answers use the positive phrasing; the inline disclaimer survives
+    # only on the advisory review intent (2026-08-05 tone policy).
+    assert "suggested ticket" in answer
+    assert assistant_module.DISCLAIMER_TEXT not in answer
 
 
 # ---------------------------------------------------------------------------

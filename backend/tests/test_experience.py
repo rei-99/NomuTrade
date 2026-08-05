@@ -900,7 +900,7 @@ async def test_assistant_grounding_and_guardrail(client, app):
     assert ticket["instrument"] == "TSLA"
     assert ticket["side"] == "BUY"
     assert ticket["quantity"] == 100
-    assert "can't place trades" in body["answer"]
+    assert "suggested ticket" in body["answer"]
     assert await _order_count() == before
 
     # Out of scope -> explicit, polite decline.

@@ -170,7 +170,10 @@ async def test_owner_flow_clarify_then_confirm_mock(client, app):
     turn3 = await _ask(client, headers, "I confirm that AAPL(Apple) help me purchase", cid)
     assert assistant_module.DECLINE_TEXT not in turn3["answer"]
     assert "AAPL" in turn3["answer"]
-    assert assistant_module.DISCLAIMER_TEXT in turn3["answer"]
+    # Trade answers no longer carry the inline disclaimer (2026-08-05: the
+    # ambient UI line covers it) — the guardrail is stated positively instead.
+    assert assistant_module.DISCLAIMER_TEXT not in turn3["answer"]
+    assert "never place orders" in turn3["answer"]
 
     # Guardrail (FR-AI-003): the whole flow created ZERO orders.
     assert await _order_count(app) == orders_before
@@ -326,7 +329,10 @@ async def test_live_classifier_owner_flow(client, app, restore_assistant):
     assert ticket["quantity"] == 10
     assert ticket["order_type"] == "MARKET"
     assert fake.route_calls == 1  # pending resolution never calls the LLM
-    assert assistant_module.DISCLAIMER_TEXT in turn2["answer"]
+    # Disclaimer is review-intent-only now: the live prose seam passes the
+    # drafter's reply through without the forced suffix.
+    assert assistant_module.DISCLAIMER_TEXT not in turn2["answer"]
+    assert "LLM-drafted" in turn2["answer"]
     assert await _order_count(app) == orders_before
 
 

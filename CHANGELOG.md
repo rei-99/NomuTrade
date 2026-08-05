@@ -7,6 +7,33 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Assistant tone: disclaimer only where it belongs, confident answers everywhere else
+
+**Driver:** owner feedback — the assistant hedged every reply with "I'm
+advisory only / I can't make decisions", which reads as noise on every
+message.
+
+- **Policy change (owner-approved)**: the inline `DISCLAIMER_TEXT` is now
+  attached **only to the advice-shaped `review` intent** ("should I trim…"),
+  in both mock and LLM-drafted/streamed paths. Trade answers drop the
+  "I can't place trades — I'm advisory only" preamble for positive phrasing
+  ("I've prepared a suggested ticket … Review it in the order ticket and
+  confirm to submit — nothing is booked until you do"); clarify/confirm/
+  cancel flows in the LangGraph agent lose the appended disclaimer too.
+- **Guardrail unchanged (FR-AI-003)**: the assistant never places orders —
+  suggestions still land as ticket prefills the user confirms; the static
+  ambient disclaimer stays in the Assistant page header (EN/JA), so the
+  advisory framing is always on screen, just not repeated per message.
+- **Live-LLM prompt**: system prompt now instructs direct, confident answers
+  and forbids self-referential AI disclaimers; grounding/citation/no-price-
+  target rules intact.
+- Tests updated to the new policy (4 assertions across test_experience /
+  test_genai_agent / test_agent_workflow — incl. the live-path prose seam).
+- Verified: backend **145/145**, frontend **328/328** (stable across runs),
+  build clean, **live against the real LLM** (claude-haiku-4-5, UP): trade
+  question answered with confident grounded prose and no hedge; "should I
+  trim my TSLA?" keeps the disclaimer as its final sentence.
+
 ## 2026-08-04 — Owner batch: risk-metrics Q&A, dynamic-budget design (29), admin-only portfolio creation, ops order requeue
 
 **Driver:** five owner asks — presentation Q&A ammo, real-world budget
