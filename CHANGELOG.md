@@ -7,6 +7,15 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Brand mark: Nomura-style emblem + favicon
+
+- New `BrandMark.tsx` inline SVG — white "N" on a Nomura-green rounded
+  square (#007A5E) — replacing the `▮▶` glyph in the topbar brand and the
+  login title; `favicon.svg` added and wired in `index.html`.
+- Verified: 331/331 tests, build clean, CDP screenshots (topbar closeup +
+  login). Ops note: Vite dev served an empty CSS module mid-session (wedged
+  transform cache) — an unstyled dev page = restart Vite.
+
 ## 2026-08-05 — Rebrand to NomuTrade + collapsible sidebar + larger text
 
 **Driver:** owner requests — three presentation-polish items.
