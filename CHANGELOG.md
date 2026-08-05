@@ -9,11 +9,13 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ## 2026-08-05 — Brand mark: Nomura-style emblem + favicon
 
-- New `BrandMark.tsx` inline SVG — white "N" on a Nomura-green rounded
-  square (#007A5E) — replacing the `▮▶` glyph in the topbar brand and the
-  login title; `favicon.svg` added and wired in `index.html`.
-- Verified: 331/331 tests, build clean, CDP screenshots (topbar closeup +
-  login). Ops note: Vite dev served an empty CSS module mid-session (wedged
+- New `BrandMark.tsx` inline SVG — white "N" on a rounded square — replacing
+  the `▮▶` glyph in the topbar brand and the login title; `favicon.svg`
+  wired in `index.html`. Color researched against Nomura's official
+  branding: the corporate color is **Heartful Red** (#CA142A approximation;
+  nomuraholdings.com 100th-anniversary branding) — the N's diagonal nods to
+  the anniversary mark's rising line. Verified via CDP screenshots.
+  Ops note: Vite dev served an empty CSS module mid-session (wedged
   transform cache) — an unstyled dev page = restart Vite.
 
 ## 2026-08-05 — Rebrand to NomuTrade + collapsible sidebar + larger text
