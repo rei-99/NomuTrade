@@ -59,7 +59,7 @@ export interface TabDef {
 
 export const TABS: Record<TabId, TabDef> = {
   trading: { id: "trading", to: "/", labelKey: "nav.trading" },
-  orders: { id: "orders", to: "/orders", labelKey: "nav.orders" },
+  orders: { id: "orders", to: "/orders", labelKey: "nav.orders", perms: ["ORDER_VIEW", "STP_EXCEPTION_HANDLE"] },
   trades: { id: "trades", to: "/trades", labelKey: "nav.trades", perms: ["TRADE_VIEW"] },
   alerts: { id: "alerts", to: "/alerts", labelKey: "nav.alerts" },
   reports: { id: "reports", to: "/reports", labelKey: "nav.reports", perms: ["REPORT_VIEW"] },
@@ -118,7 +118,7 @@ export const PERSONA_TABS: Record<Persona, TabId[]> = {
   // "assistant" sits after "reports": perm-gated by ASSISTANT_USE, so risk@
   // (no ASSISTANT_USE) never sees it while client@ does.
   RISK: ["portfolios", "trades", "audit", "governance", "reports", "assistant", "access", "notifications", "connect"],
-  OPERATION: ["trades", "governance", "access", "notifications", "connect"],
+  OPERATION: ["trades", "orders", "governance", "access", "notifications", "connect"],
   NONE: ["access", "notifications", "connect"],
 };
 

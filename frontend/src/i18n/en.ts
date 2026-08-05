@@ -285,6 +285,14 @@ export const en = {
   "orders.cancel": "Cancel",
   "orders.amendTitle": "Amend order {id}",
   "orders.saveAmendment": "Save amendment",
+  "orders.requeue": "Requeue",
+  "orders.requeueTitle": "Requeue order {id}",
+  "orders.requeueReason": "Reject reason",
+  "orders.requeueSubmit": "Fix & requeue",
+  "orders.requeueSubmitting": "Requeuing…",
+  "orders.requeueDone": "Order {id} requeued",
+  "orders.requeueFailed": "Requeue failed",
+  "orders.requeueViolations": "Still rejected by validation:",
 
   // ---- trades page ----
   "trades.title": "Trade Blotter",

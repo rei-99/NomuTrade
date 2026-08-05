@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../../api/client";
+import { api, ApiError } from "../../api/client";
 import type { Order } from "../../api/types";
+import { useAuth } from "../../auth";
 import { Orders } from "../Orders";
 import { makePortfolio, renderUI } from "../../test/utils";
 
@@ -9,6 +10,8 @@ vi.mock("../../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../api/client")>();
   return { ...mod, api: vi.fn() };
 });
+
+vi.mock("../../auth", () => ({ useAuth: vi.fn() }));
 
 // The ticket modal is stubbed: Orders only owns opening it.
 vi.mock("../../components/OrderTicket", () => ({
@@ -44,19 +47,27 @@ const ORDERS = [
   order({ order_id: "o-3", order_type: "MARKET", status: "FILLED", limit_price: null, executions: [{ execution_id: "e-1", price: 190.5, quantity: 50, executed_at: "2026-08-01T10:00:01Z" }] }),
 ];
 
-function stubApi() {
+function stubApi(orders: Order[] = ORDERS) {
   vi.mocked(api).mockImplementation(async (path: string) => {
     if (path === "/portfolios") return { items: [makePortfolio()], next_cursor: null };
-    if (path === "/orders") return { items: ORDERS, next_cursor: null };
-    if (path.startsWith("/orders/")) return undefined; // cancel / amend
+    if (path === "/orders") return { items: orders, next_cursor: null };
+    if (path.startsWith("/orders/")) return undefined; // cancel / amend / requeue
     throw new Error(`unexpected api call ${path}`);
   });
+}
+
+function stubAuth(perms: string[] = []) {
+  vi.mocked(useAuth).mockReturnValue({
+    hasPerm: (...ps: string[]) => ps.some((p) => perms.includes(p)),
+  } as never);
 }
 
 describe("Orders page", () => {
   beforeEach(() => {
     vi.mocked(api).mockReset();
+    vi.mocked(useAuth).mockReset();
     stubApi();
+    stubAuth();
   });
 
   it("renders the blotter incl. trail details and filled quantities", async () => {
@@ -135,5 +146,95 @@ describe("Orders page", () => {
     await screen.findAllByText("AAPL");
     fireEvent.click(screen.getByRole("button", { name: "New ticket" }));
     expect(screen.getByText("OrderTicketStub")).toBeInTheDocument();
+  });
+
+  it("the status filter offers REJECTED", async () => {
+    renderUI(<Orders />);
+    await screen.findAllByText("AAPL");
+    expect(screen.getByRole("option", { name: "REJECTED" })).toBeInTheDocument();
+  });
+
+  it("Requeue appears on REJECTED rows only with STP_EXCEPTION_HANDLE", async () => {
+    const rows = [
+      ...ORDERS,
+      order({ order_id: "o-r1", order_type: "MARKET", limit_price: null, status: "REJECTED", reject_reason: "INVALID_QUANTITY" }),
+    ];
+    stubApi(rows);
+
+    const first = renderUI(<Orders />);
+    await screen.findAllByText("AAPL");
+    expect(screen.queryByRole("button", { name: "Requeue" })).not.toBeInTheDocument();
+    first.unmount();
+
+    stubAuth(["STP_EXCEPTION_HANDLE"]);
+    renderUI(<Orders />);
+    await screen.findAllByText("AAPL");
+    expect(screen.getByRole("button", { name: "Requeue" })).toBeInTheDocument();
+  });
+
+  it("requeue modal shows the reason, prefills type-aware fields and posts the fix", async () => {
+    stubApi([
+      ...ORDERS,
+      order({ order_id: "o-r1", status: "REJECTED", reject_reason: "INVALID_QUANTITY", quantity: 10.5, limit_price: 185 }),
+    ]);
+    stubAuth(["STP_EXCEPTION_HANDLE"]);
+    renderUI(<Orders />);
+    await screen.findAllByText("AAPL");
+
+    fireEvent.click(screen.getByRole("button", { name: "Requeue" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Requeue order o-r1");
+    expect(dialog).toHaveTextContent("INVALID_QUANTITY");
+    // LIMIT order: quantity + limit only (no stop/trail fields).
+    const qtyInput = screen.getByLabelText("Qty");
+    expect(qtyInput).toHaveValue(10.5);
+    expect(screen.getByLabelText(/Limit price/)).toHaveValue(185);
+    expect(screen.queryByLabelText(/Stop price/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Trail amount/)).not.toBeInTheDocument();
+
+    fireEvent.change(qtyInput, { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fix & requeue" }));
+
+    await screen.findByText("Order o-r1 requeued", { selector: ".toast" });
+    const post = vi.mocked(api).mock.calls.find((c) => c[0] === "/orders/o-r1/requeue");
+    expect(post?.[1]).toEqual({
+      method: "POST",
+      body: { quantity: 10, limit_price: 185 },
+      skipErrorToast: true,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the modal open and shows the returned reasons on a 422", async () => {
+    const rows = [
+      ...ORDERS,
+      order({ order_id: "o-r1", status: "REJECTED", reject_reason: "INVALID_QUANTITY", quantity: 10.5, limit_price: 185 }),
+    ];
+    stubApi(rows);
+    stubAuth(["STP_EXCEPTION_HANDLE"]);
+    renderUI(<Orders />);
+    await screen.findAllByText("AAPL");
+
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/orders/o-r1/requeue") {
+        throw new ApiError(422, {
+          code: "BUSINESS_RULE_VIOLATION",
+          message: "quantity must be positive and a multiple of lot size 1",
+          details: [
+            { code: "INVALID_QUANTITY", message: "quantity must be positive and a multiple of lot size 1" },
+          ],
+        });
+      }
+      if (path === "/portfolios") return { items: [makePortfolio()], next_cursor: null };
+      if (path === "/orders") return { items: rows, next_cursor: null };
+      throw new Error(`unexpected api call ${path}`);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Requeue" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Fix & requeue" }));
+
+    await within(dialog).findByText(/quantity must be positive and a multiple of lot size 1/);
+    expect(screen.getByRole("dialog")).toBeInTheDocument(); // stays open for another try
   });
 });

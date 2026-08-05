@@ -7,6 +7,48 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-04 — Owner batch: risk-metrics Q&A, dynamic-budget design (29), admin-only portfolio creation, ops order requeue
+
+**Driver:** five owner asks — presentation Q&A ammo, real-world budget
+modeling, tighter portfolio provisioning, and a real operations failure
+workflow.
+
+- **Docs — risk metrics & ops mapping (T1/T5)**: Q&A sections appended to
+  `presentation/demo-5min-script.md` — every Risk Exposure metric (what it
+  means, the exact formula from `valuation.py`, why it's on the panel:
+  concentration, annualized vol, historical VaR-95/ES-95 1d, Sharpe (rf=0),
+  max drawdown, day change, incl. the repriced-history fallback for fresh
+  books) and the ops↔trader mapping answer (many-to-many desk queue in
+  reality; role-based `STP_EXCEPTION_HANDLE` queue in our design, SoD
+  separation from ORDER_SUBMIT).
+- **Design 29 — dynamic portfolio budget (T2, research only, not
+  implemented)**: real-world capital models surveyed (tiered limits,
+  haircuts/margin, VaR/ES capital, Kelly, Markowitz); chosen model
+  **RACA** — budget = tier_base × (target_vol ÷ universe_vol), clamped to
+  tier floor/ceiling, computed from daily closes we already store; phased
+  plan: budget-quote endpoint → model default with admin override → living
+  realized-ES risk limit. `docs/design/29-dynamic-portfolio-budget.md`.
+- **Portfolio creation is admin-only (T3)**: `POST /portfolios` moved from
+  ORDER_SUBMIT to **ROLE_MANAGE** (Security Administrator — provisioning is
+  administrative); UI button gated the same; tests updated (secadmin 201 /
+  dedup / validation; trader + client 403). Note: read access is orthogonal —
+  secadmin sees created books in the list; position-level reads still need
+  PORTFOLIO_VIEW by design.
+- **Ops order requeue (T4)**: Operations can finally *see* and *fix* failed
+  orders. New `require_any_permission` OR-gate in core/security.py; order
+  list/detail readable with ORDER_VIEW **or** STP_EXCEPTION_HANDLE; Orders
+  page + tab enabled for the OPERATION persona; `POST /orders/{id}/requeue`
+  (ops-only, REJECTED-only) amends qty/limit/stop/trail, re-runs full
+  pre-trade validation, and on success moves the order back to ACCEPTED with
+  the `orders.accepted` outbox event (engine fills it), `ORDER_REQUEUED`
+  audit and an owner notification — still-invalid stays REJECTED with the
+  updated reason (422 + details for the modal). Requeue modal on the Orders
+  page (type-aware fields, in-modal reasons). Design 02 edge cases updated.
+- Verified: backend **145/145** (5 new requeue tests); frontend **328/328**
+  (+4 Orders tests); `npm run build` clean; live E2E — ops lists REJECTED
+  orders, trader requeue → 403, ops requeue with qty fix → ACCEPTED →
+  FILLED with execution.
+
 ## 2026-08-04 — Frontend test suite from zero: 324 tests, 89.5% statement coverage
 
 **Driver:** owner ask — frontend tests with high coverage (previously zero;

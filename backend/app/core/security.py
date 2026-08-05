@@ -8,6 +8,8 @@
   ACTIVE grants, with the grant window re-checked at request time. Results are
   cached in-process for 60 s; call invalidate_permissions(user_id) after any
   grant change. Denials write an AUTHORIZATION_DENIED audit event.
+- require_any_permission(*perms): the OR counterpart (any one of the perms
+  suffices), same denial audit behavior.
 """
 
 from __future__ import annotations
@@ -292,6 +294,44 @@ def require_permission(*perms: str):
             )
             missing = ", ".join(sorted(required - effective))
             raise Forbidden(f"missing required permission: {missing}")
+        return session
+
+    return _dependency
+
+
+def require_any_permission(*perms: str):
+    """Dependency factory enforcing that the caller holds ANY of the given
+    permissions (OR semantics — the counterpart of require_permission's AND).
+
+    Same deny-by-default contract: holding none of them -> AUTHORIZATION_DENIED
+    audit + 403. Used for endpoints shared by several roles (e.g. order
+    visibility for traders via ORDER_VIEW and ops via STP_EXCEPTION_HANDLE).
+    """
+    accepted = set(perms)
+
+    async def _dependency(
+        request: Request,
+        session: SessionData = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> SessionData:
+        effective = await _cached_permissions(db, session.user_id)
+        if not accepted & effective:
+            await audit_log.write_audit(
+                db,
+                actor_id=session.user_id,
+                event_type=audit_log.AUTHORIZATION_DENIED,
+                severity="INFO",
+                source_ip=request.client.host if request.client else None,
+                payload={
+                    "required_any": sorted(accepted),
+                    "path": request.url.path,
+                },
+                flush_only=False,  # security-critical: persist immediately
+            )
+            raise Forbidden(
+                "missing required permission: any of "
+                + ", ".join(sorted(accepted))
+            )
         return session
 
     return _dependency
