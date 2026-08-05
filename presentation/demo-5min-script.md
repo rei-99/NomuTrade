@@ -337,3 +337,38 @@ hotline.** And that is what we built.
   in separate hands, which is the segregation-of-duties point compliance will
   ask about. The audit trail records who requeued what and why, so the
   queue is fast *and* accountable.
+
+## Q&A — What is the outbox relay? ("How do you guarantee no step is lost?")
+
+**Answer: the database keeps the promise, the relay is just the courier.**
+Every state change commits *with* its event in one transaction — so a fill
+can never exist without its settlement event, nor the reverse.
+
+- **The problem it solves**: you can't write a database and publish a message
+  atomically. Publish first and the commit fails → a phantom fill moves
+  positions and cash. Commit first and crash before publishing → the fill
+  exists but the STP worker never hears about it; settlement silently never
+  happens — which FR-ORD-005 (zero manual steps) forbids.
+- **The pattern**: the module writes the state row *and* an `OutboxEvent`
+  row in **one DB commit** — both or neither. The relay is a background loop
+  (every 0.2 s, batches of 100) that reads unpublished rows
+  (`published_at IS NULL`), publishes them to the event bus, stamps them,
+  commits. The DB is the source of truth for "what happened"; the relay only
+  moves that fact onto the bus.
+- **Why duplicates don't hurt**: a crash between publish and stamp means the
+  row is republished — delivery is *at-least-once* by design, so every
+  consumer is idempotent (the STP worker skips executions that already have
+  an instruction; the engine skips closed orders; the projector swallows the
+  unique-constraint hit). A redelivery is invisible; a lost event is
+  impossible.
+- **Resilience details worth quoting**: a failed batch logs and retries —
+  it can't kill the relay or the other workers; and on shutdown an in-flight
+  batch drains to completion (cancelling mid-DB-call can wedge aiosqlite —
+  a war story we actually hit and fixed).
+- **One-liner for stage**: "We don't try to make two systems atomic — we make
+  the event a database row committed with the trade, and let a courier catch
+  up. That's why the pipeline can claim zero manual steps."
+
+*Code references if pressed: `backend/app/core/events.py` (`write_outbox`,
+`outbox_relay`, `_relay_batch`); design doc §4.2 (D-02); the sequence diagram
+in `presentation/trade-lifecycle.md` (PNG: `trade-lifecycle-sequence.png`).*
