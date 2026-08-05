@@ -88,11 +88,11 @@ describe("Governance page", () => {
     stubPerms(["GOVERNANCE_VIEW", "INTEGRATION_MONITOR", "TRADE_VIEW", "STP_EXCEPTION_HANDLE"]);
     renderUI(<Governance />);
 
-    await screen.findByText("CyberArk");
+    await screen.findByText("SMTP");
+    expect(screen.queryByText("CyberArk")).not.toBeInTheDocument(); // PAM tile hidden (features flag)
     expect(screen.getByText("12")).toBeInTheDocument(); // active grants
     expect(screen.getByText("oldest 5 h")).toBeInTheDocument();
     expect(screen.getByText("ops@demo.nomura")).toBeInTheDocument(); // recent break-glass
-    expect(screen.getByText("mock")).toBeInTheDocument(); // mock integration badge
     expect(screen.getByText(/ex-1 · EXECUTED · dropped event · age 95s/)).toBeInTheDocument();
     expect(screen.getByText("$9,525.00")).toBeInTheDocument(); // settlement value
     expect(screen.getByText("Alpha Book")).toBeInTheDocument();
@@ -109,7 +109,7 @@ describe("Governance page", () => {
   it("hides retry without STP_EXCEPTION_HANDLE", async () => {
     stubPerms(["INTEGRATION_MONITOR"]);
     renderUI(<Governance />);
-    await screen.findByText("CyberArk");
+    await screen.findByText("SMTP");
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     // sections stay perm-scoped: no summary without GOVERNANCE_VIEW
     expect(screen.queryByText("Active grants")).not.toBeInTheDocument();

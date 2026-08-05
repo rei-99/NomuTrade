@@ -494,7 +494,7 @@ export const ja: Record<I18nKey, string> = {
   "notif.channels": "チャネル",
   "notif.categories": "カテゴリ",
   "notif.lockedTip": "セキュリティ上重要 — 無効化できません",
-  "notif.prefsNote": "ブレークグラス・付与・PAM のアラートはセキュリティ上重要なため無効化できません。設定はサーバーのメモリに保存され、再起動時にリセットされます。",
+  "notif.prefsNote": "ブレークグラス・付与のアラートはセキュリティ上重要なため無効化できません。設定はサーバーのメモリに保存され、再起動時にリセットされます。",
 
   // ---- connect guide page (demo) ----
   "connect.title": "接続ガイド",

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { ListResponse, NotificationItem, NotificationPreferences } from "../api/types";
 import { Badge } from "../components/Badge";
+import { SHOW_PAM } from "../features";
 import { fmtTs } from "../format";
 import { useT } from "../i18n";
 
-/** Security-critical categories the server refuses to disable (FR-NTF-003 E1). */
-const NON_SUPPRESSIBLE = ["BREAK_GLASS", "GRANT", "PAM"];
+/** Security-critical categories the server refuses to disable (FR-NTF-003 E1).
+ *  PAM is omitted while the presentation flag hides it (features.ts). */
+const NON_SUPPRESSIBLE = SHOW_PAM ? ["BREAK_GLASS", "GRANT", "PAM"] : ["BREAK_GLASS", "GRANT"];
 const CHANNELS = ["IN_APP", "EMAIL"] as const;
 
 export function Notifications() {
@@ -57,12 +59,20 @@ export function Notifications() {
     }
   };
 
-  // Category toggles: every category seen in the list plus the locked ones.
+  // Category toggles: every category seen in the list plus the locked ones
+  // (PAM items/categories hidden while the presentation flag is off).
   const categories = useMemo(() => {
-    const cats = new Set(items.map((n) => n.category));
+    const cats = new Set(
+      items.map((n) => n.category).filter((c) => SHOW_PAM || c !== "PAM"),
+    );
     for (const c of NON_SUPPRESSIBLE) cats.add(c);
     return [...cats].sort();
   }, [items]);
+
+  const visibleItems = useMemo(
+    () => items.filter((n) => SHOW_PAM || n.category !== "PAM"),
+    [items],
+  );
 
   // Optimistic save: flip local state, PATCH, revert on failure (client toasts).
   const patchPrefs = async (
@@ -109,11 +119,11 @@ export function Notifications() {
         <div className="panel-header">
           <h3>{t("notif.inbox")}</h3>
         </div>
-        {items.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <div className="panel-empty muted">{t("notif.empty")}</div>
         ) : (
           <div className="notif-list">
-            {items.map((n) => (
+            {visibleItems.map((n) => (
               <div
                 key={n.notification_id}
                 className={`bell-item notif-row${n.status !== "READ" ? " bell-item-unread" : ""}`}

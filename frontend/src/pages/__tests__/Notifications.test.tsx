@@ -70,11 +70,13 @@ describe("Notifications page", () => {
     await screen.findByText("Title n1");
 
     // Non-suppressible categories are static chips without checkboxes.
-    for (const locked of ["BREAK GLASS", "GRANT", "PAM"]) {
+    // (PAM stays locked server-side but is hidden from the UI — features flag.)
+    for (const locked of ["BREAK GLASS", "GRANT"]) {
       const chip = screen.getByText(locked);
       expect(chip).toHaveClass("chip-static");
       expect(chip.closest("span")!.querySelector("input")).toBeNull();
     }
+    expect(screen.queryByText("PAM")).not.toBeInTheDocument();
 
     const alertChip = screen.getByText("ALERT", { selector: "label" });
     expect(alertChip).not.toHaveClass("chip-on"); // ALERT: false in prefs

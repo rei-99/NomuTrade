@@ -11,6 +11,10 @@ vi.mock("../../api/client", async (importOriginal) => {
   return { ...mod, api: vi.fn() };
 });
 vi.mock("../../auth", () => ({ useAuth: vi.fn() }));
+// The PAM tab is hidden by default for the presentation (features.ts); this
+// suite covers the tab itself, so force the flag on. The hidden default is
+// asserted in AdminPamHidden.test.tsx.
+vi.mock("../../features", () => ({ SHOW_PAM: true }));
 
 const ROLES: Role[] = [
   { role_id: "role-1", name: "Trader", description: "Can trade", built_in: true, version: 3, permission_actions: ["ORDER_SUBMIT"] },

@@ -15,6 +15,7 @@ import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
+import { SHOW_PAM } from "../features";
 import { fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
 import { useT } from "../i18n";
@@ -49,7 +50,7 @@ export function Admin() {
     if (hasPerm("GRANT_VIEW", "GRANT_MANAGE")) tabs.push({ id: "grants", labelKey: "admin.tab.grants" });
     if (hasPerm("BREAKGLASS_ELIGIBLE", "BREAKGLASS_REVIEW"))
       tabs.push({ id: "breakglass", labelKey: "admin.tab.breakglass" });
-    if (hasPerm("PAM_CHECKOUT")) tabs.push({ id: "pam", labelKey: "admin.tab.pam" });
+    if (SHOW_PAM && hasPerm("PAM_CHECKOUT")) tabs.push({ id: "pam", labelKey: "admin.tab.pam" });
     if (hasPerm("ROLE_MANAGE")) tabs.push({ id: "restricted", labelKey: "admin.tab.restricted" });
     return tabs;
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -7,6 +7,24 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Presentation hide: PAM surfaces behind a frontend flag
+
+**Driver:** owner request — no PAM/CyberArk UI during the final presentation
+(the owner doesn't want to field questions on an unfamiliar subsystem).
+
+- New `frontend/src/features.ts`: `SHOW_PAM = false` — one-line flip back.
+  Frontend-only; the PAM backend API and behavior are untouched.
+- Hidden while the flag is off: the Admin → PAM tab (even with
+  PAM_CHECKOUT), the locked PAM category chip and any PAM items in the
+  notification center, the Governance "CyberArk" health tile, and the PAM
+  mention in the preferences note (EN/JA).
+- Tests: `Admin.test.tsx` mocks the flag ON to keep the PAM tab flows
+  covered; new `AdminPamHidden.test.tsx` asserts the default hidden state
+  (no tab even with all permissions; PAM-only user sees nothing);
+  Governance/Notifications tests assert the hidden tile/chip.
+- Verified: frontend **330/330** (43 files), `npm run build` clean; backend
+  untouched (145/145 unaffected — frontend-only change).
+
 ## 2026-08-05 — Assistant tone: disclaimer only where it belongs, confident answers everywhere else
 
 **Driver:** owner feedback — the assistant hedged every reply with "I'm

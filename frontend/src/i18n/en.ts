@@ -492,7 +492,7 @@ export const en = {
   "notif.channels": "Channels",
   "notif.categories": "Categories",
   "notif.lockedTip": "Security-critical — cannot be disabled",
-  "notif.prefsNote": "Break glass, grant and PAM alerts are security-critical and cannot be disabled. Preferences are stored in memory on the server and reset on restart.",
+  "notif.prefsNote": "Break glass and grant alerts are security-critical and cannot be disabled. Preferences are stored in memory on the server and reset on restart.",
 
   // ---- connect guide page (demo) ----
   "connect.title": "Connect",

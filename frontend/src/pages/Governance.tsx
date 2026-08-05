@@ -11,6 +11,7 @@ import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { StatCard } from "../components/StatCard";
 import { useToast } from "../components/Toast";
+import { SHOW_PAM } from "../features";
 import { fmtJpy, fmtNum, fmtTs } from "../format";
 import { useAuth } from "../auth";
 import { usePoll } from "../hooks";
@@ -96,6 +97,11 @@ export function Governance() {
     }
   };
 
+  // The CyberArk/PAM health tile is hidden while the presentation flag is
+  // off (features.ts) — the API response itself is unchanged.
+  const visibleIntegrations =
+    health?.integrations.filter((i) => SHOW_PAM || i.name.toLowerCase() !== "cyberark") ?? [];
+
   return (
     <div className="page">
       <div className="page-header">
@@ -165,10 +171,10 @@ export function Governance() {
               </span>
             </div>
             <div className="health-grid">
-              {health.integrations.length === 0 && (
+              {visibleIntegrations.length === 0 && (
                 <div className="panel-empty muted">{t("gov.noIntegrations")}</div>
               )}
-              {health.integrations.map((i) => (
+              {visibleIntegrations.map((i) => (
                 <div key={i.name} className={`health-tile health-${i.status.toLowerCase()}`}>
                   <div className="health-name">{i.name}</div>
                   <Badge text={i.status} />
