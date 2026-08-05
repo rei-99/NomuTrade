@@ -7,7 +7,24 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Trading workspace: chart-maximized mode
+## 2026-08-05 — Chart space polish: fill-by-count grids, no overflow, price tag retired
+
+**Driver:** owner review — the expanded chart didn't fill its space, RSI+MACD
+together overflowed the panel, and the last-price tag's margin was wasted
+real estate.
+
+- **Grid heights now fill ~97% of the canvas at every pane count** (was ~76%
+  at base — the "doesn't fill" complaint — and ~100.4% with RSI+MACD, the
+  overflow): base 76/14, one sub-pane 60/12/14, two sub-panes 46/11/13/12.
+- **Last-price axis tag removed** (the dashed level line stays): the green
+  box both covered rightmost candles and forced a permanent 70px right
+  margin — reclaimed to 24px. The tape hero and OHLC legend already carry
+  the live price.
+- Verified: frontend **334/334**, `npm run build` clean; headless
+  screenshots — RSI+MACD panes fully inside the panel with date labels
+  readable, expanded mode filling the space, no tag box over the candles.
+
+
 
 **Driver:** owner ask — a button that hides positions + risk so the price
 chart takes their space, and restores on a second click.

@@ -89,17 +89,23 @@ function buildPriceOption(
       : true;
   const lastPriceColor = dayUp ? CHART_COLORS.up : CHART_COLORS.down;
 
-  // Grid layout: main / volume / [RSI] / [MACD], heights in %.
-  const grids: { height: number }[] = [{ height: showRsi || showMacd ? 44 : 56 }, { height: 12 }];
-  if (showRsi) grids.push({ height: 13 });
-  if (showMacd) grids.push({ height: 15 });
-  const topPad = 4;
+  // Grid layout: main / volume / [RSI] / [MACD], heights in % — sized to
+  // fill ~97% of the canvas at every pane count (previously ~76% unused at
+  // base, ~100.4% and overflowing with both sub-panes on).
+  const subCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
+  const heights: Record<number, number[]> = {
+    0: [76, 14],
+    1: [60, 12, 14],
+    2: [46, 11, 13, 12],
+  };
+  const grids = heights[subCount].map((height) => ({ height }));
+  const topPad = 3;
   const gap = 4;
   let cursor = topPad;
   const gridDefs = grids.map((g, i) => {
     const def = {
       left: 64,
-      right: 70, // room for the last-price axis tag outside the candles
+      right: 24,
       top: `${cursor}%`,
       height: `${g.height}%`,
     };
@@ -154,7 +160,9 @@ function buildPriceOption(
         borderColor: "rgba(8, 153, 129, 0.65)",
         borderColor0: "rgba(242, 54, 69, 0.65)",
       },
-      // Last-price line with an axis tag colored by day direction.
+      // Last-price dashed level line (no axis tag: the box covered the
+      // rightmost candles and ate permanent margin; the tape hero and the
+      // OHLC legend already carry the live price).
       ...(lastCandle
         ? {
             markLine: {
@@ -163,17 +171,7 @@ function buildPriceOption(
               animation: false,
               data: [{ yAxis: lastCandle.close }],
               lineStyle: { color: lastPriceColor, width: 1, type: "dashed" as const },
-              label: {
-                show: true,
-                position: "end" as const,
-                formatter: (p: unknown) =>
-                  fmtNum(Number((p as { value?: unknown }).value), 2),
-                backgroundColor: lastPriceColor,
-                color: "#fff",
-                padding: [2, 5],
-                borderRadius: 2,
-                fontSize: 10,
-              },
+              label: { show: false },
             },
           }
         : {}),
