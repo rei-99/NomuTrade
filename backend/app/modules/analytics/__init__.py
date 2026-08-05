@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -119,12 +119,22 @@ async def get_indicators(
         .where(*tick_filter)
         .order_by(PriceTick.ts)
     )
+    # Warm-up (owner review): windowed indicators need history *before* the
+    # visible window — SMA/EMA/BB use 20 bars, RSI 14, MACD 26+9 — or their
+    # lines start ~20 bars in instead of at the first visible candle. Fetch
+    # extra history, compute over the full series, trim output to the window.
+    warmup_days = 45  # covers MACD's 35 with margin
+    window_start: datetime | None
     if tf == "1D":
-        stmt = stmt.where(PriceTick.ts >= ref_day)
+        stmt = stmt.where(PriceTick.ts >= ref_day - timedelta(days=1))
+        window_start = ref_day
     else:
         days = TIMEFRAME_DAYS[tf]
         if days is not None:
-            stmt = stmt.where(PriceTick.ts >= ref_day - timedelta(days=days))
+            window_start = ref_day - timedelta(days=days)
+            stmt = stmt.where(PriceTick.ts >= window_start - timedelta(days=warmup_days))
+        else:
+            window_start = None  # MAX: full history, nothing to trim
     rows = (await db.execute(stmt)).all()
 
     if tf == "1D":
@@ -140,37 +150,44 @@ async def get_indicators(
     closes = [close for _, close in points]
 
     result: dict[str, list] = {}
+
+    def _trim(entries: list[dict]) -> list[dict]:
+        """Drop warm-up points before the visible window start."""
+        if window_start is None:
+            return entries
+        return [e for e in entries if datetime.fromisoformat(e["ts"]) >= window_start]
+
     if "SMA" in requested:
-        result["SMA"] = [
+        result["SMA"] = _trim([
             {"ts": ts, "value": value}
             for value, ts in zip(ind.sma(closes, 20), timestamps)
             if value is not None
-        ]
+        ])
     if "EMA" in requested:
-        result["EMA"] = [
+        result["EMA"] = _trim([
             {"ts": ts, "value": value}
             for value, ts in zip(ind.ema(closes, 20), timestamps)
             if value is not None
-        ]
+        ])
     if "RSI" in requested:
-        result["RSI"] = [
+        result["RSI"] = _trim([
             {"ts": ts, "value": value}
             for value, ts in zip(ind.rsi(closes, 14), timestamps)
             if value is not None
-        ]
+        ])
     if "MACD" in requested:
-        result["MACD"] = [
+        result["MACD"] = _trim([
             {"ts": ts, "macd": entry[0], "signal": entry[1], "histogram": entry[2]}
             for entry, ts in zip(ind.macd(closes), timestamps)
             if entry is not None
-        ]
+        ])
     if "BB" in requested:
         upper, middle, lower = ind.bollinger(closes, 20, 2.0)
-        result["BB"] = [
+        result["BB"] = _trim([
             {"ts": ts, "upper": u, "middle": m, "lower": lo}
             for u, m, lo, ts in zip(upper, middle, lower, timestamps)
             if m is not None
-        ]
+        ])
     # Insufficient data yields an empty series for that indicator, not an error.
     return {"symbol": symbol, "timeframe": tf, "indicators": result}
 

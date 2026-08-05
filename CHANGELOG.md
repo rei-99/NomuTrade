@@ -7,7 +7,25 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Fix: chart indicators were silently invisible (alignment key mismatch)
+## 2026-08-05 — Chart polish: indicator warm-up, compact volume axis, last-price tag into margin
+
+**Driver:** owner review of the fixed indicator overlays — three chart issues.
+
+- **Indicator warm-up**: windowed indicators (SMA/EMA/BB 20, RSI 14, MACD
+  26+9) previously computed over only the visible window, so their lines
+  started ~20 bars in (06-27 on a 3M view from 05-28). The endpoint now
+  fetches 45 extra days (1 day for intraday) before the window, computes over
+  the full series, and trims output to the window — lines span from the
+  first visible candle. MAX unchanged (full history by definition).
+- **Volume axis**: 4 dense raw ticks (e.g. `00,000,000`) → `splitNumber: 3`
+  with compact labels (`0 / 100M / 200M / 300M`).
+- **Last-price tag**: grid `right` 20 → 70 so the green price box sits in
+  the right margin instead of covering the rightmost candles.
+- Verified: backend **146/146**, frontend **333/333**, `npm run build`
+  clean; headless screenshot — full-window BB/SMA/EMA, 3 compact volume
+  ticks, price tag clear of the candles, RSI pane intact.
+
+
 
 **Driver:** owner report — SMA/EMA/RSI/MACD/BB chips toggle but "the candles
 don't change". True root cause: candle timestamps and indicator timestamps

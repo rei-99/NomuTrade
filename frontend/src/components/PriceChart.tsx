@@ -99,7 +99,7 @@ function buildPriceOption(
   const gridDefs = grids.map((g, i) => {
     const def = {
       left: 64,
-      right: 20,
+      right: 70, // room for the last-price axis tag outside the candles
       top: `${cursor}%`,
       height: `${g.height}%`,
     };
@@ -121,7 +121,22 @@ function buildPriceOption(
     boundaryGap: true,
   }));
   const yAxes = gridDefs.map((_, gi) => ({
-    ...valueAxis({ gridIndex: gi }),
+    ...valueAxis({
+      gridIndex: gi,
+      // Volume pane: fewer, compact ticks ("100M") — 4 dense raw labels
+      // were unreadable at this height (owner review).
+      ...(gi === 1
+        ? {
+            splitNumber: 3,
+            axisLabel: {
+              color: CHART_COLORS.text,
+              fontSize: 11,
+              formatter: (v: number) =>
+                v >= 1e6 ? `${Math.round(v / 1e6)}M` : v >= 1e3 ? `${Math.round(v / 1e3)}k` : String(v),
+            },
+          }
+        : {}),
+    }),
     type: "value" as const,
   }));
 
