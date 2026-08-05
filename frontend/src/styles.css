@@ -1053,6 +1053,28 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
   min-height: 0;
 }
 
+/* Chart-maximized mode (owner ask): positions + risk hide, the chart spans
+   their row; news keeps its slot. One click restores (toggle in the chart
+   header). Compact mode is flex column — hiding is enough there. */
+.trading-page.chart-expanded .trading-grid {
+  grid-template-areas:
+    "tape tape tape tape tape tape tape tape tape tape tape tape"
+    "chart chart chart chart chart chart chart order order order order order"
+    "chart chart chart chart chart chart chart news news news news news";
+}
+@media (min-width: 1401px) {
+  .trading-page.chart-expanded .trading-grid {
+    grid-template-areas:
+      "tape tape tape tape tape tape tape tape tape tape tape tape"
+      "chart chart chart chart chart chart chart chart order order order order"
+      "chart chart chart chart chart chart chart chart news news news news";
+  }
+}
+.trading-page.chart-expanded .trading-grid .positions-panel,
+.trading-page.chart-expanded .trading-grid .risk-panel {
+  display: none;
+}
+
 /* Wide viewports (≥1401px): chart takes the extra column (8:4) — the order
    ticket is still comfortable there; below, 7:5 keeps the type seg on one
    row and the ticket fully visible. */

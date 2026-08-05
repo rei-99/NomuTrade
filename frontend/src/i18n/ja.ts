@@ -103,6 +103,8 @@ export const ja: Record<I18nKey, string> = {
   "chart.noData": "{symbol} / {tf} の価格データがありません。",
 
   "trading.live": "ライブ · 30秒",
+  "trading.expandChart": "チャートを拡大（ポジション・リスクを隠す）",
+  "trading.restorePanels": "パネル表示に戻す",
 
   "acct.cash": "現金",
   "acct.total": "総額",

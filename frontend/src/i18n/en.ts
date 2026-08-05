@@ -101,6 +101,8 @@ export const en = {
   "chart.noData": "No price data for {symbol} / {tf}.",
 
   "trading.live": "live · 30 s",
+  "trading.expandChart": "Expand chart (hide positions & risk)",
+  "trading.restorePanels": "Restore panels",
 
   "acct.cash": "Cash",
   "acct.total": "Total",

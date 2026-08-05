@@ -47,6 +47,21 @@ export function Trading() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [portfolioId, setPortfolioId] = useState("");
   const [tf, setTf] = useState<Timeframe>("3M");
+  // Chart-maximized mode: hide positions+risk, chart spans their grid rows
+  // (news keeps its slot). Persisted across sessions.
+  const [expandChart, setExpandChart] = useState(
+    () => localStorage.getItem("stp_chart_expanded") === "1",
+  );
+  const toggleExpandChart = () =>
+    setExpandChart((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("stp_chart_expanded", next ? "1" : "0");
+      } catch {
+        // storage unavailable — toggle still works for the session
+      }
+      return next;
+    });
   const [positions, setPositions] = useState<PositionsResponse | null>(null);
   const [valuation, setValuation] = useState<Valuation | null>(null);
   const [dayOhlc, setDayOhlc] = useState<DayOhlc | null>(null);
@@ -171,7 +186,7 @@ export function Trading() {
   }, [activeInstrument, dayOhlc]);
 
   return (
-    <div className="page trading-page">
+    <div className={`page trading-page${expandChart ? " chart-expanded" : ""}`}>
       <div className="trading-grid">
         <TickerTape
           instruments={instruments}
@@ -184,6 +199,15 @@ export function Trading() {
         <section className="panel chart-panel">
           <div className="panel-header">
             <h3>{t("chart.priceTitle", { symbol: symbol ?? "—" })}</h3>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm chart-expand-btn"
+              title={t(expandChart ? "trading.restorePanels" : "trading.expandChart")}
+              aria-label={t(expandChart ? "trading.restorePanels" : "trading.expandChart")}
+              onClick={toggleExpandChart}
+            >
+              {expandChart ? "⤡" : "⤢"}
+            </button>
             <div className="tf-selector">
               {TIMEFRAMES.map((t) => (
                 <button

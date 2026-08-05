@@ -146,4 +146,20 @@ describe("Trading workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "1W" }));
     expect(seen.chartTf).toBe("1W");
   });
+
+  it("chart-expand toggle hides positions+risk into chart-max mode and persists", async () => {
+    renderTrading();
+    await screen.findByText("PositionsStub");
+
+    const page = document.querySelector(".trading-page")!;
+    expect(page.classList.contains("chart-expanded")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /expand chart/i }));
+    expect(page.classList.contains("chart-expanded")).toBe(true);
+    expect(localStorage.getItem("stp_chart_expanded")).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: /restore panels/i }));
+    expect(page.classList.contains("chart-expanded")).toBe(false);
+    expect(localStorage.getItem("stp_chart_expanded")).toBe("0");
+  });
 });

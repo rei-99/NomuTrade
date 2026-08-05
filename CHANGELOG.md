@@ -7,7 +7,22 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Chart polish: indicator warm-up, compact volume axis, last-price tag into margin
+## 2026-08-05 — Trading workspace: chart-maximized mode
+
+**Driver:** owner ask — a button that hides positions + risk so the price
+chart takes their space, and restores on a second click.
+
+- `⤢/⤡` toggle in the chart panel header (EN/JA tooltips). Expanded: the
+  positions and risk panels hide (CSS `display:none`, DOM/state preserved)
+  and the chart spans their grid rows; **news keeps its slot**, the order
+  rail is untouched. Choice persists via `stp_chart_expanded`; the chart
+  re-fits automatically via the existing ResizeObserver. Compact/phone mode
+  unaffected (flex column — the hide rules still apply consistently).
+- Verified: frontend **334/334** (new toggle test — class flips, localStorage
+  persists, restore works); `npm run build` clean; headless before/after
+  screenshots — chart spans full height with news intact at bottom-right.
+
+
 
 **Driver:** owner review of the fixed indicator overlays — three chart issues.
 
