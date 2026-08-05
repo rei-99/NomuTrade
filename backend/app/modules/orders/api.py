@@ -54,7 +54,7 @@ from app.core.security import (
     require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
-from app.modules.marketdata.registry import get_sim_now
+from app.modules.marketdata.registry import business_now, get_sim_now
 from app.modules.orders.validation import Rejection, validate_order
 
 router = APIRouter(tags=["orders"])
@@ -285,6 +285,8 @@ async def submit_order(
             reject_reason=rejection.code,
             idempotency_key=idempotency_key,
             created_by=user.user_id,
+            created_at=business_now(),  # business time = sim clock
+            updated_at=business_now(),
         )
         db.add(order)
         await db.flush()
@@ -334,6 +336,8 @@ async def submit_order(
         status=OrderStatus.ACCEPTED,
         idempotency_key=idempotency_key,
         created_by=user.user_id,
+        created_at=business_now(),  # business time = sim clock
+        updated_at=business_now(),
     )
     db.add(order)
     await db.flush()
@@ -468,7 +472,7 @@ async def cancel_order(
             details=[{"code": "NOT_CANCELLABLE", "status": order.status}],
         )
     order.status = OrderStatus.CANCELLED
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await write_audit(
         db,
         actor_id=user.user_id,
@@ -542,7 +546,7 @@ async def amend_order(
         # Consistent with submission: a failed amendment rejects the order.
         order.status = OrderStatus.REJECTED
         order.reject_reason = rejection.code
-        order.updated_at = utcnow()
+        order.updated_at = business_now()
         await write_audit(
             db,
             actor_id=user.user_id,
@@ -568,7 +572,7 @@ async def amend_order(
     order.stop_price = new_stop
     order.trail_amount = new_trail_amount
     order.trail_pct = new_trail_pct
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await write_audit(
         db,
         actor_id=user.user_id,
@@ -662,7 +666,7 @@ async def requeue_order(
         # Consistent with submission/amendment: persist the new reason, keep
         # the order REJECTED, and surface the reasons to the caller.
         order.reject_reason = rejection.code
-        order.updated_at = utcnow()
+        order.updated_at = business_now()
         await db.commit()
         raise BusinessRuleViolation(
             rejection.message,
@@ -689,7 +693,7 @@ async def requeue_order(
     order.trail_pct = new_trail_pct
     order.status = OrderStatus.ACCEPTED
     order.reject_reason = None
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await db.flush()
     await write_outbox(db, "orders.accepted", {"order_id": order.order_id})
     await write_audit(

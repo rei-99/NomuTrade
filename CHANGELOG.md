@@ -7,7 +7,27 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Brand mark: Nomura-style emblem + favicon
+## 2026-08-05 — Business timestamps on the sim clock
+
+**Driver:** owner improvement — order/trade times showed wall-clock time
+while everything else (charts, news, SIM clock) lives in dataset time.
+
+- New `business_now()` in the marketdata registry: sim clock when a feed is
+  running, `utcnow()` otherwise. Order `created_at`/`updated_at` (submit,
+  amend, cancel, engine paths), `executions.executed_at`, and settlement
+  `created_at`/`settled_at` now use it — the blotter and settlement lane
+  read in market time. Audit rows, notifications and operational timing keep
+  wall clock.
+- **Sweeper decoupled**: the settlement sweeper keeps wall-clock cadence via
+  in-process `created_wall`/`affirmed_at` bases (first-sighting fallback on
+  restart — the documented trade-off), so sim display times never corrupt
+  sweep timing; a replay loop re-base can't stall settlements.
+- Verified: backend **146/146** (new `business_now` unit test); live —
+  submitted an order at wall 2026-08-05 12:27 UTC: `submitted_at`
+  **2026-08-25 11:35**, execution 11:35, instruction created 11:36, settled
+  11:46 (sim), full walk EXECUTED→AFFIRMED→SETTLED intact.
+
+
 
 - New `BrandMark.tsx` inline SVG — white "N" on a rounded square — replacing
   the `▮▶` glyph in the topbar brand and the login title; `favicon.svg`

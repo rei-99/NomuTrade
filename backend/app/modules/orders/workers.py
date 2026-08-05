@@ -51,7 +51,7 @@ from app.core.models import (
     TimeInForce,
 )
 from app.core.timeutil import as_utc, utcnow
-from app.modules.marketdata.registry import get_snapshot
+from app.modules.marketdata.registry import business_now, get_snapshot
 from app.modules.orders.validation import trade_value
 
 logger = logging.getLogger(__name__)
@@ -237,7 +237,7 @@ async def _cancel_ioc(session, order: Order, tick_price: Decimal) -> None:
     instrument = await session.get(Instrument, order.instrument_id)
     order.status = OrderStatus.CANCELLED
     order.reject_reason = IOC_UNFILLED
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await write_audit(
         session,
         actor_id=None,  # system actor: the matching engine
@@ -266,7 +266,7 @@ async def _expire_day_order(session, order: Order, tick_ts) -> None:
     ORDER_EXPIRED audit + notify when a tick beyond expire_after arrives."""
     instrument = await session.get(Instrument, order.instrument_id)
     order.status = OrderStatus.CANCELLED
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await write_audit(
         session,
         actor_id=None,  # system actor: the matching engine
@@ -295,7 +295,7 @@ async def _convert_stop_limit(session, order: Order, tick_price: Decimal) -> Non
     instrument = await session.get(Instrument, order.instrument_id)
     portfolio = await session.get(Portfolio, order.portfolio_id)
     order.order_type = OrderType.LIMIT
-    order.updated_at = utcnow()
+    order.updated_at = business_now()
     await write_audit(
         session,
         actor_id=None,  # system actor: the matching engine
@@ -382,7 +382,7 @@ async def _fill_order(sessionmaker, order_id: str) -> str:
                 await _audit_trailing_trigger(session, order, snapshot.price)
             elif not _marketable(order, snapshot.price):
                 return await _rest_or_ioc(session, order, snapshot.price)
-            now = utcnow()
+            now = business_now()  # business time = sim clock
             execution = Execution(
                 order_id=order.order_id,
                 price=snapshot.price,
@@ -489,7 +489,7 @@ async def _rebuild_book(sessionmaker, book: dict[str, set[str]]) -> None:
                 and order.status == OrderStatus.ACCEPTED
             ):
                 order.status = OrderStatus.OPEN
-                order.updated_at = utcnow()
+                order.updated_at = business_now()
                 changed = True
             book[order.instrument_id].add(order.order_id)
         if changed:
@@ -510,7 +510,7 @@ async def _park_open(sessionmaker, order_id: str) -> tuple[str | None, bool]:
             and order.status == OrderStatus.ACCEPTED
         ):
             order.status = OrderStatus.OPEN
-            order.updated_at = utcnow()
+            order.updated_at = business_now()
             await session.commit()
         return order.instrument_id, True
 
@@ -601,6 +601,8 @@ async def _process_execution(sessionmaker, event: dict) -> None:
         instruction = SettlementInstruction(
             execution_id=execution_id,
             lifecycle_state=LifecycleState.EXECUTED,
+            created_at=business_now(),  # display time = sim clock; the sweeper
+            # keeps its own wall-clock basis (created_wall below)
         )
         session.add(instruction)
         await session.flush()
@@ -675,14 +677,17 @@ def build_settlement_sweeper(settings):
 
     async def settlement_sweeper(bus, sessionmaker):
         delay = settings.SETTLEMENT_DELAY_SECONDS
-        # SettlementInstruction has no "affirmed_at" column and core models may
-        # not be changed, so affirmation time is tracked in-process; on cold
-        # start created_at is used as the fallback basis for AFFIRMED rows.
+        # SettlementInstruction.created_at is business (sim) time, so the
+        # sweep cadence tracks wall time in-process: created_wall for the
+        # EXECUTED→AFFIRMED leg, affirmed_at for AFFIRMED→SETTLED; on cold
+        # start a row's first sighting is the basis (restart shortens delays,
+        # the accepted trade-off).
         affirmed_at: dict[str, datetime] = {}
+        created_wall: dict[str, datetime] = {}
         while True:
             await asyncio.sleep(1.0)
             try:
-                await _shielded(_sweep_once(sessionmaker, delay, affirmed_at))
+                await _shielded(_sweep_once(sessionmaker, delay, affirmed_at, created_wall))
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -691,8 +696,11 @@ def build_settlement_sweeper(settings):
     return settlement_sweeper
 
 
-async def _sweep_once(sessionmaker, delay: float, affirmed_at: dict) -> None:
-    now = utcnow()
+async def _sweep_once(sessionmaker, delay: float, affirmed_at: dict, created_wall: dict) -> None:
+    now = utcnow()  # sweep cadence is wall-clock by design; created_at is sim
+    # (business) time — never compare the two, so created_wall tracks the
+    # wall instant the instruction was first seen (restart shortens delays,
+    # same accepted trade-off as affirmed_at).
     async with sessionmaker() as session:
         rows = (
             await session.execute(
@@ -711,20 +719,22 @@ async def _sweep_once(sessionmaker, delay: float, affirmed_at: dict) -> None:
         ).all()
         changed = False
         for instruction, _execution, order in rows:
+            created_wall.setdefault(instruction.settlement_id, now)
             if instruction.lifecycle_state == LifecycleState.EXECUTED:
-                age = (now - as_utc(instruction.created_at)).total_seconds()
+                age = (now - created_wall[instruction.settlement_id]).total_seconds()
                 if age >= delay:
                     instruction.lifecycle_state = LifecycleState.AFFIRMED
                     affirmed_at[instruction.settlement_id] = now
+                    created_wall.pop(instruction.settlement_id, None)
                     changed = True
             elif instruction.lifecycle_state == LifecycleState.AFFIRMED:
                 basis = affirmed_at.get(
                     instruction.settlement_id,
-                    as_utc(instruction.created_at),
+                    now,
                 )
                 if (now - basis).total_seconds() >= delay:
                     instruction.lifecycle_state = LifecycleState.SETTLED
-                    instruction.settled_at = now
+                    instruction.settled_at = business_now()  # display: sim clock
                     affirmed_at.pop(instruction.settlement_id, None)
                     changed = True
             else:

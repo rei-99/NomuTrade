@@ -289,3 +289,22 @@ def test_skip_index_fast_forward():
     assert _skip_index(bars, 2, 1) == 4  # Mon + 1d = Tue
     assert _skip_index(bars, 4, 1) == 5  # past the end → clamp to last bar
     assert _skip_index(bars, 99, 1) == 99  # out of range → unchanged
+
+
+def test_business_now_prefers_sim_clock_then_falls_back():
+    """business_now() = sim clock when a feed runs, utcnow otherwise."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.timeutil import as_utc, utcnow
+    from app.modules.marketdata.registry import (
+        business_now,
+        reset_registry,
+        set_sim_now,
+    )
+
+    sim = datetime(2026, 8, 25, 10, 30, tzinfo=timezone.utc)
+    set_sim_now(sim)
+    assert business_now() == sim
+    reset_registry()
+    fallback = business_now()
+    assert as_utc(fallback) >= as_utc(utcnow()) - timedelta(seconds=5)

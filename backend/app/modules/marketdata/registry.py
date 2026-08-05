@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import PriceTick
-from app.core.timeutil import as_utc
+from app.core.timeutil import as_utc, utcnow
 
 
 @dataclass
@@ -67,6 +67,18 @@ def get_sim_now() -> datetime | None:
     not wall-clock time — price staleness and chart ranges are measured
     against it, never against utcnow(). None before the first tick."""
     return _SIM_NOW
+
+
+def business_now() -> datetime:
+    """Sim clock when a feed is running, wall clock otherwise.
+
+    Business-domain timestamps (orders, executions, settlement display times)
+    use this so blotter times live in market time alongside charts and news.
+    Operational timing (sweeper cadence, audit rows, notifications) keeps
+    utcnow(). Note: a replay loop re-bases the sim clock backwards — order
+    times then sit "ahead" of the clock, which is the honest sim-world story.
+    """
+    return get_sim_now() or utcnow()
 
 
 def get_snapshot(instrument_id: str) -> PriceSnapshot | None:
