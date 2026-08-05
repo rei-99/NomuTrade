@@ -491,3 +491,48 @@ Do (if asked): point at the STP exceptions panel.
   = see, never touch); remediation is limited to exceptions.
 - "Can they request more access?" — Yes, via Access Requests — same
   approval chain as everyone.
+
+## Q&A — Chart indicators (what each shows, how computed)
+
+If asked "what do SMA/EMA/BB/RSI/MACD mean on your chart?" — all five are
+computed **server-side from our own candle history** (daily closes for wide
+timeframes, minute bars for 1D), with a warm-up window so the lines start at
+the first visible candle. Parameters below are the live implementation
+(`backend/app/modules/analytics/indicators.py`).
+
+**SMA — Simple Moving Average (20 periods, yellow overlay)**
+- *What it shows:* the trend's center line — above it = bullish bias, below = bearish.
+- *Formula:* mean of the last 20 closes: `SMA_t = (P_{t-19} + … + P_t) / 20`.
+
+**EMA — Exponential Moving Average (20 periods, blue overlay)**
+- *What it shows:* same trend story as SMA but **faster** — recent bars weigh
+  more, so it turns earlier. SMA vs EMA divergence is a momentum tell.
+- *Formula:* seeded with the 20-bar SMA, then recursive:
+  `EMA_t = (P_t − EMA_{t-1}) · k + EMA_{t-1}`, where `k = 2 / (20 + 1)`.
+
+**BB — Bollinger Bands (20 periods, ±2σ, grey envelope)**
+- *What it shows:* volatility as a band around the mean. Bands **squeeze**
+  before a breakout and **widen** during trends; price hugging the upper
+  band = strength, riding the lower band = weakness.
+- *Formula:* middle = SMA(20); upper/lower = middle ± 2 × population
+  standard deviation of the last 20 closes.
+
+**RSI — Relative Strength Index (Wilder's, 14 periods, purple sub-pane)**
+- *What it shows:* momentum 0–100. Above 70 ≈ overbought, below 30 ≈
+  oversold (the dashed guide lines on the pane); the mid-line at 50 splits
+  bullish from bearish momentum.
+- *Formula:* `RSI = 100 − 100 / (1 + RS)`, `RS = avgGain / avgLoss` over 14
+  bars. First averages are simple means; afterwards Wilder smoothing:
+  `avg_t = (avg_{t-1} · 13 + current_t) / 14`.
+
+**MACD — Moving Average Convergence Divergence (12/26/9, sub-pane)**
+- *What it shows:* trend + momentum together. The MACD line crossing the
+  signal line up = buy momentum building (down = fading); the histogram
+  visualizes the gap's growth/shrink.
+- *Formula:* line = `EMA(12) − EMA(26)`; signal = `EMA(9)` of the line
+  (seeded with the SMA of the first 9 line values); histogram = `line − signal`.
+
+**One-liner for stage:** "Overlays ride on the price pane — moving averages
+and bands; oscillators get their own panes — RSI for momentum, MACD for
+trend-plus-momentum. All computed from our stored bars, so they work on
+every timeframe the platform serves."
