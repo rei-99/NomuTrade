@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth";
+import { BrandMark } from "../components/BrandMark";
 import { useT } from "../i18n";
 
 const DEMO_EMAILS = [
@@ -107,7 +108,7 @@ export function Login() {
     <div className="login-page">
       <div className="login-card panel login-form-card">
         <h1 className="login-title">
-          <span className="brand-mark">▮▶</span> {t("login.title")}
+          <BrandMark size={26} /> {t("login.title")}
         </h1>
         <p className="muted">{t("login.subtitle")}</p>
 

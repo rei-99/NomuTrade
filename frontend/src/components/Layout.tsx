@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { Instrument, ListResponse, PriceSeries } from "../api/types";
 import type { TickData } from "../api/ws";
 import { useAuth } from "../auth";
+import { BrandMark } from "./BrandMark";
 import { fmtJpy } from "../format";
 import { usePoll, useWsMessage, useWsState } from "../hooks";
 import { useT } from "../i18n";
@@ -266,7 +267,7 @@ export function Layout() {
       <div className="main">
         <header className="topbar">
           <div className="topbar-brand" title={t("topbar.brandTag")}>
-            <span className="brand-mark">▮▶</span> NomuTrade
+            <BrandMark size={22} /> NomuTrade
           </div>
           <div className="topbar-left">
             <button

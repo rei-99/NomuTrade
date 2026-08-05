@@ -86,7 +86,7 @@ a:hover { text-decoration: underline; }
   padding: 12px 0;
 }
 
-.brand-mark { color: var(--accent); font-weight: 800; }
+.brand-mark { display: inline-flex; align-items: center; }
 
 .sidebar-nav {
   flex: 1;
@@ -144,6 +144,9 @@ a:hover { text-decoration: underline; }
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   font-size: 17px;
   white-space: nowrap;
