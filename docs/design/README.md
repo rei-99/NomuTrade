@@ -35,6 +35,7 @@ Each document follows the same template: Purpose · SRS requirements covered · 
 | [15 — Admin & Governance](15-admin-governance.md) | §5.9 | Governance dashboard, dependency health probes, who-has-what export (Could) |
 | [22 — Real-time WebSocket Push](22-websocket-push.md) | — (implements former §9 `/ws`) | Authenticated `WS /api/v1/ws`: tick broadcast + per-user notification/execution hints (NFR-PER-004); REST stays source of truth |
 | [23 — Scheduled Reports](23-scheduled-reports.md) | — (resolves TBD-13) | Per-user daily/weekly report schedules, sim-clock driven; `report_scheduler` worker reuses the on-demand generation path |
+| [29 — Dynamic Portfolio Budget](29-dynamic-portfolio-budget.md) | — (research/design, not implemented) | Risk-Adjusted Capital Allocation: budget = tier base × target-vol factor, capped; phased quote → default → living-limit plan |
 
 ## Cross-cutting
 
