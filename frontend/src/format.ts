@@ -59,20 +59,23 @@ export function fmtPct(v: number | null | undefined, digits = 1): string {
   return `${fmtNum(v, digits)}%`;
 }
 
-/** Compact local timestamp: "07-26 14:03:11". */
+/** Compact UTC timestamp: "07-26 14:03:11". All timestamps render in UTC so
+ * the UI reads in one timezone — the sim clock, business times (orders,
+ * trades, settlements) and wall-clock operational times never diverge by an
+ * 8-hour local offset (owner call, 2026-08-05). */
 export function fmtTs(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(locale());
+  return d.toLocaleDateString(locale(), { timeZone: "UTC" });
 }
 
 /** "pos" / "neg" / "" for P&L coloring. */

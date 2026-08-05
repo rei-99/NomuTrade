@@ -7,7 +7,23 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Business timestamps on the sim clock
+## 2026-08-05 — All UI timestamps render in UTC
+
+**Driver:** owner report — an order submitted at sim 11:10 displayed as
+19:10: the backend now stores sim (UTC) business times, but the frontend
+formatted them in the host's local timezone (HKT, +8).
+
+- `fmtTs`/`fmtDate` render UTC (UTC getters / `timeZone: "UTC"`): the SIM
+  clock, orders, trades, settlements, audit and notification times all read
+  in one timezone — no more 8-hour apparent mismatch. Format tests updated
+  to explicit-UTC inputs/expectations.
+- Note the one inherent nuance: audit and notification timestamps are real
+  wall-clock (UTC) by design, so they read the real now, not sim time —
+  same timezone, different clock (deliberate).
+- Verified: frontend **331/331**, `npm run build` clean; headless Orders
+  page — API ts `2026-08-28T11:07:00Z` displays `08-28 11:07:00` verbatim.
+
+
 
 **Driver:** owner improvement — order/trade times showed wall-clock time
 while everything else (charts, news, SIM clock) lives in dataset time.

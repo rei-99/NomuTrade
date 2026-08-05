@@ -73,13 +73,13 @@ describe("format helpers", () => {
   });
 
   describe("fmtTs", () => {
-    it("renders MM-DD HH:mm:ss in local time", () => {
-      // No timezone suffix → parsed as local time, stable in any TZ.
-      expect(fmtTs("2026-07-26T14:03:11")).toBe("07-26 14:03:11");
+    it("renders MM-DD HH:mm:ss in UTC (matches the sim clock)", () => {
+      // Z-suffixed input → UTC fields, stable in any host TZ.
+      expect(fmtTs("2026-07-26T14:03:11Z")).toBe("07-26 14:03:11");
     });
 
     it("zero-pads single-digit fields", () => {
-      expect(fmtTs("2026-01-02T03:04:05")).toBe("01-02 03:04:05");
+      expect(fmtTs("2026-01-02T03:04:05Z")).toBe("01-02 03:04:05");
     });
 
     it("renders a dash for empty input", () => {
@@ -95,7 +95,7 @@ describe("format helpers", () => {
 
   describe("fmtDate", () => {
     it("renders a locale date", () => {
-      expect(fmtDate("2026-07-26T14:03:11")).toBe("7/26/2026");
+      expect(fmtDate("2026-07-26T14:03:11Z")).toBe("7/26/2026");
     });
 
     it("renders a dash for empty input and echoes garbage", () => {
@@ -108,7 +108,7 @@ describe("format helpers", () => {
   describe("locale follows the UI language", () => {
     it("switches to ja-JP formatting when the stored lang is ja", () => {
       localStorage.setItem(LANG_STORAGE_KEY, "ja");
-      expect(fmtDate("2026-07-26T14:03:11")).toBe("2026/7/26");
+      expect(fmtDate("2026-07-26T14:03:11Z")).toBe("2026/7/26");
     });
   });
 
