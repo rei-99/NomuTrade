@@ -248,9 +248,6 @@ export function Layout() {
         />
       )}
       <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="brand-mark">▮▶</span> NomuTrade
-        </div>
         <nav className="sidebar-nav" onClick={() => setNavOpen(false)}>
           {navTabs.map((n) => (
             <NavLink
@@ -268,6 +265,9 @@ export function Layout() {
 
       <div className="main">
         <header className="topbar">
+          <div className="topbar-brand" title={t("topbar.brandTag")}>
+            <span className="brand-mark">▮▶</span> NomuTrade
+          </div>
           <div className="topbar-left">
             <button
               type="button"
