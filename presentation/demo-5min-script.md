@@ -446,3 +446,48 @@ shapes are 20–30 seconds; fuller backup lives in the Q&A sections above.
    instrument with no fresh tick are rejected at validation, positions carry
    STALE badges, and the feed tile in Governance changes state. No fake
    prices, no silent fills — the same guard the SRS asks for (NFR-AVL-002).
+
+## Appendix — Ops spotlight demo (~3 min, operations persona)
+
+Purpose: show that Operations is a first-class user with a *job*, not a
+read-only viewer. Pre-stage: one REJECTED order in the blotter (currently
+**TSLA BUY 5,000 · REJECTED · MAX_NOTIONAL_EXCEEDED**, id
+`3c769f07-faa3-43ae-90fd-0bb966b77c91`). Log in as `ops@demo.nomura` /
+`demo1234` — ops lands on **Trades** (their home, by design).
+
+**Beat 1 — "Ops watches the flow, not the chart" (0:00–0:30)**
+Do: Trades blotter — all portfolios' executions, settlement column walking
+EXECUTED → AFFIRMED → SETTLED.
+Say: "Operations has no order panel — their business is the settlement
+flow. They see every book's trades and their settlement states live."
+
+**Beat 2 — "One dashboard for the pipeline's health" (0:30–1:15)**
+Do: Governance page — integration health tiles (directory/smtp with honest
+*mock* badges, market_feed, `llm · live`), STP exceptions (clean), Recent
+settlements lane.
+Say: "Every integration is probed and honest — mocks are labeled mocks, the
+LLM tile shows the live model from the startup self-check. When the feed
+goes down, this tile is where ops sees it first."
+
+**Beat 3 — "A failed order, fixed and resubmitted" (1:15–2:30) — the money beat**
+Do: Orders page → the REJECTED TSLA 5,000 row → **Requeue** → amend qty
+5,000 → **400** → submit → watch it go ACCEPTED → FILLED within seconds.
+Say: "The pre-trade controls stopped a million-dollar order — but rejection
+isn't the end. Operations sees the failure in their queue, amends it, and
+requeues. It re-runs the *full* validation — if it were still invalid it
+would stay rejected with the reason. And note the segregation: the trader
+can't clear their own rejected order — that's compliance, not convenience.
+Everything is audited: who amended what, when, and why."
+
+**Beat 4 — "And the settlement pipeline itself is repairable" (2:30–3:00, optional)**
+Say (no live exception needed): "If the settlement step itself ever fails,
+the same page shows the STP exception, and ops re-drives it with one click —
+safe, because the worker is idempotent: a retry can never double-post."
+Do (if asked): point at the STP exceptions panel.
+
+**Q&A hooks for this persona**
+- "Can ops trade?" — No. `ORDER_SUBMIT` isn't in their role (SoD, by design).
+- "Can they see client books?" — Oversight is read-only (`PORTFOLIO_VIEW_ALL`
+  = see, never touch); remediation is limited to exceptions.
+- "Can they request more access?" — Yes, via Access Requests — same
+  approval chain as everyone.
