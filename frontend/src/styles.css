@@ -35,7 +35,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", Roboto, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -44,8 +44,8 @@ h1, h2, h3 {
   font-weight: 600;
 }
 
-h2 { font-size: 17px; }
-h3 { font-size: 13px; }
+h2 { font-size: 18px; }
+h3 { font-size: 14px; }
 
 a {
   color: var(--blue);
@@ -58,7 +58,7 @@ a:hover { text-decoration: underline; }
   font-variant-numeric: tabular-nums;
 }
 
-.mono { font-family: var(--mono); font-size: 12px; }
+.mono { font-family: var(--mono); font-size: 13px; }
 .muted { color: var(--muted); }
 .pos { color: var(--green); }
 .neg { color: var(--red); }
@@ -89,7 +89,7 @@ a:hover { text-decoration: underline; }
 .sidebar-brand {
   padding: 4px 14px 12px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 15px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -104,7 +104,7 @@ a:hover { text-decoration: underline; }
 .nav-link {
   display: block;
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   border-left: 2px solid transparent;
 }
@@ -307,7 +307,7 @@ a:hover { text-decoration: underline; }
   text-align: left;
   color: var(--muted);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 6px 10px;
@@ -383,7 +383,7 @@ a:hover { text-decoration: underline; }
 
 .btn {
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 6px 14px;
   border-radius: 5px;
@@ -421,7 +421,7 @@ input,
 select,
 textarea {
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1803,17 +1803,24 @@ textarea:focus-visible,
    desktop (no overflow → no scrollbar). */
 .table-wrap { overflow-x: auto; }
 
-/* Burger is desktop-hidden; it appears in the ≤1000px block below. */
-.burger { display: none; font-size: 16px; line-height: 1; }
+/* Burger is always visible: ≤1000px it opens the overlay drawer (below),
+   above that it collapses the sidebar (nav-collapsed). */
+.burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  font-size: 16px;
+  line-height: 1;
+}
 .nav-backdrop { display: none; }
 
+/* Desktop collapse: the sidebar drops out and .main takes the full width. */
+@media (min-width: 1001px) {
+  .shell.nav-collapsed .sidebar { display: none; }
+}
+
 @media (max-width: 1000px) {
-  .burger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-  }
   /* Sidebar becomes an overlay drawer. */
   .sidebar {
     position: fixed;

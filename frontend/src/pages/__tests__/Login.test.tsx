@@ -63,7 +63,7 @@ describe("Login page", () => {
   it("leaves the form empty when the demo endpoint is unavailable", async () => {
     stubDemoCredential({ ok: false });
     renderLogin();
-    await screen.findByText("STP Trading Platform");
+    await screen.findByText("NomuTrade");
     expect(screen.getByPlaceholderText("trader@demo.nomura")).toHaveValue("");
   });
 
@@ -133,7 +133,7 @@ describe("Login page", () => {
   it("show/hide toggles the password field type", async () => {
     stubDemoCredential({ ok: false });
     renderLogin();
-    await screen.findByText("STP Trading Platform");
+    await screen.findByText("NomuTrade");
 
     const pw = document.querySelector('input[type="password"]')!;
     fireEvent.click(screen.getByRole("button", { name: "Show" }));

@@ -65,7 +65,7 @@ export const en = {
   "topbar.menu": "Menu",
   "topbar.searchEmpty": "No instruments match “{q}”.",
   "topbar.signOut": "Sign out",
-  "topbar.brandTag": "Next-Generation Trading Platform — STP",
+  "topbar.brandTag": "NomuTrade — Next-Generation Trading Platform",
   "topbar.langTitle": "Language / 言語",
 
   "sidebar.footer": "API /api/v1 · dev build",
@@ -78,7 +78,7 @@ export const en = {
   "notfound.title": "404",
   "notfound.body": "Page not found.",
 
-  "login.title": "STP Trading Platform",
+  "login.title": "NomuTrade",
   "login.subtitle": "Sign in to the trading platform",
   "login.email": "Email",
   "login.password": "Password",

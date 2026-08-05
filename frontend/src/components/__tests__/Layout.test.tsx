@@ -85,7 +85,7 @@ describe("Layout", () => {
 
   it("renders the persona nav, brand and topbar blocks", async () => {
     renderShell();
-    expect(screen.getByText("STP Platform")).toBeInTheDocument();
+    expect(screen.getByText("NomuTrade")).toBeInTheDocument();
     expect(screen.getByText("Trading")).toBeInTheDocument();
     expect(screen.getByText("Connect")).toBeInTheDocument();
     expect(screen.getByText("Demo Trader")).toBeInTheDocument();
@@ -97,14 +97,41 @@ describe("Layout", () => {
     );
   });
 
-  it("burger button toggles the drawer class; backdrop closes it", async () => {
+  it("burger collapses the sidebar on desktop and opens the drawer on mobile", async () => {
+    // Desktop (matchMedia stub: matches=false) → collapse toggle.
     const { container } = renderShell();
     const burger = screen.getByRole("button", { name: /menu/i });
-    expect(container.querySelector(".shell.nav-open")).toBeNull();
+    expect(container.querySelector(".shell.nav-collapsed")).toBeNull();
     fireEvent.click(burger);
-    expect(container.querySelector(".shell.nav-open")).not.toBeNull();
-    fireEvent.click(container.querySelector(".nav-backdrop")!);
-    expect(container.querySelector(".shell.nav-open")).toBeNull();
+    expect(container.querySelector(".shell.nav-collapsed")).not.toBeNull();
+    expect(localStorage.getItem("stp_nav_collapsed")).toBe("1");
+    fireEvent.click(burger);
+    expect(container.querySelector(".shell.nav-collapsed")).toBeNull();
+    expect(localStorage.getItem("stp_nav_collapsed")).toBe("0");
+
+    // Mobile (matches=true) → overlay drawer + backdrop.
+    localStorage.removeItem("stp_nav_collapsed");
+    const mm = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const { container: c2 } = renderShell();
+      fireEvent.click(screen.getAllByRole("button", { name: /menu/i }).pop()!);
+      expect(c2.querySelector(".shell.nav-open")).not.toBeNull();
+      fireEvent.click(c2.querySelector(".nav-backdrop")!);
+      expect(c2.querySelector(".shell.nav-open")).toBeNull();
+    } finally {
+      window.matchMedia = mm;
+      localStorage.removeItem("stp_nav_collapsed");
+    }
   });
 
   it("symbol search filters and navigates on pick", async () => {

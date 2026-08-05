@@ -67,7 +67,7 @@ export const ja: Record<I18nKey, string> = {
   "topbar.menu": "メニュー",
   "topbar.searchEmpty": "「{q}」に一致する銘柄がありません。",
   "topbar.signOut": "サインアウト",
-  "topbar.brandTag": "次世代トレーディングプラットフォーム — STP",
+  "topbar.brandTag": "NomuTrade — 次世代トレーディングプラットフォーム",
   "topbar.langTitle": "Language / 言語",
 
   "sidebar.footer": "API /api/v1 · dev build",
@@ -80,7 +80,7 @@ export const ja: Record<I18nKey, string> = {
   "notfound.title": "404",
   "notfound.body": "ページが見つかりません。",
 
-  "login.title": "STP トレーディングプラットフォーム",
+  "login.title": "NomuTrade",
   "login.subtitle": "トレーディングプラットフォームにサインイン",
   "login.email": "メールアドレス",
   "login.password": "パスワード",

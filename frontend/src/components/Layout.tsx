@@ -129,6 +129,21 @@ export function Layout() {
   const [simTs, setSimTs] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  // Desktop sidebar collapse (persisted): the same burger that opens the
+  // overlay drawer on ≤1000px hides/shows the sidebar above it.
+  const [navCollapsed, setNavCollapsed] = useState(
+    () => localStorage.getItem("stp_nav_collapsed") === "1",
+  );
+  const toggleNav = () => {
+    if (window.matchMedia("(max-width: 1000px)").matches) {
+      setNavOpen((v) => !v);
+    } else {
+      setNavCollapsed((v) => {
+        localStorage.setItem("stp_nav_collapsed", v ? "0" : "1");
+        return !v;
+      });
+    }
+  };
 
   // Replay fast-forward (training/demo): jump the sim clock one market day.
   const skipDay = async () => {
@@ -224,7 +239,7 @@ export function Layout() {
   );
 
   return (
-    <div className={`shell${navOpen ? " nav-open" : ""}`}>
+    <div className={`shell${navOpen ? " nav-open" : ""}${navCollapsed ? " nav-collapsed" : ""}`}>
       {navOpen && (
         <div
           className="nav-backdrop"
@@ -234,7 +249,7 @@ export function Layout() {
       )}
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-mark">▮▶</span> STP Platform
+          <span className="brand-mark">▮▶</span> NomuTrade
         </div>
         <nav className="sidebar-nav" onClick={() => setNavOpen(false)}>
           {navTabs.map((n) => (
@@ -258,8 +273,8 @@ export function Layout() {
               type="button"
               className="btn btn-ghost btn-sm burger"
               aria-label={t("topbar.menu")}
-              aria-expanded={navOpen}
-              onClick={() => setNavOpen((v) => !v)}
+              aria-expanded={navOpen || navCollapsed}
+              onClick={toggleNav}
             >
               ≡
             </button>

@@ -7,6 +7,25 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Rebrand to NomuTrade + collapsible sidebar + larger text
+
+**Driver:** owner requests — three presentation-polish items.
+
+- **Rebrand**: the visible product name is now **NomuTrade** (sidebar brand,
+  browser tab title, login page, brand tagline — EN/JA). "STP" remains only
+  as the straight-through-processing term of art (e.g. STP exceptions).
+- **Collapsible sidebar**: the topbar burger now works on every screen —
+  ≤1000px it opens the overlay drawer (unchanged phone behavior), above
+  that it hides/shows the sidebar so the workspace takes the full width;
+  the choice persists across sessions (localStorage `stp_nav_collapsed`).
+- **Larger text**: base 13→14px with a matching bump on nav links, buttons,
+  inputs, table headers, mono numbers and the brand — the dense terminal
+  look kept, readability up (projector-friendly).
+- Verified: frontend **331/331** (Layout burger test now covers both
+  collapse and drawer paths + persistence; Login title assertions updated),
+  `npm run build` clean; CDP headless screenshots at 1680×1000 expanded and
+  collapsed and at 1366×768 — one-screen fit intact, no overlaps.
+
 ## 2026-08-05 — Access request form: role picker limited to requestable roles
 
 **Driver:** owner review — the Access Request role dropdown offered the full
