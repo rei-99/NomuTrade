@@ -99,8 +99,11 @@ export const TABS: Record<TabId, TabDef> = {
   },
 };
 
-/** Tabs per persona — the design 26 §R1 table, verbatim. Trader loses Access
- * Requests (product-owner instruction: access governance is not their job). */
+/** Tabs per persona — the design 26 §R1 table, amended 2026-08-05 by owner
+ * decision: the trader KEEPS Access Requests. §R1 argued "access governance
+ * is not their job" — correct for governing (Approvals/Admin stay gated),
+ * but requesting is self-service and starts the request→approval→grant flow;
+ * the trader's Access page only ever shows their own requests. */
 export const PERSONA_TABS: Record<Persona, TabId[]> = {
   TRADER: [
     "trading",
@@ -111,6 +114,7 @@ export const PERSONA_TABS: Record<Persona, TabId[]> = {
     "reports",
     "paper",
     "assistant",
+    "access",
     "notifications",
     "connect",
   ],

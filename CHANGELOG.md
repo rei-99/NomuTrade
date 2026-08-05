@@ -7,6 +7,21 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-05 — Trader regains the Access Requests tab (design 26 §R1 amended)
+
+**Driver:** owner review — with the tab hidden, the request → approval →
+grant flow couldn't even start from a trader, contradicting the access
+governance story (the trader is exactly who applies).
+
+- `personas.ts`: "access" re-added to the TRADER tab list. Design 26 §R1's
+  "access governance is not their job" still stands for *governing* —
+  Approvals and Admin stay gated — but *requesting* is self-service; the
+  trader's Access page only shows their own requests + the new-request form.
+  The in-code comment and this entry document the amendment (owner decision
+  2026-08-05).
+- Verified: frontend 330/330, `npm run build` clean (persona home routes
+  unchanged — trader still lands on the workspace).
+
 ## 2026-08-05 — Presentation hide: PAM surfaces behind a frontend flag
 
 **Driver:** owner request — no PAM/CyberArk UI during the final presentation
