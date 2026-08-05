@@ -1,6 +1,7 @@
 /**
- * Brand mark: a Nomura-style emblem — white "N" on a Nomura-green rounded
- * square (#007A5E). Inline SVG so it needs no assets and scales cleanly.
+ * Brand mark: a Nomura-style emblem — white "N" on a rounded square in
+ * Nomura's corporate "Heartful Red" (#CA142A; the N's diagonal nods to the
+ * rising line of Nomura's anniversary mark). Inline SVG, no assets.
  */
 export function BrandMark({ size = 20 }: { size?: number }) {
   return (
@@ -12,7 +13,7 @@ export function BrandMark({ size = 20 }: { size?: number }) {
       aria-label="NomuTrade"
       style={{ display: "inline-block", verticalAlign: "middle", borderRadius: 5 }}
     >
-      <rect width="24" height="24" rx="5" fill="#007A5E" />
+      <rect width="24" height="24" rx="5" fill="#CA142A" />
       <path
         d="M7 17V7l10 10V7"
         stroke="#fff"
