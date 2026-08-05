@@ -372,3 +372,77 @@ can never exist without its settlement event, nor the reverse.
 *Code references if pressed: `backend/app/core/events.py` (`write_outbox`,
 `outbox_relay`, `_relay_batch`); design doc §4.2 (D-02); the sequence diagram
 in `presentation/trade-lifecycle.md` (PNG: `trade-lifecycle-sequence.png`).*
+
+## Q&A — the nine questions we WANT to be asked (plant these with the room)
+
+Each sounds like a challenge; each lands on our strongest ground. Answer
+shapes are 20–30 seconds; fuller backup lives in the Q&A sections above.
+
+### Technical showcase (4)
+
+1. **"Between all these moving parts — engine, workers, bus — how do you
+   make sure an order never gets lost or processed twice?"**
+   *The database keeps the promise; the relay is just the courier.* State +
+   event commit as one transaction; delivery is at-least-once and every
+   consumer is idempotent, so a duplicate is invisible and a lost event is
+   impossible. (Full answer: "outbox relay" Q&A above; show
+   `trade-lifecycle-sequence.png`.)
+
+2. **"Your market data is a replay — how is this not just a toy demo?"**
+   *Nothing in the platform knows the data is simulated.* Real minute bars on
+   a simulation clock; charts, staleness, news and even order timestamps all
+   live in market time. And the clock is a dial — one clean minute-step per
+   second, or a whole market day in two seconds with every tick processed.
+   (Press `» +1d` as the punctuation mark.)
+
+3. **"The AI can suggest trades — what's stopping it from placing one?"**
+   *The architecture, not a prompt.* The agent has no order path; it produces
+   a prefill ticket that goes through the same validation and the same human
+   confirm. Guardrails were proven in mock mode before the real model was
+   wired — the model only rewords data our engine grounds. (Show the
+   APPL → "yes" → ticket flow if time allows.)
+
+4. **"If you had three more weeks, what would you harden first?"**
+   *Alembic migrations (the only TODO in the codebase); then exercise the
+   Redis-backed stores + a multi-instance smoke (the process-local pieces pin
+   us to one instance today); then the load test we designed but never ran.
+   After that: order reservation accounting and per-desk limits.* Shows we
+   know our own system cold.
+
+### Business / operations / risk (5)
+
+5. **"What happens when something in the flow breaks? Who fixes it?"**
+   *Nothing fails silently.* A failed step raises a high-severity STP
+   exception: audited, the owner notified, and it lands on the operations
+   queue in Governance. Ops re-drives it with one click — the retry is safe
+   because the worker is idempotent. Traders can't clear their own
+   exceptions — that's segregation of duties. (Show the Governance page.)
+
+6. **"What stops a trader from fat-fingering a catastrophic order?"**
+   *Pre-trade controls, enforced before the order exists:* cash/holdings
+   checks, a per-order notional cap, the restricted-instrument list, lot/tick
+   validation — and the two-click confirm shows cost and cash-after before
+   anything is submitted. In the real world this is the SEC Market Access
+   Rule (15c3-5); ours is the training-scale version of the same idea, with
+   per-desk limits on the roadmap.
+
+7. **"How does compliance see who did what?"**
+   *Every security-relevant action lands in an append-only, hash-chained
+   audit trail* — each record hashes the previous one, so tampering with
+   history breaks the chain and is detectable. Access is deny-by-default
+   RBAC with time-bound grants; auditors get search + CSV/JSON export. (One
+   click away: the auditor's Audit page.)
+
+8. **"What does risk visibility look like for a trader or risk officer?"**
+   *Live, on the same screen as the trade:* concentration, annualized
+   volatility, 95% 1-day VaR *and* expected shortfall, max drawdown, Sharpe —
+   and for bonds, weighted yield and modified duration. The metrics are
+   computed from the book's daily series; a fresh book gets honest values
+   immediately by repricing the current holdings through stored history.
+   (Formulas: the risk-metrics Q&A above; show the four donuts.)
+
+9. **"What happens if the market-data feed stops?"**
+   *The platform degrades honestly instead of trading blind:* orders for an
+   instrument with no fresh tick are rejected at validation, positions carry
+   STALE badges, and the feed tile in Governance changes state. No fake
+   prices, no silent fills — the same guard the SRS asks for (NFR-AVL-002).
