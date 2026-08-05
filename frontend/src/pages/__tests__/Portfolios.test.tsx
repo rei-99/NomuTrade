@@ -54,7 +54,7 @@ describe("Portfolios page", () => {
     expect(await screen.findByText("DetailMarker")).toBeInTheDocument();
   });
 
-  it("hides the create button without ORDER_SUBMIT", async () => {
+  it("hides the create button without the admin permission (ROLE_MANAGE)", async () => {
     renderPage(false);
     await screen.findByText("Alpha Book");
     expect(screen.queryByRole("button", { name: "New portfolio" })).not.toBeInTheDocument();

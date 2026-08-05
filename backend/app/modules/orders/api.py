@@ -1,14 +1,18 @@
 """Order ticket + trade blotter endpoints.
 
 Audit event types emitted here: ORDER_SUBMITTED, ORDER_REJECTED,
-ORDER_CANCELLED, ORDER_AMENDED (ORDER_FILLED, STOP_TRIGGERED and
-ORDER_EXPIRED are emitted by the execution engine worker). Notifications
+ORDER_CANCELLED, ORDER_AMENDED, ORDER_REQUEUED (ORDER_FILLED, STOP_TRIGGERED
+and ORDER_EXPIRED are emitted by the execution engine worker). Notifications
 are published to the shared `notify` stream; a parallel module persists
 them.
 
 Design 24: tickets carry a time-in-force (DAY/GTC/IOC, default GTC) and
 TRAILING_STOP tickets trail params; DAY orders get `expire_after` from the
 simulation clock at acceptance.
+
+Order read endpoints accept ORDER_VIEW **or** STP_EXCEPTION_HANDLE (ops
+triage of rejected orders); POST /orders/{id}/requeue (ops-only) fixes and
+re-enters a REJECTED order through the standard validation + execution path.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from app.core.security import (
     SessionData,
     get_current_user,
     get_effective_permissions,
+    require_any_permission,
     require_permission,
 )
 from app.core.timeutil import as_utc, utcnow
@@ -58,8 +63,14 @@ ORDER_SUBMITTED = "ORDER_SUBMITTED"
 ORDER_REJECTED = "ORDER_REJECTED"
 ORDER_CANCELLED = "ORDER_CANCELLED"
 ORDER_AMENDED = "ORDER_AMENDED"
+ORDER_REQUEUED = "ORDER_REQUEUED"
 
 PAGE_SIZE = 50
+
+# Order read access: traders via ORDER_VIEW, operations via
+# STP_EXCEPTION_HANDLE (they triage REJECTED orders without holding
+# ORDER_VIEW). Owner scoping below still applies to both.
+_order_read = require_any_permission("ORDER_VIEW", "STP_EXCEPTION_HANDLE")
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +386,7 @@ async def list_orders(
     portfolio_id: str | None = None,
     status: str | None = None,
     cursor: str | None = None,
-    user: SessionData = Depends(require_permission("ORDER_VIEW")),
+    user: SessionData = Depends(_order_read),
     db: AsyncSession = Depends(get_db),
 ):
     if status is not None and status not in {s.value for s in OrderStatus}:
@@ -415,7 +426,7 @@ async def list_orders(
 @router.get("/orders/{order_id}")
 async def get_order(
     order_id: str,
-    user: SessionData = Depends(require_permission("ORDER_VIEW")),
+    user: SessionData = Depends(_order_read),
     db: AsyncSession = Depends(get_db),
 ):
     order = await db.get(Order, order_id)
@@ -577,6 +588,134 @@ async def amend_order(
     await db.commit()
     symbols = await _symbol_map(db, {order.instrument_id})
     return order_json(order, symbols.get(order.instrument_id, ""))
+
+
+# ---------------------------------------------------------------------------
+# POST /orders/{order_id}/requeue — ops remediation of REJECTED orders
+# ---------------------------------------------------------------------------
+
+
+@router.post("/orders/{order_id}/requeue")
+async def requeue_order(
+    order_id: str,
+    request: Request,
+    body: OrderAmendment | None = None,
+    user: SessionData = Depends(require_permission("STP_EXCEPTION_HANDLE")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Operations fix-and-requeue of a REJECTED order.
+
+    Applies the optional amendments (same shape as PATCH /orders/{id}), then
+    re-runs the full pre-trade validation chain — the same entry point as
+    submission. Still invalid -> the order stays REJECTED with an updated
+    reject_reason and a 422 envelope carrying the reasons. Valid -> back to
+    ACCEPTED with an `orders.accepted` outbox event (the execution engine's
+    contract), an ORDER_REQUEUED audit and a notification to the owner.
+    404 when the order is unknown or not visible to the caller, 409 unless
+    the order is REJECTED.
+    """
+    order = await db.get(Order, order_id)
+    if order is None:
+        raise NotFound("order not found")
+    portfolio = await db.get(Portfolio, order.portfolio_id)
+    # Same visibility rule as the read endpoints, but non-disclosing: an
+    # invisible order looks identical to an unknown one.
+    perms = await get_effective_permissions(db, user.user_id)
+    if portfolio.owner_id != user.user_id and "PORTFOLIO_VIEW_ALL" not in perms:
+        raise NotFound("order not found")
+    if order.status != OrderStatus.REJECTED:
+        raise StateConflict(
+            f"only REJECTED orders can be requeued (status: {order.status})",
+            details=[{"code": "NOT_REQUEUABLE", "status": order.status}],
+        )
+
+    body = body or OrderAmendment()
+    new_quantity = body.quantity if body.quantity is not None else order.quantity
+    new_limit = (
+        body.limit_price if body.limit_price is not None else order.limit_price
+    )
+    new_stop = body.stop_price if body.stop_price is not None else order.stop_price
+    # Trail params keep the amendment semantics (design 24 §D-24.2): setting
+    # one replaces the trail and clears the other (exactly-one invariant).
+    new_trail_amount = order.trail_amount
+    new_trail_pct = order.trail_pct
+    if body.trail_amount is not None:
+        new_trail_amount, new_trail_pct = body.trail_amount, None
+    elif body.trail_pct is not None:
+        new_trail_amount, new_trail_pct = None, body.trail_pct
+
+    instrument = await db.get(Instrument, order.instrument_id)
+    rejection = await validate_order(
+        db,
+        portfolio=portfolio,
+        instrument=instrument,
+        side=order.side,
+        order_type=order.order_type,
+        quantity=new_quantity,
+        limit_price=new_limit,
+        stop_price=new_stop,
+        trail_amount=new_trail_amount,
+        trail_pct=new_trail_pct,
+        settings=request.app.state.settings,
+    )
+    if rejection is not None:
+        # Consistent with submission/amendment: persist the new reason, keep
+        # the order REJECTED, and surface the reasons to the caller.
+        order.reject_reason = rejection.code
+        order.updated_at = utcnow()
+        await db.commit()
+        raise BusinessRuleViolation(
+            rejection.message,
+            details=[_rejection_detail(rejection)],
+        )
+
+    amended: dict[str, str] = {}
+    if body.quantity is not None:
+        amended["quantity"] = str(body.quantity)
+    if body.limit_price is not None:
+        amended["limit_price"] = str(body.limit_price)
+    if body.stop_price is not None:
+        amended["stop_price"] = str(body.stop_price)
+    if body.trail_amount is not None:
+        amended["trail_amount"] = str(body.trail_amount)
+    if body.trail_pct is not None:
+        amended["trail_pct"] = str(body.trail_pct)
+
+    prior_reject_reason = order.reject_reason
+    order.quantity = new_quantity
+    order.limit_price = new_limit
+    order.stop_price = new_stop
+    order.trail_amount = new_trail_amount
+    order.trail_pct = new_trail_pct
+    order.status = OrderStatus.ACCEPTED
+    order.reject_reason = None
+    order.updated_at = utcnow()
+    await db.flush()
+    await write_outbox(db, "orders.accepted", {"order_id": order.order_id})
+    await write_audit(
+        db,
+        actor_id=user.user_id,
+        event_type=ORDER_REQUEUED,
+        resource_type="ORDER",
+        resource_id=order.order_id,
+        severity="WARN",
+        payload={
+            "symbol": instrument.symbol,
+            "amended": amended,
+            "prior_reject_reason": prior_reject_reason,
+        },
+        flush_only=False,  # ops action: security-relevant, persist immediately
+    )
+    await _notify(
+        db,
+        portfolio.owner_id,
+        "Order requeued by operations",
+        f"Order {order.order_id} ({order.side} {order.quantity} "
+        f"{instrument.symbol}) was amended and requeued by operations; "
+        f"prior rejection: {prior_reject_reason}.",
+    )
+    await db.commit()
+    return order_json(order, instrument.symbol)
 
 
 # ---------------------------------------------------------------------------

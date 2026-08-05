@@ -1,11 +1,13 @@
 import { useCallback, useState } from "react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ListResponse, Order, OrderStatus, Portfolio } from "../api/types";
 import { DataTable } from "../components/DataTable";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
 import { OrderTicket } from "../components/OrderTicket";
+import { detailsToList } from "../components/orderUtils";
 import { useToast } from "../components/Toast";
+import { useAuth } from "../auth";
 import { fmtJpy, fmtNum, fmtTs } from "../format";
 import { usePoll } from "../hooks";
 import { useT } from "../i18n";
@@ -23,9 +25,164 @@ const STATUS_FILTERS: (OrderStatus | "")[] = [
 const CANCELLABLE: OrderStatus[] = ["OPEN", "PARTIALLY_FILLED", "ACCEPTED"];
 const AMENDABLE: OrderStatus[] = ["OPEN", "PARTIALLY_FILLED"];
 
+/**
+ * Ops fix-and-requeue of a REJECTED order (POST /orders/{id}/requeue). Shows
+ * the persisted reject_reason, pre-fills the amendable fields from the order
+ * (type-aware, mirroring OrderTicket's field logic), re-runs validation
+ * server-side; a still-invalid order returns 422 and the reasons are shown
+ * in place.
+ */
+function RequeueModal({
+  order,
+  onClose,
+  onDone,
+}: {
+  order: Order;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const { t } = useT();
+  const needsLimit = order.order_type === "LIMIT" || order.order_type === "STOP_LIMIT";
+  const needsStop = order.order_type === "STOP" || order.order_type === "STOP_LIMIT";
+  const needsTrail = order.order_type === "TRAILING_STOP";
+  const [qty, setQty] = useState(String(order.quantity));
+  const [limit, setLimit] = useState(order.limit_price !== null ? String(order.limit_price) : "");
+  const [stop, setStop] = useState(order.stop_price !== null ? String(order.stop_price) : "");
+  const [trailAmount, setTrailAmount] = useState(
+    order.trail_amount !== null ? String(order.trail_amount) : "",
+  );
+  const [trailPct, setTrailPct] = useState(order.trail_pct !== null ? String(order.trail_pct) : "");
+  const [violations, setViolations] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    setViolations([]);
+    const qtyNum = Number(qty);
+    if (qty === "" || Number.isNaN(qtyNum) || qtyNum <= 0) {
+      setViolations([t("order.issueQtyTicket")]);
+      return;
+    }
+    // Blank fields are omitted: the backend keeps the order's current value.
+    const body: Record<string, number> = { quantity: qtyNum };
+    if (needsLimit && limit !== "") body.limit_price = Number(limit);
+    if (needsStop && stop !== "") body.stop_price = Number(stop);
+    if (needsTrail && trailAmount !== "") body.trail_amount = Number(trailAmount);
+    if (needsTrail && trailPct !== "") body.trail_pct = Number(trailPct);
+
+    setSubmitting(true);
+    try {
+      await api(`/orders/${order.order_id}/requeue`, {
+        method: "POST",
+        body,
+        skipErrorToast: true, // 422 reasons render inside the modal
+      });
+      toast(t("orders.requeueDone", { id: order.order_id }), "success");
+      onDone();
+      onClose();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 422) {
+        const list = detailsToList(e.details);
+        setViolations(list.length > 0 ? list : [e.message]);
+      } else if (e instanceof ApiError) {
+        toast(`${e.message}${e.traceId ? ` · trace ${e.traceId}` : ""}`, "error");
+      } else {
+        toast(t("orders.requeueFailed"), "error");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal title={t("orders.requeueTitle", { id: order.order_id })} onClose={onClose}>
+      <div className="form-grid">
+        <div className="form-field form-field-full">
+          <span>{t("orders.requeueReason")}</span>
+          <div className="mono">{order.reject_reason ?? "—"}</div>
+        </div>
+        <label className="form-field">
+          <span>{t("common.qty")}</span>
+          <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </label>
+        {needsLimit && (
+          <label className="form-field">
+            <span>{t("order.limitPrice")}</span>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+            />
+          </label>
+        )}
+        {needsStop && (
+          <label className="form-field">
+            <span>{t("order.stopPrice")}</span>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={stop}
+              onChange={(e) => setStop(e.target.value)}
+            />
+          </label>
+        )}
+        {needsTrail && (
+          <>
+            <label className="form-field">
+              <span>{t("order.trailAmount")}</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={trailAmount}
+                onChange={(e) => setTrailAmount(e.target.value)}
+              />
+            </label>
+            <label className="form-field">
+              <span>{t("order.trailPct")}</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={trailPct}
+                onChange={(e) => setTrailPct(e.target.value)}
+              />
+            </label>
+          </>
+        )}
+      </div>
+
+      {violations.length > 0 && (
+        <div className="ticket-violations">
+          <div className="ticket-violations-title">{t("orders.requeueViolations")}</div>
+          <ul>
+            {violations.map((v, i) => (
+              <li key={i}>{v}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onClose} type="button">
+          {t("common.cancel")}
+        </button>
+        <button className="btn btn-buy active" onClick={() => void submit()} disabled={submitting} type="button">
+          {submitting ? t("orders.requeueSubmitting") : t("orders.requeueSubmit")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function Orders() {
   const { toast } = useToast();
   const { t } = useT();
+  const { hasPerm } = useAuth();
+  const canRequeue = hasPerm("STP_EXCEPTION_HANDLE");
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
@@ -33,6 +190,7 @@ export function Orders() {
   const [amending, setAmending] = useState<Order | null>(null);
   const [amendQty, setAmendQty] = useState("");
   const [amendLimit, setAmendLimit] = useState("");
+  const [requeuing, setRequeuing] = useState<Order | null>(null);
 
   // Portfolios are only needed for the order ticket's picker — fetch once on
   // mount, not per poll.
@@ -229,6 +387,11 @@ export function Orders() {
                       {t("orders.cancel")}
                     </button>
                   )}
+                  {o.status === "REJECTED" && canRequeue && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setRequeuing(o)}>
+                      {t("orders.requeue")}
+                    </button>
+                  )}
                 </span>
               ),
             },
@@ -242,6 +405,14 @@ export function Orders() {
           portfolios={portfolios}
           onClose={() => setTicketOpen(false)}
           onSubmitted={() => void load()}
+        />
+      )}
+
+      {requeuing && (
+        <RequeueModal
+          order={requeuing}
+          onClose={() => setRequeuing(null)}
+          onDone={() => void load()}
         />
       )}
 

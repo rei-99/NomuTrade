@@ -13,8 +13,9 @@ import { useT } from "../i18n";
 /**
  * Portfolios index: one row per portfolio with the type badge and the cash /
  * total-value figures the list endpoint already returns; row click opens the
- * portfolio detail page. Users who can trade (ORDER_SUBMIT) may open a new
- * HOUSE book from here (POST /portfolios, idempotent by name).
+ * portfolio detail page. Portfolio creation is admin-only (ROLE_MANAGE,
+ * Security Administrator): the "New portfolio" button opens a modal
+ * (POST /portfolios, idempotent by name).
  */
 export function Portfolios() {
   const navigate = useNavigate();
@@ -65,7 +66,7 @@ export function Portfolios() {
     <div className="page">
       <div className="page-header">
         <h2>{t("portfolios.title")}</h2>
-        {hasPerm("ORDER_SUBMIT") && (
+        {hasPerm("ROLE_MANAGE") && (
           <div className="page-header-actions">
             <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>
               {t("portfolios.new")}

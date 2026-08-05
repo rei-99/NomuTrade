@@ -96,6 +96,8 @@ sequenceDiagram
 
 - **Duplicate submission** — same `Idempotency-Key` returns the original order, no duplicate insert (FR-ORD-001 E2).
 - **Validation failure** — 422 `BUSINESS_RULE_VIOLATION` with machine-readable reason codes; order → `REJECTED`.
+- **Requeue (added 2026-08-04)** — `REJECTED` is not terminal for Operations: `POST /orders/{id}/requeue` (`STP_EXCEPTION_HANDLE`) lets ops amend (qty/limit/stop/trail) and re-submit through the same validation; valid → `ACCEPTED` + `orders.accepted` outbox (engine fills it) + `ORDER_REQUEUED` audit + owner notified; still invalid → stays `REJECTED` with the updated reason (422). Order list/detail read access widened to `ORDER_VIEW` **or** `STP_EXCEPTION_HANDLE` (`require_any_permission` in core/security.py) so ops can see the failure queue at all.
+
 - **Stale feed** — 503 for the affected instrument (FR-ORD-003 E1; staleness guard in 01).
 - **STP failure** — trade marked `STP_EXCEPTION`; Ops alerted via health view and notification; retry with backoff (FR-ORD-005 E1; visibility in [15 — Admin & Governance](15-admin-governance.md)).
 - **Partial fills** — supported by configuration (A1); MVP default full fills for a deterministic demo path.

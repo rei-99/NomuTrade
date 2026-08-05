@@ -238,3 +238,102 @@ Bond trade on MSFT31 (tape scope toggle `Bonds` — it lives *on the tape*,
 not the top bar), access-request approval, break-glass, audit hash chain,
 paper trading, report generation, the `/connect` phone page. See
 `demo-5min.md` §"Cut on purpose" and `demo-guide.md` for those walkthroughs.
+
+
+---
+
+## Q&A — Risk-exposure metrics (what they mean, how computed, why these)
+
+Every figure on the Risk Exposure panel is computed from the portfolio's
+**daily total-value series** (market value + cash), one point per day.
+Source: `ValuationSnapshot` history; when the book is too new for 10 days of
+snapshots, we fall back to repricing today's book through stored daily closes
+("how would this exact book have moved"), so the KPIs are meaningful from day
+one instead of N/A. `backend/app/modules/portfolios/valuation.py`.
+
+**Concentration (%)** — the single largest holding's share of market value.
+- *How:* `top_holdings[0]["pct"]` — max position value ÷ total market value.
+- *Why:* the one-number answer to "how diversified is this book?" Regulators
+  and risk limits frame concentration first because idiosyncratic risk is the
+  easiest to blow up on. Ours reads 100% on a one-stock demo book — a great
+  talking point, not a bug.
+
+**Volatility, annualized (%)** — how violently the book's value swings.
+- *How:* `stdev(daily total values) × √252 ÷ mean × 100`, needs ≥ 10 daily
+  points (252 = trading days/year).
+- *Why:* the universal risk yardstick — every other metric (VaR, limits,
+  margin) starts from vol. A trader compares it against the market's vol to
+  know if they're running hot.
+
+**VaR 95%, 1-day (%)** — "on a bad day (1 in 20), expect to lose at least
+this much, as % of book value."
+- *How:* historical simulation — the 5th percentile of daily returns,
+  negated: `VaR = max(0, −q5) × 100`. Not parametric, no normal-distribution
+  assumption — it just ranks real observed days.
+- *Why:* the industry-standard headline risk number since the 1990s; it's
+  what risk committees quote and what limits are written against. 95% 1-day
+  is the Basel-flavored convention.
+
+**ES / CVaR 95%, 1-day (%)** — "when the worst 5% of days *do* happen, the
+average loss is this."
+- *How:* mean of all daily returns at or below the 5th percentile, negated.
+  Always ≥ VaR by construction.
+- *Why:* VaR tells you where the cliff edge is, ES tells you what's *below*
+  it — it catches fat tails that VaR hides. Post-crisis regulation (FRTB)
+  moved from VaR to ES for exactly this reason; having both on the panel
+  shows we know the difference.
+
+**Sharpe ratio, annualized** — return earned per unit of risk taken.
+- *How:* `mean(daily returns) ÷ stdev(daily returns) × √252`, risk-free rate
+  = 0 (documented training simplification).
+- *Why:* the honest "was it worth it?" metric — a book up 10% on 30% vol is
+  worse than one up 6% on 5% vol. It stops traders from celebrating raw P&L.
+
+**Max drawdown (%)** — the worst peak-to-trough fall the book has suffered.
+- *How:* running peak of daily total value; `max((peak − value) ÷ peak) × 100`.
+- *Why:* the metric every investor *feels* — "how much pain, worst case, did
+  sitting through this book cost?" VaR is forward-looking probability;
+  drawdown is the lived worst case. Fund mandates often cap it explicitly.
+
+**Day change ($ and %)** — today's move vs the previous day's open, per
+position and in total.
+- *How:* mark-to-market at latest tick vs `prev_day_open` per instrument,
+  summed. (On the sim clock, "day" is dataset day.)
+- *Why:* the number a trader checks first each morning; everything else on
+  the panel is context for it.
+
+**If asked "why no Greeks / beta / factor exposures?"** — this is a
+cash-equity-and-bond book with no derivatives and no factor model in the
+dataset; delta-1 metrics plus vol/VaR/ES/DD is the honest, complete set for
+it. The valuation seam (`_daily_total_values`) is exactly where a beta or
+factor series would plug in.
+
+---
+
+## Q&A — How are Operations mapped to traders in the real world?
+
+**Answer: many-to-many, organized as a desk-level queue — not a personal
+hotline.** And that is what we built.
+
+- **Reality (industry):** an operations team services a whole trading desk or
+  business unit — dozens of traders — through a shared exception queue with
+  triage and SLAs, first-available analyst picks items up. It's many-to-many:
+  any trader can produce an exception, any qualified op can clear it.
+  High-touch variants exist (a senior sales-trader pair may get a dedicated
+  op — many-to-one), but that's the exception, not the model. Follow-the-sun
+  ops (Tokyo → London → New York) makes queue-based assignment a necessity,
+  not a choice — a fixed person is a single point of failure at 3 a.m.
+- **Our design mirrors that:** failed orders and STP exceptions surface to a
+  *role*, not a person — anyone holding `STP_EXCEPTION_HANDLE` (the
+  Operations Analyst role) sees the queue and can act (design decision: the
+  queue is the permission). The trader who owns the order is always notified
+  too, so accountability stays with the originator while resolution stays
+  with the team.
+- **Why not route to "the trader's fixed op"?** Because at scale that
+  assignment table is another thing to maintain, and it breaks the moment
+  someone is out sick. Role-based queue = resilient by construction.
+- **If asked about SoD:** the trader cannot clear their own exception —
+  `ORDER_SUBMIT` (trader) and `STP_EXCEPTION_HANDLE` (ops) are separate roles
+  in separate hands, which is the segregation-of-duties point compliance will
+  ask about. The audit trail records who requeued what and why, so the
+  queue is fast *and* accountable.

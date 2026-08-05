@@ -287,6 +287,14 @@ export const ja: Record<I18nKey, string> = {
   "orders.cancel": "取消",
   "orders.amendTitle": "注文 {id} の訂正",
   "orders.saveAmendment": "訂正を保存",
+  "orders.requeue": "再投入",
+  "orders.requeueTitle": "注文 {id} の再投入",
+  "orders.requeueReason": "却下理由",
+  "orders.requeueSubmit": "修正して再投入",
+  "orders.requeueSubmitting": "再投入中…",
+  "orders.requeueDone": "注文 {id} を再投入しました",
+  "orders.requeueFailed": "再投入に失敗しました",
+  "orders.requeueViolations": "バリデーションで再び却下されました:",
 
   // ---- trades page ----
   "trades.title": "約定ブロッター",

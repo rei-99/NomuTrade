@@ -154,7 +154,7 @@ export default function App() {
         <Route
           path="orders"
           element={
-            <Guard tab="orders">
+            <Guard perms={["ORDER_VIEW", "STP_EXCEPTION_HANDLE"]} tab="orders">
               <Orders />
             </Guard>
           }
