@@ -48,6 +48,21 @@ workflow.
   (+4 Orders tests); `npm run build` clean; live E2E — ops lists REJECTED
   orders, trader requeue → 403, ops requeue with qty fix → ACCEPTED →
   FILLED with execution.
+## 2026-08-04 — Fix: frontend tests under Node ≥23 (localStorage polyfill in test setup)
+
+**Driver:** the new Vitest suite (324 tests) passed on the author's machine
+but failed 62 tests here — Node ≥23 ships its own `localStorage`/
+`sessionStorage` globals with **no Storage methods** unless
+`--localstorage-file` is given, and vitest's jsdom environment does not
+override them (`localStorage.removeItem is not a function`).
+
+- `src/test/setup.ts` installs a minimal in-memory Storage polyfill when the
+  globals are broken — via `Object.defineProperty`, not `vi.stubGlobal`, so
+  tests calling `vi.unstubAllGlobals()` don't restore the broken getter.
+- Verified: `npm test` **324/324** + `npm run build` clean on Node 25.9;
+  backend **140/140**; live stack boot — health OK, `llm` tile
+  `live: claude-haiku-4-5`, connect module serves the auto-detected LAN URL,
+  IBM market buy → SETTLED end to end.
 
 ## 2026-08-04 — Frontend test suite from zero: 324 tests, 89.5% statement coverage
 

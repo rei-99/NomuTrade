@@ -23,6 +23,44 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
+// Node ≥23 ships its own localStorage/sessionStorage globals (getters on
+// globalThis that, without --localstorage-file, expose objects with NO
+// Storage methods) and vitest's jsdom environment does not override them —
+// tests then see the broken Node stubs ("localStorage.removeItem is not a
+// function"). Install a minimal in-memory Storage polyfill when broken.
+// defineProperty, NOT vi.stubGlobal: tests that call vi.unstubAllGlobals()
+// must not restore the broken Node getter.
+class MemoryStorage {
+  private map = new Map<string, string>();
+  get length() {
+    return this.map.size;
+  }
+  key(index: number) {
+    return [...this.map.keys()][index] ?? null;
+  }
+  getItem(key: string) {
+    return this.map.has(key) ? this.map.get(key)! : null;
+  }
+  setItem(key: string, value: string) {
+    this.map.set(key, String(value));
+  }
+  removeItem(key: string) {
+    this.map.delete(key);
+  }
+  clear() {
+    this.map.clear();
+  }
+}
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  if (typeof globalThis[name]?.removeItem !== "function") {
+    Object.defineProperty(globalThis, name, {
+      value: new MemoryStorage(),
+      configurable: true,
+      writable: true,
+    });
+  }
+}
+
 // Unmount rendered trees between tests (Vitest has no auto-cleanup without
 // globals enabled).
 afterEach(() => {
