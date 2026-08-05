@@ -90,13 +90,14 @@ function buildPriceOption(
   const lastPriceColor = dayUp ? CHART_COLORS.up : CHART_COLORS.down;
 
   // Grid layout: main / volume / [RSI] / [MACD], heights in % — sized to
-  // fill ~97% of the canvas at every pane count (previously ~76% unused at
-  // base, ~100.4% and overflowing with both sub-panes on).
+  // fill ~90% of the canvas at every pane count, leaving the bottom ~10%
+  // for the last grid's date labels and the dataZoom slider (previously
+  // ~97%: the slider overlapped the MACD pane's labels).
   const subCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
   const heights: Record<number, number[]> = {
-    0: [76, 14],
-    1: [60, 12, 14],
-    2: [46, 11, 13, 12],
+    0: [72, 12],
+    1: [56, 11, 12],
+    2: [42, 10, 12, 11],
   };
   const grids = heights[subCount].map((height) => ({ height }));
   const topPad = 3;
@@ -298,7 +299,7 @@ function buildPriceOption(
       {
         type: "slider",
         xAxisIndex: gridDefs.map((_, i) => i),
-        bottom: 0,
+        bottom: 2,
         height: COARSE_POINTER ? 28 : 18,
         start: zoom?.start ?? 0,
         end: zoom?.end ?? 100,

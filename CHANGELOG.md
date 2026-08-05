@@ -7,7 +7,19 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
-## 2026-08-05 — Chart space polish: fill-by-count grids, no overflow, price tag retired
+## 2026-08-05 — Chart fix: dataZoom slider no longer overlaps the MACD pane
+
+**Driver:** owner report — the left/right scroll slider collided with the
+bottom pane's date labels after the fill-by-count change (~97% layout left
+no room for labels + slider).
+
+- Grid layout compressed to ~90% of the canvas (base 72/12, one sub-pane
+  56/11/12, two sub-panes 42/10/12/11), reserving the bottom ~10% for the
+  last grid's date labels and the slider (nudged to `bottom: 2`).
+- Verified: frontend **334/334**, `npm run build` clean; headless screenshot
+  — dates on their own row, slider clear below, RSI+MACD panes intact.
+
+
 
 **Driver:** owner review — the expanded chart didn't fill its space, RSI+MACD
 together overflowed the panel, and the last-price tag's margin was wasted
