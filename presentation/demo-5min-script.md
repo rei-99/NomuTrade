@@ -536,3 +536,60 @@ the first visible candle. Parameters below are the live implementation
 and bands; oscillators get their own panes — RSI for momentum, MACD for
 trend-plus-momentum. All computed from our stored bars, so they work on
 every timeframe the platform serves."
+
+## Q&A — Equities vs bonds: what differs in the real world, and in our build?
+
+### Part 1 — the real world
+
+**Market structure (the deepest difference).** Equities trade on centralized
+exchanges with a *central limit order book*: lit bids/asks, continuous
+matching, pre-trade transparency. Bonds trade predominantly **OTC** — dealer
+markets with no central order book and fragmented liquidity. The default
+institutional mechanism is **RFQ (request-for-quote)**: you ask several
+dealers for a firm price on a specific bond and size, quotes come back with
+a short validity window, and you trade on the best one. Electronic platforms
+(MarketAxess, Tradeweb) digitized the RFQ, not the order book.
+
+**Conventions.** Equities: price per share, quantity in shares, small ticks.
+Bonds: quoted as **% of par** (100.25 = 100.25% of face), quantities in
+**face value** (lots of 1,000+), and the number people actually negotiate is
+often the **yield** — price is derived. Analytics matter at the ticket:
+coupon, maturity, YTM, modified duration/DV01, plus **accrued interest**
+between clean and dirty price. Settlement conventions differ too (equities
+T+1, bonds T+1/T+2 by market).
+
+**UI differences in a real system.** Equity ticket: last price, bid/ask,
+shares. Bond ticket: face amount, **yield ↔ price conversion**, accrued
+interest and cash total, settlement date, spread-to-benchmark — and an RFQ
+blotter (dealer quotes with countdowns) instead of an order book.
+
+**Workflow.** Equity: order → exchange → match. Bond: RFQ → competing
+quotes → trade on best quote → allocation/confirmation → settlement.
+
+### Part 2 — in our system (the honest mapping)
+
+Same pipeline by design — one order path, one STP flow, one audit trail —
+with bond-correct math and conventions on top:
+
+| Area | Equities | Bonds in STP |
+|---|---|---|
+| Quote | $ per share | **% of par** (e.g. 99.31) |
+| Quantity | shares | **face value, lot 1,000** |
+| Cash math | qty × price | **face × price ÷ 100** — one shared `trade_value()` helper (validation, STP, valuation, reports, UI est. cost) |
+| Analytics | SMA/EMA/RSI/MACD/BB | **Bond card**: coupon, maturity, YTM (bisection solve), modified duration, yield → implied price |
+| Risk view | allocation KPI | **EQUITY vs BOND split** in the donut and mix bar; weighted YTM + duration line on the book |
+| Universe | 7 dataset equities | 4 bonds (UST10Y, UST2Y, AAPL29, MSFT31); tape/search have the Equities｜Bonds scope toggle |
+| Workflow | order → match → STP | same pipeline (RFQ deliberately not modeled — see below) |
+
+**Deliberate simplifications (say them proudly if asked):** no RFQ workflow
+(our matcher fills at the replayed tick — the honest reason: no dealer
+quotes exist in the dataset); **clean price only, no accrued interest**;
+coupons don't pay out; settlement sweeps on the same cadence for both asset
+classes (no T+1/T+2 split); modified duration but no convexity/DV01. Bond
+prices are generated (the dataset is equities-only) — disclosed on the
+honesty slide.
+
+**One-liner for stage:** "The pipeline treats both asset classes identically
+— that's the point of STP — but the *conventions* are bond-correct: percent
+of par, face-value lots, yield and duration math. What we didn't fake is the
+OTC RFQ workflow, and we'll say so."
