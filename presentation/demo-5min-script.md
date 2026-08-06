@@ -593,3 +593,91 @@ honesty slide.
 — that's the point of STP — but the *conventions* are bond-correct: percent
 of par, face-value lots, yield and duration math. What we didn't fake is the
 OTC RFQ workflow, and we'll say so."
+
+## Q&A — The execution engine, in detail ("who plays the exchange?")
+
+**Answer: a single in-process worker that acts as the matching engine of our
+simulated exchange** — it owns the working-order book, evaluates every
+resting order on every tick, and commits fills atomically with their events.
+Code: `backend/app/modules/orders/workers.py` (`build_execution_engine`,
+`_fill_order`).
+
+### What it consumes and produces
+
+```mermaid
+flowchart LR
+    subgraph Inputs
+        T["market.ticks<br/>(replayed bars, 1/s)"]
+        OA["orders.accepted<br/>(new/amended orders)"]
+    end
+    subgraph Engine["Execution engine (one worker)"]
+        Q["fan-in queue"]
+        BOOK["in-memory book<br/>instrument → working orders<br/>(rebuilt from DB on boot)"]
+        FO["_fill_order<br/>per working order, per tick"]
+        Q --> BOOK --> FO
+    end
+    T --> Q
+    OA --> Q
+    FO -->|one commit| DB[("Execution + order FILLED<br/>+ outbox event + audit")]
+    DB --> RELAY["outbox relay"] --> STP["STP worker → settlement"] 
+    DB --> RELAY2["..."] --> UI["WS execution hint → UI refetch"]
+```
+
+- Two subscriptions (`market.ticks`, `orders.accepted`) are pumped into one
+  `asyncio.Queue`, so ordering per instrument is total and single-threaded —
+  no parallel matching races by construction.
+- The book is **rebuilt from the database on startup** (OPEN + ACCEPTED
+  orders), so a crash mid-flight loses nothing; the DB, not memory, is the
+  authority.
+
+### The per-tick decision tree (`_fill_order`)
+
+```mermaid
+flowchart TD
+    A["tick for instrument X"] --> B["for each working order on X"]
+    B --> C{"order closed in DB?<br/>(FILLED/CANCELLED/REJECTED)"}
+    C -->|yes| Z["skip — cancel/fill race guard"]
+    C -->|no| D{"DAY past expire_after?<br/>(sim clock)"}
+    D -->|yes| E["expire → CANCELLED<br/>ORDER_EXPIRED audit"]
+    D -->|no| F{"order type?"}
+    F -->|MARKET| M["fill at tick price (bar close)"]
+    F -->|LIMIT| L{"tick crosses limit?"}
+    L -->|yes| M
+    L -->|no| R["rest in book"]
+    F -->|STOP| S{"stop crossed?"}
+    S -->|yes| M
+    S -->|no| R
+    F -->|STOP_LIMIT| SL{"stop crossed?"}
+    SL -->|yes| CONV["convert to LIMIT<br/>STOP_TRIGGERED audit<br/>→ re-enter as LIMIT"]
+    SL -->|no| R
+    F -->|TRAILING_STOP| TR["roll water-mark first (persist),<br/>then check trail trigger"]
+    TR -->|crossed| M
+    TR -->|not yet| R
+    M --> N{"TIF = IOC?"}
+    N -->|yes| IOC["fill what crosses now,<br/>cancel remainder (IOC_UNFILLED)"]
+    N -->|no| DONE["Execution + FILLED<br/>+ trading.executions event<br/>+ ORDER_FILLED audit<br/>(ONE commit)"]
+```
+
+Key invariants worth quoting:
+
+- **Whole fills only**: fills happen at the tick price for the full quantity —
+  no partial fills in the MVP (`PARTIALLY_FILLED` is reserved in the enum).
+- **Matching is on bar closes**, not intra-bar extremes — a stop won't fire on
+  a wick, only on a close through the level. Verified behavior, and consistent
+  between normal replay and the `» +1d` flush.
+- **The trailing-stop rule**: roll the water-mark *first*, then check the
+  trigger — a tick can never trigger on the extreme it just set.
+- **The fill commit is atomic**: Execution + FILLED status + outbox event +
+  audit land in one transaction — this is what makes straight-through
+  settlement safe to chain off it.
+- **Idempotent by re-read**: every attempt re-reads the order from the DB and
+  closed states are skipped, so redelivered events and cancel/fill races are
+  harmless.
+
+**One-liner for stage:** "In a real market the exchange matches; in ours,
+this worker plays the exchange against the replayed tick stream — same order
+types, same rules, fully deterministic. And every fill commits with its
+event, which is why settlement can be straight-through."
+
+*Related: full pipeline sequence — `presentation/trade-lifecycle.md`
+(+ `trade-lifecycle-sequence.png` / `trade-lifecycle-states.png`).*
