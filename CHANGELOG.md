@@ -7,6 +7,17 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 ---
 
+## 2026-08-06 — Enlarged order-confirmation modal
+
+**Driver:** owner ask — the two-click confirm popup was too small.
+
+- `Modal` gains an optional `className`; the confirm modal uses
+  `confirm-modal`: 720px frame, 18px title, 16px detail grid, larger
+  Cancel/Confirm actions. Behavior (Enter/Esc, backdrop dismiss,
+  idempotency-at-Confirm) unchanged.
+- Verified: frontend **334/334**, build clean; CDP screenshot — the modal
+  fills the center of the screen with all order details clearly readable.
+
 ## 2026-08-05 — Chart fix: dataZoom slider no longer overlaps the MACD pane
 
 **Driver:** owner report — the left/right scroll slider collided with the

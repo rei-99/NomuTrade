@@ -640,6 +640,14 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 
 .modal-wide { width: 720px; }
 
+/* Order confirm modal (§A1, enlarged per owner ask): bigger frame, readable
+   type, thumb-sized actions. */
+.confirm-modal { width: 720px; padding: 20px 24px; }
+.confirm-modal .modal-header h3 { font-size: 18px; }
+.confirm-modal .confirm-grid { font-size: 16px; gap: 8px 20px; }
+.confirm-modal .confirm-issues { font-size: 14px; }
+.confirm-modal .modal-footer .btn { font-size: 15px; padding: 10px 22px; }
+
 .modal-header {
   display: flex;
   align-items: center;

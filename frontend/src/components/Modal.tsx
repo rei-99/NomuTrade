@@ -8,9 +8,10 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  className?: string;
 }
 
-export function Modal({ title, onClose, children, footer, wide = false }: ModalProps) {
+export function Modal({ title, onClose, children, footer, wide = false, className }: ModalProps) {
   const { t } = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -22,7 +23,7 @@ export function Modal({ title, onClose, children, footer, wide = false }: ModalP
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal${wide ? " modal-wide" : ""}`} role="dialog" aria-modal="true">
+      <div className={`modal${wide ? " modal-wide" : ""}${className ? ` ${className}` : ""}`} role="dialog" aria-modal="true">
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label={t("common.close")}>

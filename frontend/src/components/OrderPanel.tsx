@@ -509,6 +509,7 @@ export function OrderPanel({
 
       {confirming !== null && (
         <Modal
+          className="confirm-modal"
           title={t("order.confirmTitle", { side: sideLabel(confirming) })}
           onClose={() => !inFlight && setConfirming(null)}
           footer={
