@@ -681,3 +681,102 @@ event, which is why settlement can be straight-through."
 
 *Related: full pipeline sequence — `presentation/trade-lifecycle.md`
 (+ `trade-lifecycle-sequence.png` / `trade-lifecycle-states.png`).*
+
+## Q&A — Pre-trade checks ("acceptance", in market terms)
+
+**Answer: before an order exists, it must pass the control chain — and the
+record is kept either way.** Code: `orders/api.py` + `validation.py`. This is
+the training-scale version of what the SEC Market Access Rule (15c3-5) calls
+automated pre-trade financial controls.
+
+```mermaid
+flowchart TD
+    A["POST /orders + Idempotency-Key"] --> P{"ORDER_SUBMIT<br/>permission?"}
+    P -->|no| P1["403 + AUTHORIZATION_DENIED audit"]
+    P -->|yes| I{"idempotency key seen?"}
+    I -->|yes| I1["return the EXISTING order<br/>(no double-submit, ever)"]
+    I -->|no| V1{"instrument tradable<br/>+ fresh tick?"}
+    V1 -->|no| RJ["REJECTED row + 422<br/>reason persisted"]
+    V1 -->|yes| V2{"qty positive,<br/>lot-aligned?"}
+    V2 -->|no| RJ
+    V2 -->|yes| V3{"BUY: cash ≥ value?<br/>SELL: holdings ≥ qty?<br/>(bond-aware trade_value)"}
+    V3 -->|no| RJ
+    V3 -->|yes| V4{"notional ≤ cap<br/>+ not restricted?"}
+    V4 -->|no| RJ
+    V4 -->|yes| OK["ACCEPTED + orders.accepted<br/>outbox row — ONE commit"]
+    RJ -.-> N["ORDER_REJECTED audit + owner notified"]
+    OK --> ENG["execution engine"]
+```
+
+Key points to quote:
+- **Rejection is a first-class record** — the order persists as REJECTED with
+  the machine-readable reason, so the blotter is honest and ops can requeue
+  (see the ops spotlight demo).
+- **The feed guard**: an instrument with no fresh tick is rejected — no
+  blind pricing (NFR-AVL-002).
+- **Bond-aware money**: cash/holdings checks use `trade_value()` — bonds at
+  face × price ÷ 100 — the same helper used everywhere downstream.
+- **Idempotency** is enforced by a unique key + race-safe replay path, which
+  is also our duplicate-order control.
+
+## Q&A — The STP worker ("what happens the moment an order fills?")
+
+**Answer: the worker turns an execution into book reality — position, cash,
+and a settlement instruction — in one transaction, idempotently.** Code:
+`orders/workers.py` (`stp_worker`, `_process_execution`).
+
+```mermaid
+flowchart TD
+    E["trading.executions event"] --> X{"instruction already<br/>exists for this execution?"}
+    X -->|yes| SKIP["skip — redelivery is free"]
+    X -->|no| L["load execution + order<br/>+ portfolio + instrument"]
+    L --> POS{"position exists?"}
+    POS -->|no| C["create (qty 0, avg_cost 0)"]
+    POS -->|yes| U
+    C --> U["BUY: qty += q,<br/>avg_cost = weighted mean<br/>SELL: qty −= q"]
+    U --> CASH["cash ∓ trade_value<br/>(bonds: face × price ÷ 100)"]
+    CASH --> SI["SettlementInstruction(EXECUTED)<br/>+ stp.lifecycle event"]
+    SI --> CM["ONE commit"]
+    E -.->|processing throws| EX["STP_EXCEPTION audit (HIGH)<br/>+ owner notified<br/>+ Governance exception list"]
+    EX --> RT["ops retry → re-publish event<br/>(safe: idempotency check)"]
+```
+
+Key points to quote:
+- **Idempotency is the whole game**: the existence check means a redelivered
+  event can never double-post cash or positions — at-least-once delivery is
+  safe by construction.
+- **Realized P&L is computed on read** from executions vs avg_cost — no
+  duplicated column to drift out of sync.
+- **Failure is loud, not silent**: audit (HIGH) + notification + ops-visible
+  queue + one-click retry. Nothing waits for a human to notice.
+
+## Q&A — The settlement sweeper ("how does a fill become SETTLED?")
+
+**Answer: a 1-second background sweep walks each instruction through its
+lifecycle on a wall-clock delay — the last zero-touch step of STP.** Code:
+`orders/workers.py` (`build_settlement_sweeper`, `_sweep_once`).
+
+```mermaid
+flowchart LR
+    subgraph Sweep["every 1 s (wall clock)"]
+        S["for each instruction in EXECUTED / AFFIRMED"]
+    end
+    S -->|"age ≥ delay (5 s default)"| A["EXECUTED → AFFIRMED"]
+    A -->|"age ≥ delay"| B["AFFIRMED → SETTLED<br/>settled_at = sim clock"]
+    B --> EV["stp.lifecycle event per transition"]
+    EV --> UI["blotter settlement badge +<br/>ops settlements lane update"]
+```
+
+Key points to quote:
+- **Two clocks, deliberately**: the cadence is wall-clock (in-process
+  `created_wall`/`affirmed_at` bases), while the *displayed* times
+  (`created_at`/`settled_at`) are sim-clock — so a replay loop-back can
+  never stall a settlement, and the blotter still reads market time.
+- **Every transition emits an event** — the UI badges and the ops lane are
+  just projections of `stp.lifecycle`.
+- **Failure-safe**: a failed sweep logs and retries next second; a restart
+  merely shortens the delay (documented trade-off), never loses a row.
+
+**One-liner for all three stages:** "Checks before the trade, one idempotent
+worker for the books, one sweeper for the settlement — and an event at every
+step, so nothing in the pipeline needs a human hand."
