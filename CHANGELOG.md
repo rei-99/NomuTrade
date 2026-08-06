@@ -13,10 +13,11 @@ Requirement IDs refer to SRS-STP-2026-001; decisions D-xx to DESIGN.md.
 
 - `Modal` gains an optional `className`; the confirm modal uses
   `confirm-modal`: 720px frame, 18px title, 16px detail grid, larger
-  Cancel/Confirm actions. Behavior (Enter/Esc, backdrop dismiss,
-  idempotency-at-Confirm) unchanged.
-- Verified: frontend **334/334**, build clean; CDP screenshot — the modal
-  fills the center of the screen with all order details clearly readable.
+  Cancel/Confirm actions, centered and dropped below the details
+  (follow-up tweak, same day).
+- Verified: frontend **334/334**, build clean; CDP screenshots — the modal
+  fills the center of the screen with all order details clearly readable
+  and the actions centered at the bottom.
 
 ## 2026-08-05 — Chart fix: dataZoom slider no longer overlaps the MACD pane
 

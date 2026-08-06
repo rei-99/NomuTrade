@@ -647,6 +647,12 @@ input[type="checkbox"] { accent-color: var(--green); padding: 0; }
 .confirm-modal .confirm-grid { font-size: 16px; gap: 8px 20px; }
 .confirm-modal .confirm-issues { font-size: 14px; }
 .confirm-modal .modal-footer .btn { font-size: 15px; padding: 10px 22px; }
+.confirm-modal .modal-footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
 
 .modal-header {
   display: flex;
