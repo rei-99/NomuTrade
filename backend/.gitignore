@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 stp.db
+stp.db.bak*
 .pytest_cache/
 .pgdata/
 .pgdata.log
